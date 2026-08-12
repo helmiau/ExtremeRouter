@@ -1,3 +1,28 @@
+# v0.8.5 (2026-08-13)
+
+## Features
+- **New Provider: Helyx AI** (`helyxai`) — one OpenAI-compatible endpoint (https://helyxai.space/v1) for 50+ models. 12 seeded chat models (DeepSeek-V4 Flash/Pro, GPT-5.6 Luna, Gemini 3.1 Flash Lite, GLM 5.2, Qwen3 32B, MiniMax M3, Mistral 4, Gemma 4 31B, GPT OSS 120B, Kimi K3, Llama 3.1 8B), `flux-1` image + `kling-video` video generation via per-kind endpoints, free tier (100K tokens/day, resets every 24h), passthrough for the full roster, price table + logo asset.
+- **Codex GPT-5.6 Max/Ultra Reasoning Overrides (cx/ only)** — gpt-5.6-sol/terra/luna + `-review` registry entries with provider-scoped capability windows (Sol 372k, Terra/Luna 272k); thinking levels gain `ultra` (Luna capped at max) with safe effort normalization across wire formats.
+- **Qoder PAT Authentication (end-to-end)** — personal access tokens alongside the OAuth device flow: job-token exchange, TTL-cached credential resolution with in-flight dedup, clean 401s, quota support, and PAT validation route.
+- **Combo Capability Adapter** — requests needing hard input modalities (vision/pdf/audio/video) are auto-routed to a combo member that covers them; when none does, a known-capable fallback model (`oc/mimo-v2.5-free` by default) is prepended. Tri-state per-combo override, flows through per-key ACL, budget, and admission.
+- **grok-4.5 Thinking Levels** — low/medium/high levels + 500k context window in capabilities, the thinking-levels picker, and the xai registry entry.
+- **Headroom Effective Payload Savings** — byte-level before/after savings (body/tools/history) persisted via a lifetime aggregate and surfaced on the Overview dashboard with compressed-request counts.
+- **v1/models Combo Thinking** — effective combo thinking config advertised as `capabilities {thinking, agentic}` so capability-gated clients (e.g. zcode) can detect combo thinking.
+- **Auto-provision Default Key** — enabling `requireApiKey` for the first time creates a "Default Key" automatically when no keys exist; the raw key is returned once (never persisted) and surfaced via the existing created-key modal.
+- **authModes defaulting** — freeTier/apikey providers without explicit authModes now default to apikey-capable, so the dashboard counts api-key connections consistently.
+
+## Fixes
+- **Codex tool-call truncation** — the codex executor now forwards the client's `max_output_tokens` and injects a model-aware default when absent, so heavy-reasoning gpt-5.6-luna/terra outputs are no longer truncated mid-tool-call by the backend's small default cap (previously surfaced as Codex CLI `InputValidationError: Bash was called with input that could not be parsed as JSON`). Defensive fallback retries once without the field for legacy backends that 400 on it.
+- **Responses→Chat duplicate tool-call arguments** — `response.output_item.done` no longer re-emits already-streamed `function_call_arguments` (new `argsStreamed` flag); `_ingestFullItem` prefers the terminal snapshot. Fixes corrupted tool-call JSON for Chat clients routed to codex models.
+- **Zed completions 500** — `CompletionBody.provider` now serializes snake_case (`open_ai`, `x_ai`) matching the upstream serde; PascalCase caused "An internal server error occurred" for every model.
+- **Zed raw 500 body surfaced** — `parseError` keeps the raw upstream body so undebuggable 500s stay diagnosable.
+- **opencode stream_options mismatch** — `stream_options` stripped on non-streaming requests (upstream 400 `stream_options should be set along with stream = true`).
+- **Combo engine** — non-chat strategies (fusion/swarm/cascade) in `handleComboChat` now 400 loudly instead of silently degrading to fallback; gemini/antigravity tool parts flattened into prose for panel/worker models; fusion judge + single-survivor re-run bounded by `panelHardTimeoutMs`; aggregate output budget enforced (clamp fix); combo call-cap gated by `budgets.enabled` (budget-off combos unlimited again); combo rate-limit charge capped at burst; capacity admission gate dropped; default burst raised 10 → 25 → 65 (env-overridable via `EXTREMEROUTER_RATE_LIMIT_BURST`).
+- **TokenHarbor connection test** — `testApiKeyConnection` + validate route now probe `GET /v1/models` with Bearer (401/403 = bad key); added SVG provider icon.
+
+## Tests
+- 12 new suites: responses-streaming-audit, codex-gpt56-reasoning, codex-max-output-tokens, combo-budget-clamp, combo-capability-adapter, combo-fusion, default-key-provision, grok-45-thinking, headroom-savings, helyxai-provider, qoder-pat, v1-models-combo-thinking (~1,380 lines). Golden snapshots updated for the args-dedup fix and the new Helyx AI registry entries.
+
 # v0.8.4 (2026-08-10)
 
 ## Features
