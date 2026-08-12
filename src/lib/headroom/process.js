@@ -74,6 +74,18 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT } = {}) {
   child.unref();
   writePid(child.pid);
 
+  // The parent's copy of outFd must be closed exactly once: either here (after
+  // a successful startup) or from the exit handler (early-exit path). If the
+  // proxy exits AFTER startup succeeded, the exit listener would otherwise
+  // double-close the fd and throw EBADF inside the event handler, crashing the
+  // gateway via uncaughtException. Guard with a flag + try/catch (idempotent).
+  let outClosed = false;
+  const closeOutFd = () => {
+    if (outClosed) return;
+    outClosed = true;
+    try { fs.closeSync(outFd); } catch { /* already closed (EBADF) — ignore */ }
+  };
+
   // Wait until the process either stays alive briefly (success) or exits fast (failure).
   await new Promise((resolve, reject) => {
     const startupTimer = setTimeout(() => {
@@ -84,7 +96,7 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT } = {}) {
     child.once("exit", (code) => {
       clearTimeout(startupTimer);
       clearPid();
-      fs.closeSync(outFd);
+      closeOutFd();
       const e = new Error(`headroom proxy exited early (code=${code}) — see proxy.log`);
       e.code = "EARLY_EXIT";
       reject(e);
@@ -92,7 +104,7 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT } = {}) {
   });
 
   // Close parent's copy of the fd; child retains its own after unref.
-  fs.closeSync(outFd);
+  closeOutFd();
 
   return { pid: child.pid, alreadyRunning: false };
 }
