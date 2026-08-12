@@ -273,6 +273,12 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
                     console.log(`[ProjectId] Successfully onboarded, project ID: ${projectId}`);
                     return projectId;
                 }
+                // Log the raw response body ONCE per onboarding (attempt 1) so
+                // contract drift is diagnosable — the same shape repeats on
+                // every attempt, so logging it 5× would only spam the log.
+                if (attempt === 1) {
+                    console.warn(`[ProjectId] onboardUser returned done:true without a recognizable project_id — raw response: ${JSON.stringify(data).slice(0, 4000)}`);
+                }
                 throw new Error("onboardUser done but no project_id in response");
             }
 
@@ -323,23 +329,65 @@ function extractProjectId(data) {
 }
 
 /**
+ * Extract a project id from a scalar that may be a plain string, an object
+ * with an id-ish field, or a Google-style resource name ("projects/<id>").
+ */
+function projectIdFromScalar(value) {
+    if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        return trimmed.startsWith("projects/") ? trimmed.slice("projects/".length) : trimmed;
+    }
+    if (value && typeof value === "object") {
+        for (const key of ["id", "projectId", "project_id"]) {
+            if (typeof value[key] === "string" && value[key].trim()) {
+                return value[key].trim();
+            }
+        }
+    }
+    return null;
+}
+
+/**
  * Extract project ID from onboardUser response.
+ *
+ * Google's backend has returned the project in several shapes over time, so a
+ * single hard-coded path (response.cloudaicompanionProject) turns API contract
+ * drift into "onboardUser done but no project_id" failures for every account
+ * at once. Walk the common candidate paths in priority order instead:
+ *
+ *   { done: true, response: { cloudaicompanionProject: "id" | { id } } }  ← historical
+ *   { done: true, cloudaicompanionProject: "id" | { id } }                ← flat variant
+ *   { done: true, response: { project: "id" | { id } } }
+ *   { done: true, response: { project_id: "id" } }
+ *   { done: true, projectId: "id" }
+ *   { done: true, project_id: "id" }
+ *   { done: true, response: { id } }                                      ← last resort
  */
 function extractProjectIdFromOnboard(data) {
-    if (!data?.response) return null;
+    if (!data || typeof data !== "object") return null;
 
-    const project = data.response.cloudaicompanionProject;
+    const paths = [
+        "response.cloudaicompanionProject",
+        "cloudaicompanionProject",
+        "response.project",
+        "project",
+        "response.projectId",
+        "projectId",
+        "project_id",
+        "response.project_id",
+        "response.id",
+        "id",
+    ];
 
-    if (typeof project === "string") {
-        const id = project.trim();
+    for (const path of paths) {
+        const value = path.split(".").reduce(
+            (acc, key) => (acc && typeof acc === "object" ? acc[key] : undefined),
+            data
+        );
+        const id = projectIdFromScalar(value);
         if (id) return id;
     }
-
-    if (project && typeof project === "object") {
-        const id = project.id;
-        if (typeof id === "string" && id.trim()) return id.trim();
-    }
-
     return null;
 }
 
