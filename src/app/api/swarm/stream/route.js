@@ -15,6 +15,7 @@ export async function GET() {
       // Initial snapshot: send recent runs so the dashboard hydrates immediately.
       try {
         const initial = getRecentSwarms(20);
+        controller.enqueue(encoder.encode(`retry: 3000\n\n`));
         controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "snapshot", runs: initial })}\n\n`));
       } catch {
         // ignore
@@ -72,6 +73,8 @@ export async function GET() {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
+      // Tell nginx/proxies not to buffer the SSE stream (buffering delays events).
+      "X-Accel-Buffering": "no",
     },
   });
 }

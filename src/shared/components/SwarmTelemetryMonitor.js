@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import Badge from "@/shared/components/Badge";
 import EmptyState from "@/shared/components/EmptyState";
 import { cn } from "@/shared/utils/cn";
+import { swarmRunsReducer } from "@/shared/components/swarmReducer";
 
 const STAGE_META = {
   gatekeeper: { label: "Gatekeeper", icon: "fork_right", desc: "Classifies request complexity" },
@@ -47,6 +48,7 @@ function formatTimeAgo(ts) {
 export default function SwarmTelemetryMonitor() {
   const [runs, setRuns] = useState([]);
   const [connected, setConnected] = useState(false);
+  const [, forceRender] = useState(0);
   const eventSourceRef = useRef(null);
 
   useEffect(() => {
@@ -59,49 +61,7 @@ export default function SwarmTelemetryMonitor() {
     es.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        setRuns((prev) => {
-          // Snapshot: replace all
-          if (data.type === "snapshot" && Array.isArray(data.runs)) {
-            return data.runs;
-          }
-          // Per-event: find the runId and update its stage(s)
-          if (data.runId) {
-            return prev.map((run) => {
-              if (run.runId !== data.runId) return run;
-              const next = { ...run, stages: { ...run.stages } };
-
-              if (data.stage === "workers" && data.worker !== undefined) {
-                // Per-worker update
-                const workers = [...(next.stages.workers?.workers || [])];
-                if (workers[data.worker]) {
-                  workers[data.worker] = { ...workers[data.worker], status: data.status, model: data.model ?? workers[data.worker].model };
-                }
-                next.stages.workers = { ...next.stages.workers, workers };
-              } else if (data.stage) {
-                // Stage-level update
-                next.stages[data.stage] = {
-                  ...next.stages[data.stage],
-                  status: data.status,
-                  durationMs: data.durationMs ?? next.stages[data.stage]?.durationMs,
-                  model: data.model ?? next.stages[data.stage]?.model,
-                  verdict: data.verdict ?? next.stages[data.stage]?.verdict,
-                  strategy: data.strategy ?? next.stages[data.stage]?.strategy,
-                };
-              }
-
-              // Run-level completion
-              if (data.type === "swarm:complete") {
-                next.status = "done";
-                next.totalDurationMs = data.totalDurationMs;
-              } else if (data.type === "swarm:error") {
-                next.status = "error";
-                next.error = data.error;
-              }
-              return next;
-            });
-          }
-          return prev;
-        });
+        setRuns((prev) => swarmRunsReducer(prev, data));
       } catch {
         // ignore parse errors
       }
@@ -111,6 +71,13 @@ export default function SwarmTelemetryMonitor() {
       es.close();
       eventSourceRef.current = null;
     };
+  }, []);
+
+  // Re-render every 30s so relative timestamps ("just now", "2m ago") stay fresh
+  // even when no swarm events arrive.
+  useEffect(() => {
+    const t = setInterval(() => forceRender((n) => n + 1), 30000);
+    return () => clearInterval(t);
   }, []);
 
   const activeRuns = runs.filter((r) => r.status === "running");
@@ -226,7 +193,7 @@ function SwarmRunCard({ run, expanded = false }) {
                   (!stage?.status || stage?.status === "pending") && "bg-text-subtle"
                 )} />
                 <span className="text-[11px] text-text-muted">
-                  {stage?.durationMs ? formatDuration(stage.durationMs) : statusLabel(stage?.status)}
+                  {stage?.skipped ? "Skipped" : stage?.durationMs ? formatDuration(stage.durationMs) : statusLabel(stage?.status)}
                 </span>
               </div>
               {stage?.verdict && (

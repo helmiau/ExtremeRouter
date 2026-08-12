@@ -75,13 +75,18 @@ export function createSwarmRun({ comboName, promptPreview, managerModel, staffMo
   }
 
   swarmRuns.set(runId, run);
-  // Evict oldest if over cap (keep most recent)
+  // Evict oldest COMPLETED runs if over cap — never evict an in-flight run,
+  // or its later markStage*/markRun* calls would silently no-op.
   if (swarmRuns.size > MAX_RUNS_KEPT) {
-    const oldest = [...swarmRuns.entries()].sort((a, b) => a[1].startedAt - b[1].startedAt)[0];
-    if (oldest) swarmRuns.delete(oldest[0]);
+    const finished = [...swarmRuns.entries()]
+      .filter(([, r]) => r.status === "done" || r.status === "error")
+      .sort((a, b) => a[1].startedAt - b[1].startedAt);
+    while (swarmRuns.size > MAX_RUNS_KEPT && finished.length > 0) {
+      swarmRuns.delete(finished.shift()[0]);
+    }
   }
 
-  scheduleSwarmEvent("swarm:start", { runId, comboName, promptPreview: run.promptPreview, workerCount: run.workerCount }, 0);
+  scheduleSwarmEvent("swarm:start", { type: "swarm:start", runId, comboName, promptPreview: run.promptPreview, workerCount: run.workerCount, status: "running" }, 0);
   return run;
 }
 
@@ -96,7 +101,13 @@ export function markStageStart(runId, stage, extra = {}) {
   s.status = "running";
   s.startedAt = Date.now();
   Object.assign(s, extra);
-  scheduleSwarmEvent("swarm:stage", { runId, stage, status: "running", ...extra });
+  // Keep the run-level worker count in sync with the actually-dispatched fan-out
+  // (the pre-allocated workerCount is the configured minimum, not the real subtask
+  // count the Manager emitted — autoScale can dispatch a different number).
+  if (stage === "workers" && typeof extra.workerCount === "number") {
+    run.workerCount = extra.workerCount;
+  }
+  scheduleSwarmEvent("swarm:stage", { type: "swarm:stage", runId, stage, status: "running", ...extra });
 }
 
 /**
@@ -112,8 +123,14 @@ export function markStageDone(runId, stage, extra = {}) {
   s.status = "done";
   s.completedAt = Date.now();
   s.durationMs = s.startedAt ? s.completedAt - s.startedAt : null;
-  Object.assign(s, extra);
-  scheduleSwarmEvent("swarm:stage", { runId, stage, status: "done", durationMs: s.durationMs, ...extra });
+  // The `workers` key is the per-worker SLOT array owned by markWorkerStatus —
+  // never let a stage summary clobber it. Summary payloads (e.g. the
+  // `{ index, ok }` results array from dispatchWorkers) are parked in
+  // `s.summary` instead, preserving per-worker model/status/durationMs.
+  const { workers, ...summary } = extra;
+  Object.assign(s, summary);
+  if (workers) s.summary = { workerResults: workers };
+  scheduleSwarmEvent("swarm:stage", { type: "swarm:stage", runId, stage, status: "done", durationMs: s.durationMs, ...summary });
 }
 
 /**
@@ -135,9 +152,14 @@ export function markWorkerStatus(runId, workerIndex, status, extra = {}) {
   }
   const w = run.stages.workers.workers[workerIndex];
   if (!w) return;
+  if (status === "running" && !w.startedAt) w.startedAt = Date.now();
+  if ((status === "done" || status === "error") && !w.completedAt) {
+    w.completedAt = Date.now();
+    w.durationMs = w.startedAt ? w.completedAt - w.startedAt : null;
+  }
   w.status = status;
   Object.assign(w, extra);
-  scheduleSwarmEvent("swarm:stage", { runId, stage: "workers", worker: workerIndex, status, ...extra });
+  scheduleSwarmEvent("swarm:stage", { type: "swarm:stage", runId, stage: "workers", worker: workerIndex, status, durationMs: w.durationMs, ...extra });
 }
 
 /**
@@ -152,7 +174,7 @@ export function markRunError(runId, error) {
   run.error = String(error?.message || error || "unknown");
   run.completedAt = Date.now();
   run.totalDurationMs = run.completedAt - run.startedAt;
-  scheduleSwarmEvent("swarm:error", { runId, error: run.error, totalDurationMs: run.totalDurationMs }, 0);
+  scheduleSwarmEvent("swarm:error", { type: "swarm:error", runId, error: run.error, status: "error", totalDurationMs: run.totalDurationMs }, 0);
 }
 
 /**
@@ -169,7 +191,7 @@ export function markRunComplete(runId, extra = {}) {
   run.completedAt = Date.now();
   run.totalDurationMs = run.completedAt - run.startedAt;
   Object.assign(run, extra);
-  scheduleSwarmEvent("swarm:complete", { runId, totalDurationMs: run.totalDurationMs, ...extra }, 0);
+  scheduleSwarmEvent("swarm:complete", { type: "swarm:complete", runId, status: "done", totalDurationMs: run.totalDurationMs, ...extra }, 0);
 }
 
 /**
@@ -177,7 +199,10 @@ export function markRunComplete(runId, extra = {}) {
  * Used by GET /api/swarm/active for dashboard initial load.
  */
 export function getRecentSwarms(limit = 20) {
+  // Deep-clone so callers (REST snapshot, SSE initial snapshot, serializers)
+  // can never mutate the live run objects or observe a half-updated run.
   return [...swarmRuns.values()]
     .sort((a, b) => b.startedAt - a.startedAt)
-    .slice(0, limit);
+    .slice(0, limit)
+    .map((r) => structuredClone(r));
 }
