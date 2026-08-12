@@ -41,7 +41,7 @@ export default {
   features: { usage: true, usageApikey: true },
   models: [
     // Reasoning LLMs (Responses API + Chat Completions)
-    { id: "grok-4.5", name: "Grok 4.5" },
+    { id: "grok-4.5", name: "Grok 4.5", contextWindow: 500000 },
     { id: "grok-4.20-multi-agent", name: "Grok 4.20 Multi-Agent" },
     { id: "grok-4.20-reasoning", name: "Grok 4.20 Reasoning" },
     { id: "grok-4", name: "Grok 4" },
