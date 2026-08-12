@@ -25,6 +25,12 @@ export default {
   category: "oauth",
   serviceKinds: ["llm", "image"],
   transport: {
+    // NOTE (verified 2026-08-13): live probes against these accounts showed the
+    // production host (cloudcode-pa.googleapis.com) returning 429 RESOURCE_EXHAUSTED
+    // for EVERY account while this canary host returns 200 — so the decolua/9router
+    // PR #3208 "switch to production" premise does NOT hold here. Keep the canary
+    // host; the valuable part of that PR (request-size optimization) is ported in
+    // executors/antigravity.js.
     baseUrls: [
       "https://daily-cloudcode-pa.googleapis.com",
       "https://daily-cloudcode-pa.sandbox.googleapis.com",

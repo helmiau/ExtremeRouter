@@ -135,8 +135,11 @@ export const ANTIGRAVITY_HEADERS = {
 // Cloud Code Assist API endpoints differ by client ecosystem.
 // gemini-cli uses the production host (cloudcode-pa.googleapis.com) while
 // antigravity uses the sandbox host (daily-cloudcode-pa.googleapis.com) per
-// decolua/9router commit 190020c. Keyed by provider id; projectId.js resolves
-// the right endpoints per-connection.
+// decolua/9router commit 190020c. NOTE (verified 2026-08-13): live probes showed
+// the production host 429s every Antigravity account while the canary host
+// returns 200 — keep canary for chat; do NOT apply decolua/9router PR #3208's
+// endpoint switch here. Keyed by provider id; projectId.js resolves the right
+// endpoints per-connection.
 export const CLOUD_CODE_API = {
   "gemini-cli": {
     loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
