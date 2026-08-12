@@ -304,6 +304,22 @@ export const PROVIDER_PRICING = {
     "glm-5.2":         { input: 1.4, output: 4.4, cached: 0.26, reasoning: 4.4 },
     "gemini-3.6-flash": { input: 1.5, output: 7.5, cached: 0.15, reasoning: 7.5 },
   },
+  // Helyx AI (helyxai) — helyxai.space unified gateway price table ($/1M tokens).
+  // Free plan: 100K tokens/day, resets every 24h.
+  helyxai: {
+    "llama-3.1-8b-instruct": { input: 0.10, output: 0.25 },
+    "gemma-4-31B-it":        { input: 0.20, output: 0.50 },
+    "DeepSeek-V4-Flash":     { input: 0.14, output: 0.28 },
+    "Qwen3-32B":             { input: 0.10, output: 0.30 },
+    "gpt-5.6-luna":          { input: 0.10, output: 0.60 },
+    "gemini-3.1-flash-lite": { input: 0.25, output: 1.50 },
+    "GLM-5.2":               { input: 1.40, output: 4.40 },
+    "Mistral-4":             { input: 0.25, output: 1.00 },
+    "DeepSeek-V4-Pro":       { input: 0.43, output: 0.87 },
+    "gpt-oss-120b":          { input: 0.10, output: 0.50 },
+    "MiniMax-M3":            { input: 0.30, output: 1.20 },
+    "Kimi-K3":               { input: 4.00, output: 14.00 },
+  },
   // Meta AI (meta-ai) — api.meta.ai Muse Spark family. Standard vs Contributor
   // tier: 1.2/1.1 standard at $1.25·$4.25 per 1M, the "-contributor" variant at
   // $0.10·$0.20 (data-sharing; ~60 req/min, ~250K tokens/day cap). Shared

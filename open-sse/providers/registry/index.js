@@ -161,6 +161,7 @@ import p161 from "./tokenharbor.js";
 import p159 from "./workbuddy.js";
 import p160 from "./codebuddy-intl.js";
 import p162 from "./meta-ai.js";
+import p163 from "./helyxai.js";
 
 export default [
   p0,
@@ -325,4 +326,5 @@ export default [
   p160,
   p161,
   p162,
+  p163,
 ];
