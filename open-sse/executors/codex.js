@@ -12,6 +12,7 @@ import { DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
+import { getCapabilitiesForModel } from "../providers/capabilities.js";
 
 // SSE error patterns inside 200-OK body that should trigger retry as if 503
 const CODEX_SSE_OVERLOADED_PATTERNS = ["server_is_overloaded", "service_unavailable_error", "capacity", "rate_limit_exceeded", "insufficient_quota"];
@@ -34,8 +35,12 @@ const CODEX_PASSTHROUGH_TOOL_TYPES = new Set(["custom"]);
 const RESPONSES_API_ALLOWLIST = new Set([
   "model", "input", "instructions", "tools", "tool_choice", "stream", "store",
   "reasoning", "service_tier", "include", "prompt_cache_key", "client_metadata",
-  "text"
+  "text", "max_output_tokens"
 ]);
+
+// Ceiling applied when deriving a default max_output_tokens for codex models
+// whose capability table doesn't advertise an output limit.
+const CODEX_MAX_OUTPUT_TOKENS_CEILING = 128000;
 
 // Convert role=system → role=developer in body.input (keeps content in cacheable prefix)
 function convertSystemToDeveloperRole(body) {
@@ -193,6 +198,10 @@ export class CodexExecutor extends BaseExecutor {
   }
 
   async execute(args) {
+    // Per-request state: a 400 fallback inside this loop may suppress
+    // max_output_tokens for the retry, but must never leak into later requests.
+    this._suppressMaxOutputTokens = false;
+
     const imgCount = Array.isArray(args.body?.input) ? args.body.input.reduce((n, it) => n + (Array.isArray(it.content) ? it.content.filter(c => c.type === "image_url").length : 0), 0) : 0;
     const inputLen = Array.isArray(args.body?.input) ? args.body.input.length : 0;
     dbg("CODEX", `execute start | inputItems=${inputLen} | images=${imgCount} | sessionId=${this._currentSessionId || "pending"}`);
@@ -211,6 +220,20 @@ export class CodexExecutor extends BaseExecutor {
     let attempt = 0;
     while (true) {
       const result = await super.execute(args);
+
+      // Defensive fallback: if the upstream endpoint rejects max_output_tokens
+      // (older/alternate Codex backends that 400 on the field), retry once
+      // without it so requests that worked before the injection keep working.
+      if (!this._suppressMaxOutputTokens && result.response.status === 400) {
+        const rejectBody = await result.response.clone().text().catch(() => "");
+        if (rejectBody && /max_output_tokens/.test(rejectBody)) {
+          args.log?.warn?.("RETRY", "CODEX | upstream rejected max_output_tokens (400) — retrying without it");
+          this._suppressMaxOutputTokens = true;
+          try { await result.response.body?.cancel?.(); } catch { /* noop */ }
+          continue;
+        }
+      }
+
       const peek = await this._peekSseOverloaded(result.response);
       if (!peek.matched) {
         // Replace body with re-assembled stream (prefix bytes already read + rest)
@@ -397,7 +420,19 @@ export class CodexExecutor extends BaseExecutor {
     delete body.seed;
     delete body.max_tokens;
     delete body.max_completion_tokens;
-    delete body.max_output_tokens; // Responses API clients send this but Codex rejects it
+    // max_output_tokens is a native Responses API field and the official Codex
+    // CLI sends it (openai/codex#36180). Forward the client's value when
+    // present; otherwise inject a model-aware default so heavy-reasoning models
+    // (gpt-5.6-luna / gpt-5.6-terra) don't get truncated mid-tool-call by the
+    // backend's small default output cap — the CLI then fails with "Bash was
+    // called with input that could not be parsed as JSON" on the partial JSON.
+    if (this._suppressMaxOutputTokens) {
+      delete body.max_output_tokens;
+    } else if (!(Number.isFinite(body.max_output_tokens) && body.max_output_tokens > 0)) {
+      const caps = getCapabilitiesForModel("codex", model);
+      const ceiling = Number.isFinite(caps?.maxOutput) && caps.maxOutput > 0 ? caps.maxOutput : CODEX_MAX_OUTPUT_TOKENS_CEILING;
+      body.max_output_tokens = Math.min(ceiling, CODEX_MAX_OUTPUT_TOKENS_CEILING);
+    }
     delete body.user; // Cursor sends this but Codex doesn't support it
     delete body.prompt_cache_retention; // Cursor sends this but Codex doesn't support it
     delete body.metadata; // Cursor sends this but Codex doesn't support it

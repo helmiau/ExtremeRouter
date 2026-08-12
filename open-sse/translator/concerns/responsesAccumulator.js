@@ -124,6 +124,11 @@ export class ResponsesAccumulator {
               callId: item.call_id || "",
               name: item.name || "",
               argsBuffer: "",
+              // True once at least one arguments delta arrived for this call.
+              // Lets consumers distinguish "streamed via deltas" from
+              // "only a terminal snapshot" so they never re-emit the full
+              // buffer after the deltas (which duplicates the arguments).
+              argsStreamed: false,
               done: false,
               emitted: false,
             };
@@ -168,6 +173,7 @@ export class ResponsesAccumulator {
         const tool = this._tools.get(key);
         if (tool) {
           tool.argsBuffer += delta;
+          tool.argsStreamed = true;
         }
         break;
       }
@@ -295,6 +301,7 @@ export class ResponsesAccumulator {
           callId: item.call_id || "",
           name: item.name || "",
           argsBuffer: args,
+          argsStreamed: false,
           done: true,
           emitted: false,
         });
@@ -306,6 +313,13 @@ export class ResponsesAccumulator {
         if (!existing.name && item.name) existing.name = item.name;
         if (!existing.callId && item.call_id) existing.callId = item.call_id;
         if (!existing.itemId && item.id) existing.itemId = item.id;
+        // Reconcile arguments the same way output_item.done does: if the
+        // terminal snapshot is more complete than the accumulated deltas,
+        // prefer it (mirrors preferComplete semantics).
+        if (item.arguments != null) {
+          const snapshot = typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments);
+          existing.argsBuffer = preferComplete(existing.argsBuffer, snapshot);
+        }
       }
     } else if (item.type === "message") {
       this._messages.set(index, {

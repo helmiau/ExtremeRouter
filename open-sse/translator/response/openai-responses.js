@@ -489,16 +489,19 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
   // output_item.done (no deltas) — in that case the accumulator has the
   // full arguments from the done event but they were never streamed.
   // Emit a final arguments delta so the client receives the payload.
+  //
+  // When the arguments WERE streamed via deltas, the client already
+  // accumulated them — re-emitting the full buffer here would concatenate
+  // the arguments twice and corrupt the tool-call JSON (the golden snapshot
+  // previously locked in this duplication). The accumulator tracks
+  // argsStreamed so we only synthesize the final delta for no-delta
+  // providers.
   if (eventType === "response.output_item.done" && (data.item?.type === RESPONSES_ITEM.FUNCTION_CALL || data.item?.type === "custom_tool_call")) {
     const itemId = data.item?.id || data.item?.call_id || "";
     if (itemId) acc.markToolCallEmitted(itemId);
 
-    // Check if this tool's arguments were never streamed via deltas.
-    // The accumulator's argsBuffer was populated by _ingestFullItem or by
-    // output_item.done's snapshot. If we haven't emitted arguments yet,
-    // emit them now.
     const tool = acc.getTool(data.output_index ?? itemId);
-    if (tool && tool.argsBuffer && !acc.isToolCallEmitted(`args_${itemId}`)) {
+    if (tool && tool.argsBuffer && !tool.argsStreamed && !acc.isToolCallEmitted(`args_${itemId}`)) {
       acc.markToolCallEmitted(`args_${itemId}`);
       const tcIndex = acc.toolCallIndexFor(data.output_index ?? itemId);
       return buildChunk(
