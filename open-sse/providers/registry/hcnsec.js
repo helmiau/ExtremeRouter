@@ -70,6 +70,9 @@ export default {
   passthroughModels: true,
   modelsFetcher: {
     url: "https://api.hcnsec.cn/v1/models",
-    type: "openai",
+    // hcnsec-type parser (suggested-models/filters.js) reads the gateway's
+    // context_window/context_length + vision/reasoning fields via the shared
+    // config-driven mapper.
+    type: "hcnsec",
   },
 };

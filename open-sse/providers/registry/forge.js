@@ -85,7 +85,10 @@ export default {
   // FREE key → 32 models, PRO key → 33 models (+ Claude Fable 5).
   modelsFetcher: {
     url: "https://forge-gateway-api.fly.dev/v1/models",
-    type: "openai",
+    // forge-type parser (suggested-models/filters.js) reads the gateway's
+    // context_window/context_length + vision/reasoning fields via the shared
+    // config-driven mapper.
+    type: "forge",
   },
   // Forge supports reasoning via "thinking": true in the request body.
   // thinkingConfig enables the thinking level picker in the UI for all models.

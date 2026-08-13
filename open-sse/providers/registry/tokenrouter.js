@@ -51,7 +51,10 @@ export default {
   passthroughModels: true,
   modelsFetcher: {
     url: "https://api.tokenrouter.com/v1/models",
-    type: "openai",
+    // tokenrouter-type parser (suggested-models/filters.js) reads the
+    // gateway's context_window/context_length + vision/reasoning fields via
+    // the shared config-driven mapper.
+    type: "tokenrouter",
   },
   pricing: "tokenrouter",
   // TokenRouter: reasoning_effort sent as enum low/medium/high/xhigh/max — expose UI picker.

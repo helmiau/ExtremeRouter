@@ -166,6 +166,25 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-v4-flash":  { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
     "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
   },
+  // Bynara (router.bynara.id) — deterministic runtime mirror of the gateway's
+  // /v1/models metadata (context_window, vision, reasoning). The live values
+  // are also absorbed automatically by the bynara modelsFetcher parser
+  // (suggested-models/filters.js) for the providers page; this static block
+  // keeps getCapabilitiesForModel correct for picker/combo/playground even
+  // before/without that fetch. Reasoning models speak OpenAI reasoning_effort
+  // (the gateway's primary chat format).
+  bynara: {
+    "agnes-2.0-flash":     { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 512000 },
+    "agnes-2.5-flash":     { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 512000 },
+    "grok-4.5-free":       { vision: true, contextWindow: 212000 },
+    "laguna-s-2.1":        { reasoning: true, thinkingFormat: "openai", contextWindow: 262000 },
+    "ling-3.0-flash-free": { reasoning: true, thinkingFormat: "openai", contextWindow: 262000 },
+    "mistral-large":       { contextWindow: 252000 },
+    "mistral-medium-3-5":  { vision: true, contextWindow: 256000 },
+    "nemotron-3-ultra":    { contextWindow: 1000000 },
+    "stepfun-3.7-flash":   { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 262000 },
+    "tencent-hy3-free":    { contextWindow: 262000 },
+  },
   // tokenharbor — AI gateway; pin the Claude 5 flagships to claude-adaptive 1M
   // so the generic *claude*opus*/*claude*fable* pattern (claude-budget 200k)
   // can't win for these models.

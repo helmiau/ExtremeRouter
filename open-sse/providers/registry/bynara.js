@@ -58,7 +58,11 @@ export default {
       format: "claude",
       baseUrl: "https://router.bynara.id/v1/messages",
       headers: { ...CLAUDE_API_HEADERS },
-      auth: { combined: true, header: "x-api-key", scheme: "raw" },
+      // Bynara's /v1/messages authenticates with the same sk-nry- key as a
+      // Bearer token (docs: "call this path with your key as the Bearer
+      // token"), NOT x-api-key like real Anthropic. Without this the
+      // cross-transport fallback would 401.
+      auth: { combined: true, header: "Authorization", scheme: "bearer" },
     },
   ],
   // Live discovery — /v1/models exposes whatever the key has access to.
@@ -66,7 +70,10 @@ export default {
   passthroughModels: true,
   modelsFetcher: {
     url: "https://router.bynara.id/v1/models",
-    type: "openai",
+    // bynara-type parser (suggested-models/filters.js) reads the gateway's
+    // context_window / vision / reasoning fields directly, instead of the
+    // generic OpenAI shape which only understands context_length.
+    type: "bynara",
   },
   // Image generation via separate host.
   serviceKinds: ["llm", "image"],

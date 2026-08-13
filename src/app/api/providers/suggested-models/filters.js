@@ -18,6 +18,47 @@ function openaiStyleMap(models) {
     .filter(Boolean);
 }
 
+// Config-driven mapper for OpenAI-compatible gateways whose /v1/models returns
+// per-model metadata under gateway-specific field names. Field names are
+// declared as DATA (field lists), so a new gateway (or a renamed field) is a
+// one-line config change — no mapping code to touch. Unknown fields degrade
+// gracefully: contextLength stays undefined and bools coerce to false, which
+// is never worse than the generic OpenAI shape.
+//   contextFields — first present value becomes contextLength
+//   boolFields    — coerced !!value and copied (vision, reasoning, …)
+//   rawFields     — copied verbatim when present (weight, …)
+function mapModelsWithFields(raw, { contextFields = [], boolFields = [], rawFields = [] } = {}) {
+  const models = Array.isArray(raw?.data) ? raw.data : (Array.isArray(raw) ? raw : []);
+  return models
+    .map((m) => {
+      const id = m?.id || m?.model || m?.name;
+      if (!id || typeof id !== "string") return null;
+      const out = {
+        id,
+        name: m?.name || m?.display_name || m?.displayName || id,
+      };
+      for (const f of contextFields) {
+        const v = m?.[f];
+        if (v) {
+          out.contextLength = v;
+          break;
+        }
+      }
+      for (const f of boolFields) out[f] = !!m?.[f];
+      for (const f of rawFields) if (m?.[f] !== undefined) out[f] = m[f];
+      return out;
+    })
+    .filter(Boolean);
+}
+
+// Metadata field names shared by the gateway-type parsers below: most report
+// context as context_window (bynara) or a context_length variant (forge,
+// tokenrouter, hcnsec), with explicit vision/reasoning flags.
+const GATEWAY_META_FIELDS = {
+  contextFields: ["context_window", "context_length", "contextLength", "max_model_len"],
+  boolFields: ["vision", "reasoning"],
+};
+
 export const FILTERS = {
   // Standard OpenAI /v1/models shape — used by hcnsec, forge, tokenrouter,
   // featherless, venice, vercel-ai-gateway, etc.
@@ -79,4 +120,28 @@ export const FILTERS = {
     (Array.isArray(models) ? models : [])
       .filter((m) => m.id?.startsWith("mimo") || m.name?.toLowerCase().includes("mimo"))
       .map((m) => ({ id: m.id, name: m.name || m.id })),
+
+  // Bynara (router.bynara.id) — /v1/models returns
+  //   { object: "list", data: [{ id, object, owned_by, context_window, weight,
+  //                              vision, reasoning }] }
+  bynara: (data) => mapModelsWithFields(data, {
+    contextFields: ["context_window", "context_length"],
+    boolFields: ["vision", "reasoning"],
+    rawFields: ["weight"],
+  }),
+
+  // Forge Workspace — OpenAI-compatible gateway; /v1/models reports metadata
+  // (context_window / context_length + vision/reasoning) under gateway field
+  // names, absorbed by the shared config-driven mapper.
+  forge: (data) => mapModelsWithFields(data, GATEWAY_META_FIELDS),
+
+  // TokenRouter — OpenAI-compatible gateway; /v1/models is key-gated, catalog
+  // auto-filters by the key's tier. Field names may vary per gateway — the
+  // config-driven mapper covers the common context_window/context_length +
+  // vision/reasoning conventions.
+  tokenrouter: (data) => mapModelsWithFields(data, GATEWAY_META_FIELDS),
+
+  // HCNsec — OpenAI-compatible gateway; /v1/models is key-gated (fetched via
+  // the authenticated suggested-models proxy). Same config-driven mapping.
+  hcnsec: (data) => mapModelsWithFields(data, GATEWAY_META_FIELDS),
 };
