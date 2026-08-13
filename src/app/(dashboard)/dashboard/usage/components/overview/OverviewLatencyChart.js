@@ -8,6 +8,7 @@ import EmptyState from "@/shared/components/EmptyState";
 import LatencyChart from "@/shared/components/charts/LatencyChart";
 import { fmt, fmtMs } from "./format";
 import { useFetchJson } from "./useFetch";
+import { LATENCY_MIN_SAMPLES, hasEnoughLatencySamples } from "@/shared/utils/latencyDisplay";
 
 export default function OverviewLatencyChart({ period, stats }) {
   const url = `/api/usage/chart?view=latency&period=${period}`;
@@ -64,7 +65,18 @@ export default function OverviewLatencyChart({ period, stats }) {
             <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <SummaryStat label="Avg" value={summary.avg != null ? fmtMs(summary.avg) : "—"} />
               <SummaryStat label="p50" value={summary.p50 != null ? fmtMs(summary.p50) : "—"} />
-              <SummaryStat label="p95" value={summary.p95 != null ? fmtMs(summary.p95) : "—"} accent />
+              {/* Guard p95: a percentile from a handful of samples is misleading. */}
+              <SummaryStat
+                label="p95"
+                value={hasEnoughLatencySamples(summary.samples)
+                  ? (summary.p95 != null ? fmtMs(summary.p95) : "—")
+                  : "insufficient data"}
+                accent
+                warn={!hasEnoughLatencySamples(summary.samples)}
+                title={summary.samples != null && summary.samples < LATENCY_MIN_SAMPLES
+                  ? `${summary.samples} latency samples this period — need at least ${LATENCY_MIN_SAMPLES}`
+                  : undefined}
+              />
               <SummaryStat
                 label="Samples"
                 value={summary.samples != null ? fmt(summary.samples) : "—"}
@@ -78,12 +90,13 @@ export default function OverviewLatencyChart({ period, stats }) {
   );
 }
 
-function SummaryStat({ label, value, accent = false }) {
+function SummaryStat({ label, value, accent = false, warn = false, title }) {
   return (
     <div className="rounded-brand border border-border-subtle bg-surface-2 px-3 py-2">
       <div className="text-[11px] uppercase tracking-wide text-text-muted">{label}</div>
       <div
-        className={`truncate text-sm font-semibold ${accent ? "text-cyan" : "text-text-main"}`}
+        className={`truncate text-sm font-semibold ${accent ? "text-cyan" : "text-text-main"} ${warn ? "text-amber-500" : ""}`}
+        title={title}
       >
         {value}
       </div>
@@ -95,6 +108,8 @@ SummaryStat.propTypes = {
   label: PropTypes.string.isRequired,
   value: PropTypes.string.isRequired,
   accent: PropTypes.bool,
+  warn: PropTypes.bool,
+  title: PropTypes.string,
 };
 
 OverviewLatencyChart.propTypes = {

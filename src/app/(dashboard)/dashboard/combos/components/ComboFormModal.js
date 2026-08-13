@@ -6,7 +6,8 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSo
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
 import { Button, Modal, Input, ModelSelectModal, Badge } from "@/shared/components";
 import ModelItem from "./ModelItem";
-import { VALID_NAME_REGEX, STRATEGY_OPTIONS } from "./helpers";
+import SimulatorPanel from "./SimulatorPanel";
+import { VALID_NAME_REGEX, STRATEGY_OPTIONS, getStrategyMeta } from "./helpers";
 
 // ComboFormModal — redesigned create/edit combo modal.
 //
@@ -19,6 +20,7 @@ import { VALID_NAME_REGEX, STRATEGY_OPTIONS } from "./helpers";
 export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, modelCaps = {}, kindFilter = null }) {
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
+  const [strategy, setStrategy] = useState(combo?.strategyConfig?.fallbackStrategy || "fallback");
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -34,6 +36,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
     if (isOpen && !wasOpen) {
       setName(combo?.name || "");
       setModels(Array.isArray(combo?.models) ? [...combo.models] : []);
+      setStrategy(combo?.strategyConfig?.fallbackStrategy || "fallback");
       setNameError("");
       setShowModelSelect(false);
     }
@@ -121,7 +124,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models });
+    await onSave({ name: name.trim(), models, strategyConfig: { fallbackStrategy: strategy } });
     setSaving(false);
   };
 
@@ -208,6 +211,46 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
               </>
             )}
           </div>
+
+          {/* Strategy picker — feeds the simulator below and is saved into
+              strategyConfig.fallbackStrategy so the combo runs with the
+              simulated strategy immediately after save. */}
+          <div>
+            <div className="mb-2 flex items-center justify-between">
+              <label className="text-sm font-medium text-text-main">Strategy</label>
+              <span className="text-[10px] text-text-muted">How the combo dispatches requests</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
+              {STRATEGY_OPTIONS.map((opt) => {
+                const active = strategy === opt.value;
+                const meta = getStrategyMeta(opt.value);
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setStrategy(opt.value)}
+                    title={opt.desc}
+                    className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-1.5 text-[11px] transition-colors ${active
+                      ? "border-primary/50 bg-primary/10 text-primary"
+                      : "border-border-subtle bg-surface-2/50 text-text-muted hover:border-border hover:text-text-main"}`}
+                  >
+                    <span className="material-symbols-outlined text-[16px]" style={{ color: active ? undefined : meta.color }}>
+                      {opt.icon}
+                    </span>
+                    <span className="font-medium">{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Combo Simulator — live preview of calls/cost/capability/latency/budget */}
+          {models.length > 0 && (
+            <SimulatorPanel
+              models={models}
+              strategyConfig={{ fallbackStrategy: strategy }}
+            />
+          )}
 
           {/* Strategy hint */}
           {models.length >= 2 && (

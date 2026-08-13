@@ -3,6 +3,7 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 import { getPricingForModel } from "open-sse/providers/pricing.js";
+import { percentile } from "@/lib/usageStats.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -856,13 +857,13 @@ export async function getUsageStats(period = "all") {
       [startTs]
     );
     if (latencyRows.length > 0) {
+      // vals is already sorted ASC (ORDER BY latencyTotalMs ASC) — the shared
+      // percentile helper expects a sorted array.
       const vals = latencyRows.map((r) => r.latencyTotalMs);
-      const sum = vals.reduce((a, b) => a + b, 0);
-      const pick = (p) => vals[Math.min(vals.length - 1, Math.floor((p / 100) * vals.length))];
       stats.latency = {
-        avg: Math.round(sum / vals.length),
-        p50: pick(50),
-        p95: pick(95),
+        avg: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length),
+        p50: percentile(vals, 50),
+        p95: percentile(vals, 95),
         sampleCount: vals.length,
       };
     } else {

@@ -5,6 +5,7 @@ import Link from "next/link";
 import Card from "@/shared/components/Card";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { getProviderIconPath } from "@/shared/utils/providerIcon";
+import { LATENCY_MIN_SAMPLES, latencyDisplay } from "@/shared/utils/latencyDisplay";
 
 function formatMs(ms) {
   if (ms == null) return "—";
@@ -144,6 +145,8 @@ export default function LeaderboardTable() {
                     : row.successRate >= 80
                       ? "text-amber-500"
                       : "text-red-500";
+                // Guard p95: a percentile from a handful of samples is misleading.
+                const p95 = latencyDisplay(row.p95Latency, row.latencySampleCount);
 
                 return (
                   <tr
@@ -182,8 +185,17 @@ export default function LeaderboardTable() {
                     <td className="px-3 py-2.5 text-xs tabular-nums text-text-muted">
                       {formatMs(row.avgTtft)}
                     </td>
-                    <td className="px-3 py-2.5 text-xs tabular-nums text-text-muted">
-                      {formatMs(row.p95Latency)}
+                    <td className="px-3 py-2.5 text-xs tabular-nums">
+                      {p95.insufficient ? (
+                        <span
+                          className="text-amber-500"
+                          title={`${row.latencySampleCount} latency sample${row.latencySampleCount === 1 ? "" : "s"} this period — need at least ${LATENCY_MIN_SAMPLES}`}
+                        >
+                          insufficient data
+                        </span>
+                      ) : (
+                        <span className="text-text-muted">{p95.value}</span>
+                      )}
                     </td>
                     <td className={`px-3 py-2.5 text-xs font-medium tabular-nums ${successColor}`}>
                       {row.successRate.toFixed(1)}%

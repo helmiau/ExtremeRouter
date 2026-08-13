@@ -177,10 +177,43 @@ export function validateComboDefinition(data, { allowPartial = false } = {}) {
   return { valid: errors.length === 0, errors };
 }
 
+// Worst-case logical calls for ONE request of a combo (used by the runtime
+// budget call-cap — combo_call_budget_exceeded). NOT a nominal/typical
+// estimate: fallback/round-robin normally succeed on the first model (1 call)
+// and cascade can stop at stage 1; see estimateCallsRange for {min, max}.
+// Per-strategy worst case:
+//   fallback / round-robin → every member tried until one succeeds = memberCount
+//   fusion  → all panel members + judge = members + 1
+//   swarm   → gatekeeper(1) + manager strategy(1) + workers(N) +
+//             staff audit(1) + manager synthesis(1) = workers + 4
+//             (a simple request short-circuits to a single direct answer = 1)
+//   cascade → one call per escalation stage, capped by maxStages
+//             = min(memberCount, maxStages)
 export function estimateLogicalCalls(strategyConfig, memberCount) {
   const cfg = normalizeComboStrategyConfig(strategyConfig);
   if (cfg.fallbackStrategy === "fusion") return Math.min(memberCount, COMBO_LIMITS.maxMembers) + 1;
   if (cfg.fallbackStrategy === "swarm") return Math.min(cfg.workerCount, COMBO_LIMITS.maxWorkers) + 4;
   if (cfg.fallbackStrategy === "cascade") return Math.min(memberCount, cfg.cascade?.maxStages || 3);
   return Math.max(1, Math.min(memberCount, COMBO_LIMITS.maxMembers));
+}
+
+/**
+ * Nominal-to-worst call range for ONE request, for pre-save simulation UX.
+ *
+ * The worst bound reuses estimateLogicalCalls (so the runtime budget cap and
+ * the simulator can never drift). The min bound is the short-circuit path:
+ *   fallback / round-robin → first model succeeds (1)
+ *   cascade                → first stage answers confidently (1)
+ *   swarm                  → gatekeeper classifies the request as simple (1)
+ *   fusion                 → always the full panel + judge (deterministic)
+ *
+ * @param {object} strategyConfig
+ * @param {number} memberCount
+ * @returns {{min: number, max: number}}
+ */
+export function estimateCallsRange(strategyConfig, memberCount) {
+  const cfg = normalizeComboStrategyConfig(strategyConfig);
+  const worst = estimateLogicalCalls(strategyConfig, memberCount);
+  const deterministic = cfg.fallbackStrategy === "fusion";
+  return deterministic ? { min: worst, max: worst } : { min: 1, max: worst };
 }
