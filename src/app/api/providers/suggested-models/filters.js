@@ -1,8 +1,26 @@
 // Free OpenCode models that don't use the "-free" id suffix
 const KNOWN_FREE_OPENCODE_MODELS = ["big-pickle"];
 
+// Normalize a context field value to a number: gateways may return strings
+// ("262144" or "200K"). Non-numeric / non-positive values are dropped so the
+// UI never renders "NaNk ctx".
+function coerceContext(v) {
+  if (v === undefined || v === null) return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
 function openaiStyleMap(models) {
-  return (Array.isArray(models) ? models : [])
+  // The route pre-extracts json.data/models, but accept a raw envelope too so
+  // direct calls (tests) behave like the other config-driven mappers.
+  const list = Array.isArray(models?.data)
+    ? models.data
+    : Array.isArray(models?.models)
+      ? models.models
+      : Array.isArray(models)
+        ? models
+        : [];
+  return list
     .map((m) => {
       const id = m?.id || m?.model || m?.name;
       if (!id || typeof id !== "string") return null;
@@ -12,7 +30,12 @@ function openaiStyleMap(models) {
       return {
         id,
         name: m?.name || m?.display_name || m?.displayName || id,
-        contextLength: m?.context_length || m?.contextLength || m?.max_model_len || undefined,
+        // context_window first: several OpenAI-compatible gateways (bynara,
+        // forge, …) report the window under that name even on "openai"-typed
+        // catalogs; context_length/max_model_len are the other conventions.
+        contextLength: coerceContext(
+          m?.context_window ?? m?.context_length ?? m?.contextLength ?? m?.max_model_len
+        ),
       };
     })
     .filter(Boolean);
@@ -38,7 +61,7 @@ function mapModelsWithFields(raw, { contextFields = [], boolFields = [], rawFiel
         name: m?.name || m?.display_name || m?.displayName || id,
       };
       for (const f of contextFields) {
-        const v = m?.[f];
+        const v = coerceContext(m?.[f]);
         if (v) {
           out.contextLength = v;
           break;

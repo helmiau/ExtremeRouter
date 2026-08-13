@@ -72,6 +72,21 @@ describe("config-driven gateway parsers (forge / tokenrouter / hcnsec)", () => {
     }
   });
 
+  it("openai-style catalogs also absorb context_window and string context values", () => {
+    const out = FILTERS.openai({
+      data: [
+        { id: "m1", context_window: 262144 },              // bynara-style name on an openai-type catalog
+        { id: "m2", context_length: "200000" },            // string number → coerced
+        { id: "m3", contextLength: "200K" },               // non-numeric string → dropped (no NaNk ctx)
+        { id: "m4" },
+      ],
+    });
+    expect(out.find((m) => m.id === "m1").contextLength).toBe(262144);
+    expect(out.find((m) => m.id === "m2").contextLength).toBe(200000);
+    expect(out.find((m) => m.id === "m3").contextLength).toBeUndefined();
+    expect(out.find((m) => m.id === "m4").contextLength).toBeUndefined();
+  });
+
   it("registry points each gateway at its own parser type", () => {
     const cases = [
       ["forge", "forge", "https://forge-gateway-api.fly.dev/v1/models"],

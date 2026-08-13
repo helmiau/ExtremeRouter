@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { FILTERS } from "./filters.js";
+import {
+  suggestedModelsCacheKey,
+  getCachedSuggestedModels,
+  setCachedSuggestedModels,
+} from "@/lib/suggestedModelsCache";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +73,15 @@ export async function GET(request) {
     return NextResponse.json({ error: "Missing url" }, { status: 400 });
   }
 
+  // Serve key-gated catalogs from the in-process cache when fresh: the list
+  // barely changes, so avoid re-hitting upstream on every page open. The key
+  // includes connectionId because different keys see different catalogs.
+  const cacheKey = suggestedModelsCacheKey(url, connectionId, type);
+  const cached = getCachedSuggestedModels(cacheKey);
+  if (cached) {
+    return NextResponse.json({ data: cached });
+  }
+
   try {
     const headers = { Accept: "application/json" };
     if (authHeader) headers.Authorization = authHeader;
@@ -82,6 +96,7 @@ export async function GET(request) {
     const json = await res.json();
     const raw = json.data ?? json.models ?? json;
     const data = filter(Array.isArray(raw) ? raw : []);
+    setCachedSuggestedModels(cacheKey, data);
     return NextResponse.json({ data });
   } catch {
     return NextResponse.json({ data: [] });
