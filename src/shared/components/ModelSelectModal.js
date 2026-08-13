@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
 import ProviderIcon from "./ProviderIcon";
@@ -9,6 +9,7 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 import { getProviderIconPath } from "@/shared/utils/providerIcon";
+import { computeGroupOffsets, visibleGroupRange } from "@/shared/utils/listWindow";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -392,6 +393,94 @@ export default function ModelSelectModal({
     return filtered;
   }, [groupedModels, searchQuery, addedModelValues]);
 
+  // --------------------------------------------------------------------------
+  // Windowing: the catalog is 1300+ models across ~136 provider groups, so
+  // rendering every group (and every pill button) on each open costs hundreds
+  // of ms of DOM work. We render only the groups intersecting the viewport
+  // (plus overscan), with spacer divs preserving the scrollbar height. Group
+  // heights are estimated first, then measured from the DOM and cached.
+  // --------------------------------------------------------------------------
+  const groupsArr = useMemo(() => Object.entries(filteredGroups), [filteredGroups]);
+
+  const scrollRef = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(400); // max-h-[400px] until measured
+  const [measuredHeights, setMeasuredHeights] = useState({});
+
+  // Reset scroll when the modal opens (it stays mounted, so scrollTop persists
+  // across opens otherwise).
+  useEffect(() => {
+    if (isOpen) {
+      setScrollTop(0);
+      if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    }
+  }, [isOpen]);
+
+  // Track the real viewport height (the container is max-h-[400px], but can be
+  // shorter when few groups render).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const update = () => setViewportH(el.clientHeight || 400);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isOpen, groupsArr.length]);
+
+  const { offsets, total } = useMemo(
+    () => computeGroupOffsets(groupsArr, measuredHeights),
+    [groupsArr, measuredHeights]
+  );
+
+  // Clamp scroll when the list shrinks (search/filter) or the user scrolls
+  // past the estimated end, so the window never points past the content.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const max = Math.max(0, total - viewportH);
+    if (el.scrollTop > max) {
+      el.scrollTop = max;
+      setScrollTop(max);
+    }
+  }, [total, viewportH, scrollTop]);
+
+  const { start, end } = useMemo(
+    () => visibleGroupRange(offsets, total, scrollTop, viewportH, 2),
+    [offsets, total, scrollTop, viewportH]
+  );
+
+  // Measure rendered groups so offsets converge to real heights. Each provider
+  // gets a stable callback (cached per id) so refs don't detach/reattach on
+  // every render; the state guard returns the same object when unchanged, so
+  // this never causes re-render loops.
+  const measureRefs = useRef(new Map());
+  const measureGroupRef = useCallback((providerId) => {
+    let fn = measureRefs.current.get(providerId);
+    if (!fn) {
+      fn = (el) => {
+        if (el && el.offsetHeight > 0) {
+          setMeasuredHeights((prev) =>
+            prev[providerId] === el.offsetHeight
+              ? prev
+              : { ...prev, [providerId]: el.offsetHeight }
+          );
+        }
+      };
+      measureRefs.current.set(providerId, fn);
+    }
+    return fn;
+  }, []);
+
+  const onScroll = useCallback((e) => setScrollTop(e.currentTarget.scrollTop), []);
+
+  // Spacer heights for the windowed slice (skip both when nothing is visible).
+  const sliceStart = Math.min(start, groupsArr.length);
+  const sliceEnd = Math.min(end, groupsArr.length - 1);
+  const topSpacerH = sliceStart >= groupsArr.length ? total : offsets[sliceStart];
+  const bottomSpacerH =
+    sliceEnd + 1 < groupsArr.length ? Math.max(0, total - offsets[sliceEnd + 1]) : 0;
+
   const handleSelect = (model) => {
     const value = model?.value || model?.name || model;
     const isAdded = addedModelValues.includes(value);
@@ -442,11 +531,12 @@ export default function ModelSelectModal({
         </div>
       </div>
 
-      {/* Models grouped by provider - compact */}
-      <div className="max-h-[400px] overflow-y-auto space-y-3">
-        {/* Combos section - always first */}
+      {/* Models grouped by provider - compact (windowed: only the provider
+          groups intersecting the viewport are mounted) */}
+      <div ref={scrollRef} onScroll={onScroll} className="max-h-[400px] overflow-y-auto">
+        {/* Combos section - always first (few entries, rendered whole) */}
         {filteredCombos.length > 0 && (
-          <div>
+          <div className="mb-3">
             <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
               <span className="material-symbols-outlined text-primary text-[14px]">layers</span>
               <span className="text-xs font-medium text-primary">Combos</span>
@@ -480,9 +570,11 @@ export default function ModelSelectModal({
           </div>
         )}
 
-        {/* Provider models */}
-        {Object.entries(filteredGroups).map(([providerId, group]) => (
-          <div key={providerId}>
+        {/* Provider models - windowed. Spacers keep the scrollbar sized to the
+            full catalog while only visible groups (+overscan) are mounted. */}
+        {topSpacerH > 0 && <div style={{ height: topSpacerH }} aria-hidden />}
+        {groupsArr.slice(sliceStart, sliceEnd + 1).map(([providerId, group]) => (
+          <div key={providerId} ref={measureGroupRef(providerId)} className="pb-3">
             {/* Provider header */}
             <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
               <ProviderIcon
@@ -549,6 +641,7 @@ export default function ModelSelectModal({
             </div>
           </div>
         ))}
+        {bottomSpacerH > 0 && <div style={{ height: bottomSpacerH }} aria-hidden />}
 
         {Object.keys(filteredGroups).length === 0 && filteredCombos.length === 0 && (
           <div className="text-center py-4 text-text-muted">

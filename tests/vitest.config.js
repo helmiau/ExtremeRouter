@@ -1,6 +1,31 @@
 import { defineConfig } from "vitest/config";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
+import { transform as esbuildTransform } from "esbuild";
+
+// The app's client components are .js files containing JSX (Next compiles them
+// with SWC at runtime). Vitest's own esbuild pass only forwards `target`/
+// `sourcemap`/`legalComments`, and Vite's vite:esbuild excludes ".js" by
+// default — so JSX-in-.js would otherwise fail import analysis. This pre plugin
+// transforms exactly those files (sniffed by JSX delimiters) with esbuild's
+// automatic JSX runtime, keeping the default transform pipeline untouched.
+const jsxInJsPlugin = {
+  name: "jsx-in-js",
+  enforce: "pre",
+  async transform(code, id) {
+    if (!id.endsWith(".js") || id.includes("node_modules")) return null;
+    // Cheap JSX sniff: real JSX always contains a closing tag (`</tag`, `</>`)
+    // or a self-closing tag (`/>`); plain JS rarely does.
+    if (!code.includes("</") && !code.includes("/>")) return null;
+    const result = await esbuildTransform(code, {
+      loader: "jsx",
+      jsx: "automatic",
+      sourcefile: id,
+      sourcemap: "external",
+    });
+    return { code: result.code, map: result.map };
+  },
+};
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
@@ -54,6 +79,7 @@ export default defineConfig({
     // Suppress noisy console output from handlers under test
     silent: false,
   },
+  plugins: [jsxInJsPlugin],
   resolve: {
     // Use array form so subpath aliases (e.g. "@/lib/db/index.js") resolve correctly.
     alias: [

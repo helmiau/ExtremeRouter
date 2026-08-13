@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { visibleGroupRange } from "@/shared/utils/listWindow";
 function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
@@ -103,6 +104,65 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     type: "llm",
   });
 
+  // ── Windowing ─────────────────────────────────────────────────────────────
+  // Imported /models catalogs can reach hundreds of rows; mounting them all
+  // on the page costs real DOM work. Rows are uniform, so once the list gets
+  // long we contain it in a scroll area and mount only the visible slice
+  // (+ overscan), with spacers preserving the scrollbar. Short lists keep the
+  // previous inline layout.
+  const ROW_EST = 66; // row (~54px) + gap-3 (12px)
+  const OVERSCAN = 4;
+  const isLong = allModels.length > 20;
+
+  const scrollRef = useRef(null);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [viewportH, setViewportH] = useState(480);
+
+  const rowsOffsets = useMemo(() => {
+    const offsets = new Array(allModels.length);
+    let total = 0;
+    for (let i = 0; i < allModels.length; i++) {
+      offsets[i] = total;
+      total += ROW_EST;
+    }
+    return { offsets, total };
+  }, [allModels.length]);
+
+  const { start, end } = useMemo(
+    () => visibleGroupRange(rowsOffsets.offsets, rowsOffsets.total, scrollTop, viewportH, OVERSCAN),
+    [rowsOffsets, scrollTop, viewportH]
+  );
+
+  // Clamp scroll when the list shrinks (add/delete) or scrolls past the end.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const max = Math.max(0, rowsOffsets.total - viewportH);
+    if (el.scrollTop > max) {
+      el.scrollTop = max;
+      setScrollTop(max);
+    }
+  }, [rowsOffsets.total, viewportH, scrollTop]);
+
+  // Track the real viewport height of the contained scroll area.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const update = () => setViewportH(el.clientHeight || 480);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isLong, allModels.length]);
+
+  const onScroll = useCallback((e) => setScrollTop(e.currentTarget.scrollTop), []);
+
+  const sliceStart = Math.min(start, allModels.length);
+  const sliceEnd = Math.min(end, allModels.length - 1);
+  const topSpacerH = sliceStart >= allModels.length ? rowsOffsets.total : rowsOffsets.offsets[sliceStart];
+  const bottomSpacerH =
+    sliceEnd + 1 < allModels.length ? Math.max(0, rowsOffsets.total - rowsOffsets.offsets[sliceEnd + 1]) : 0;
+
   const handleAdd = async () => {
     if (!newModel.trim() || adding) return;
     const modelId = newModel.trim();
@@ -194,8 +254,15 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       )}
 
       {allModels.length > 0 && (
-        <div className="flex flex-col gap-3">
-          {allModels.map(({ id, alias, source }) => (
+        <div
+          ref={isLong ? scrollRef : undefined}
+          onScroll={isLong ? onScroll : undefined}
+          className={isLong
+            ? "max-h-[480px] overflow-y-auto flex flex-col gap-3 pr-1"
+            : "flex flex-col gap-3"}
+        >
+          {isLong && topSpacerH > 0 && <div style={{ height: topSpacerH }} aria-hidden />}
+          {allModels.slice(sliceStart, sliceEnd + 1).map(({ id, alias, source }) => (
             <CompatibleModelRow
               key={`${source}-${providerStorageAlias}/${id}`}
               modelId={id}
@@ -208,6 +275,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
               isTesting={testingModelId === id}
             />
           ))}
+          {isLong && bottomSpacerH > 0 && <div style={{ height: bottomSpacerH }} aria-hidden />}
         </div>
       )}
     </div>
