@@ -131,6 +131,21 @@ export const CODEBUDDY_CONFIG_WORKBUDDY = { ...PROVIDER_OAUTH["workbuddy"] };
 // Kimchi OAuth Configuration (Browser token callback flow)
 export const KIMCHI_CONFIG = { ...PROVIDER_OAUTH["kimchi"] };
 
+// Freebuff (Account) — authToken from the Freebuff CLI credentials store
+// (~/.config/manicode/credentials.json → authToken) or https://freebuff.llm.pm.
+// Not a browser OAuth flow: a raw bearer token validated against the
+// codebuff.com session endpoint (see providers.js freebuff entry).
+export const FREEBUFF_CONFIG = {
+  baseUrl: "https://codebuff.com",
+  tokenPageUrl: "https://freebuff.llm.pm",
+  // Official FALLBACK/LIMITED id (2026-08-13 catalog) — the cheapest session
+  // to open for validation and the safe default for step-down.
+  defaultModel: "deepseek/deepseek-v4-flash",
+  // Per-user premium pool ceiling (6 sessions/day, Pacific day) from the
+  // official catalog — surfaced as guidance, enforcement is upstream.
+  premiumModelIds: ["deepseek/deepseek-v4-pro", "openai/gpt-5.6-luna", "minimax/minimax-m3"],
+};
+
 // Zed Hosted AI — import user_id + access_token from Zed Editor, mint llm_token.
 // Not a browser OAuth flow; credentials are imported from the Zed keychain.
 export const ZED_CONFIG = {

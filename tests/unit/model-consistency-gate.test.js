@@ -150,7 +150,9 @@ function collectIssues() {
 }
 
 describe("model-consistency gate (CI)", () => {
-  it("every registry LLM model satisfies pricing + capabilities + thinking invariants", () => {
+  // Iterates the FULL registry (~1352 models) — needs more than vitest's 5s
+  // default under 60-way batch concurrency.
+  it("every registry LLM model satisfies pricing + capabilities + thinking invariants", { timeout: 30_000 }, () => {
     const issues = collectIssues();
     expect(issues, `model-consistency violations:\n${issues.join("\n")}`).toEqual([]);
   });

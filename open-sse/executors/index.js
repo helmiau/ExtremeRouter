@@ -29,6 +29,7 @@ import { BlackboxWebExecutor } from "./blackbox-web.js";
 import { ZenmuxFreeExecutor } from "./zenmux-free.js";
 import { ApiAirforceExecutor } from "./api-airforce.js";
 import { FreeBuffWebExecutor } from "./freebuff-web.js";
+import { FreeBuffExecutor } from "./freebuff.js";
 import { InxorastudioWebExecutor } from "./inxorastudio-web.js";
 import { OneMinExecutor } from "./onemin.js";
 import { OneMinApiExecutor } from "./onemin-api.js";
@@ -111,6 +112,7 @@ const executors = {
   "zenmux-free": new ZenmuxFreeExecutor(),
   "api-airforce": new ApiAirforceExecutor(),
   "freebuff-web": new FreeBuffWebExecutor(),
+  "freebuff": new FreeBuffExecutor(),
   "inxorastudio-web": new InxorastudioWebExecutor(),
   "1min": new OneMinExecutor(),
   "1min-api": new OneMinApiExecutor(),
@@ -185,6 +187,7 @@ export { HuggingChatExecutor } from "./huggingchat.js";
 export { ZenmuxFreeExecutor } from "./zenmux-free.js";
 export { ApiAirforceExecutor } from "./api-airforce.js";
 export { FreeBuffWebExecutor } from "./freebuff-web.js";
+export { FreeBuffExecutor } from "./freebuff.js";
 export { InxorastudioWebExecutor } from "./inxorastudio-web.js";
 export { OneMinExecutor } from "./onemin.js";
 export { OneMinApiExecutor } from "./onemin-api.js";

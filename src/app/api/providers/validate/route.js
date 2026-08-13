@@ -1400,6 +1400,44 @@ export async function POST(request) {
           break;
         }
 
+        case "freebuff": {
+          // Freebuff (Account) — validate the authToken by opening a
+          // codebuff.com free session (same check the paste flow uses).
+          const token = String(apiKey || "").trim();
+          if (!token) {
+            isValid = false;
+            error = "authToken is required";
+            break;
+          }
+          try {
+            const res = await fetch("https://codebuff.com/api/v1/freebuff/session", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+                Accept: "application/json",
+                "x-freebuff-model": "deepseek/deepseek-v4-flash",
+              },
+              body: "{}",
+            });
+            if (res.status === 401 || res.status === 403) {
+              isValid = false;
+              error = "Invalid or expired Freebuff authToken — re-copy from freebuff.llm.pm";
+            } else if (!res.ok) {
+              isValid = false;
+              error = `Freebuff returned ${res.status}`;
+            } else {
+              const data = await res.json().catch(() => null);
+              isValid = !!(data && data.instanceId);
+              if (!isValid) error = "Session accepted but no instanceId returned";
+            }
+          } catch (err) {
+            isValid = false;
+            error = err.message || "Failed to validate Freebuff session";
+          }
+          break;
+        }
+
         case "zenmux-free": {
           const cookie = apiKey.replace(/^Cookie:\s*/i, "");
           const ctoken = (cookie.match(/ctoken=([^;]+)/) || [])[1];

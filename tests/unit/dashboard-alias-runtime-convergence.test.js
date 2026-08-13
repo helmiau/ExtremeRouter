@@ -12,17 +12,20 @@ import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 // on identical values for every model the dashboard advertises.
 
 describe("dashboard alias vs runtime id convergence", () => {
+  // Iterates the FULL AI_MODELS catalog (~1352 models) — needs more than
+  // vitest's 5s default under 60-way batch concurrency.
+  const opts = { timeout: 30_000 };
   const providers = [...new Set(AI_MODELS.map((m) => m.provider))];
   const models = AI_MODELS.filter((m) => !m.isPlaceholder);
 
-  it("every AI_MODELS provider resolves to a known provider id", () => {
+  it("every AI_MODELS provider resolves to a known provider id", opts, () => {
     for (const p of providers) {
       const id = resolveProviderAlias(p);
       expect(id, `alias "${p}" should resolve to a provider id`).toBeTruthy();
     }
   });
 
-  it("capabilities identical via alias key vs provider id key", () => {
+  it("capabilities identical via alias key vs provider id key", opts, () => {
     const mismatches = [];
     for (const m of models) {
       const alias = m.provider;
@@ -38,7 +41,7 @@ describe("dashboard alias vs runtime id convergence", () => {
     expect(mismatches).toEqual([]);
   });
 
-  it("pricing identical via alias key vs provider id key", () => {
+  it("pricing identical via alias key vs provider id key", opts, () => {
     const mismatches = [];
     for (const m of models) {
       const alias = m.provider;
@@ -53,7 +56,7 @@ describe("dashboard alias vs runtime id convergence", () => {
     expect(mismatches).toEqual([]);
   });
 
-  it("thinking levels identical via alias key vs provider id key", () => {
+  it("thinking levels identical via alias key vs provider id key", opts, () => {
     const mismatches = [];
     for (const m of models) {
       const alias = m.provider;

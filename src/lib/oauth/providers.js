@@ -30,8 +30,10 @@ import {
   CODEBUDDY_CONFIG_INTL,
   CODEBUDDY_CONFIG_WORKBUDDY,
   KIMCHI_CONFIG,
+  FREEBUFF_CONFIG,
   getOAuthClientMetadata,
 } from "./constants/oauth";
+import { tlsFetch } from "open-sse/utils/tlsClient.js";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
 import {
   validateXaiOAuthEndpoint,
@@ -1430,6 +1432,55 @@ const PROVIDERS = {
           authMethod: "browser_token",
           userId,
           username,
+        },
+      };
+    },
+  },
+
+  // Freebuff (Account) — paste-token flow (browser_token family).
+  // There is no browser authorize endpoint: the user copies their authToken
+  // from https://freebuff.llm.pm or the Freebuff CLI credentials file, and we
+  // validate it by opening a codebuff.com free session (the cheapest upstream
+  // call that proves the token + returns session metadata).
+  freebuff: {
+    config: FREEBUFF_CONFIG,
+    flowType: "browser_token",
+    buildAuthUrl: (config) => config.tokenPageUrl,
+    exchangeToken: async (config, token) => {
+      const t = String(token || "").trim();
+      if (!t) throw new Error("Missing Freebuff authToken");
+      const res = await tlsFetch(`${config.baseUrl}/api/v1/freebuff/session`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${t}`,
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "x-freebuff-model": config.defaultModel,
+        },
+        body: "{}",
+      });
+      if (res.status === 401 || res.status === 403) {
+        throw new Error("Invalid or expired Freebuff authToken — re-copy from freebuff.llm.pm");
+      }
+      if (!res.ok) throw new Error(`Freebuff session failed: ${res.status}`);
+      const data = await res.json().catch(() => ({}));
+      return { access_token: t, _session: data };
+    },
+    mapTokens: (tokens) => {
+      const session = tokens._session || {};
+      const expiresAt = session.expiresAt ? new Date(session.expiresAt) : null;
+      return {
+        accessToken: tokens.access_token,
+        // Upstream has no refresh endpoint — a 401 means re-login.
+        refreshToken: null,
+        expiresIn: expiresAt && !Number.isNaN(expiresAt.getTime())
+          ? Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000))
+          : null,
+        email: session.email || null,
+        providerSpecificData: {
+          authMethod: "auth_token",
+          instanceId: session.instanceId || "",
+          sessionExpiresAt: session.expiresAt || "",
         },
       };
     },

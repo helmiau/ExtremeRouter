@@ -161,6 +161,7 @@ import p159 from "./workbuddy.js";
 import p160 from "./codebuddy-intl.js";
 import p162 from "./meta-ai.js";
 import p163 from "./helyxai.js";
+import p164 from "./freebuff.js";
 
 export default [
   p0,
@@ -325,4 +326,5 @@ export default [
   p161,
   p162,
   p163,
+  p164,
 ];

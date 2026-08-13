@@ -18,9 +18,9 @@
 export default {
   id: "freebuff-web",
   priority: 65,
-  alias: "fb",
-  aliases: ["freebuff", "freebuff-web"],
-  uiAlias: "fb",
+  alias: "fb-web",
+  aliases: ["freebuff-web", "freebuff-cookie"],
+  uiAlias: "fbw",
   display: {
     name: "FreeBuff",
     icon: "bolt",

@@ -190,8 +190,11 @@ export async function POST(request, { params }) {
     if (action === "exchange") {
       const { code, redirectUri, codeVerifier, state, meta } = body;
 
-      // Detect if "code" is actually a raw JWT access token (starts with eyJ)
-      if (code && code.startsWith("eyJ") && code.includes(".")) {
+      // Detect if "code" is actually a raw JWT access token (starts with eyJ).
+      // Freebuff authTokens are validated against the codebuff.com session
+      // endpoint below — never through the Codex JWT-decoding branch, even if
+      // the token happens to be a JWT.
+      if (provider !== "freebuff" && code && code.startsWith("eyJ") && code.includes(".")) {
         const { extractCodexAccountInfo } = await import("@/lib/oauth/providers");
         const info = extractCodexAccountInfo(code);
 
@@ -232,8 +235,9 @@ export async function POST(request, { params }) {
         });
       }
 
-      // Cline and ClinePass use authorization_code without PKCE. Kimchi returns a browser token.
-      const noPkceExchangeProviders = ["cline", "clinepass", "kimchi"];
+      // Cline and ClinePass use authorization_code without PKCE. Kimchi returns
+      // a browser token. Freebuff pastes a raw authToken (browser_token flow).
+      const noPkceExchangeProviders = ["cline", "clinepass", "kimchi", "freebuff"];
       if (!code || !redirectUri || (!codeVerifier && !noPkceExchangeProviders.includes(provider))) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
       }

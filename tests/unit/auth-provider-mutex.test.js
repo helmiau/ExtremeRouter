@@ -30,7 +30,12 @@ import { getProviderConnections } from "@/lib/localDb";
 import { getProviderCredentials } from "@/sse/services/auth.js";
 
 const DELAY_MS = 100;
-const THRESHOLD_MS = 150;
+// Parallel selections finish ~DELAY_MS; serialized ~2×DELAY_MS. The parallel
+// bound is looser than the serialized bound: under heavy batch concurrency the
+// two overlapping 100ms sleeps can stretch (observed 180ms), but serialized
+// stays ~200ms+, so the discrimination window is preserved.
+const PARALLEL_THRESHOLD_MS = 190;
+const SERIALIZED_THRESHOLD_MS = 150;
 
 function conn(provider) {
   return [{
@@ -66,9 +71,9 @@ describe("per-provider selection mutex", () => {
       getProviderCredentials("provB"),
     ]);
     const elapsed = Date.now() - t0;
-    // Parallel: both 100ms delays overlap → ~100ms total, well under 150ms.
-    // A global mutex would serialize them → ~200ms.
-    expect(elapsed).toBeLessThan(THRESHOLD_MS);
+    // Parallel: both 100ms delays overlap → ~100ms total, well under the
+    // bound. A global mutex would serialize them → ~200ms.
+    expect(elapsed).toBeLessThan(PARALLEL_THRESHOLD_MS);
   });
 
   it("same provider selections stay SERIALIZED", async () => {
@@ -80,7 +85,7 @@ describe("per-provider selection mutex", () => {
     ]);
     const elapsed = Date.now() - t0;
     // Serial: two 100ms delays run back-to-back → ~200ms, above the threshold.
-    expect(elapsed).toBeGreaterThanOrEqual(THRESHOLD_MS);
+    expect(elapsed).toBeGreaterThanOrEqual(SERIALIZED_THRESHOLD_MS);
   });
 
   it("provider aliases key the same mutex (same provider via alias)", async () => {
@@ -92,6 +97,6 @@ describe("per-provider selection mutex", () => {
     ]);
     const elapsed = Date.now() - t0;
     // Both resolve to provider id "kiro" → same mutex → serialized.
-    expect(elapsed).toBeGreaterThanOrEqual(THRESHOLD_MS);
+    expect(elapsed).toBeGreaterThanOrEqual(SERIALIZED_THRESHOLD_MS);
   });
 });

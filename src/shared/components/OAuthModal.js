@@ -18,6 +18,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [isDeviceCode, setIsDeviceCode] = useState(false);
   const [deviceData, setDeviceData] = useState(null);
   const [polling, setPolling] = useState(false);
+  const [importingFreebuff, setImportingFreebuff] = useState(false);
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
   const openedRef = useRef(false);
@@ -290,6 +291,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         if (!popupRef.current) {
           setStep("input");
         }
+      } else if (provider === "freebuff") {
+        // Freebuff has no browser authorize endpoint — the token is copied
+        // from freebuff.llm.pm (opened here). Go straight to the paste box.
+        setStep("input");
+        window.open(data.authUrl, "_blank");
       } else if (!isLocalhost || provider === "codex" || provider === "xai") {
         // Non-localhost or proxy failed: manual input mode
         setStep("input");
@@ -459,6 +465,28 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     };
   }, [authData, exchangeTokens]);
 
+  // Freebuff has no browser authorize endpoint: the user copies their
+  // authToken from freebuff.llm.pm or the CLI credentials file. Import fills
+  // the paste box; Connect then exchanges the bare token (see handleManualSubmit).
+  const handleFreebuffImport = async () => {
+    if (provider !== "freebuff") return;
+    setImportingFreebuff(true);
+    try {
+      const res = await fetch("/api/oauth/freebuff/import");
+      const data = await res.json();
+      if (data?.tokenFound && data.token) {
+        setCallbackUrl(data.token);
+        setError(null);
+      } else {
+        setError(data?.error || "No Freebuff token found — log in with the Freebuff CLI once, or copy your token from freebuff.llm.pm.");
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImportingFreebuff(false);
+    }
+  };
+
   // Handle manual URL input
   const handleManualSubmit = async () => {
     try {
@@ -478,6 +506,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       }
 
       if (provider === "kimchi" && input && !input.includes("://") && !input.includes("?")) {
+        await exchangeTokens(input, null);
+        return;
+      }
+
+      if (provider === "freebuff" && input && !input.includes("://") && !input.includes("?")) {
         await exchangeTokens(input, null);
         return;
       }
@@ -522,13 +555,16 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   if (!provider || !providerInfo) return null;
   const isXaiProvider = provider === "xai";
   const isKimchiProvider = provider === "kimchi";
+  const isFreebuffProvider = provider === "freebuff";
   const deviceLoginUrl = deviceData?.verification_uri_complete || deviceData?.verification_uri || "";
   const modalTitle = isXaiProvider ? "Connect Grok Build OAuth" : `Connect ${providerInfo.name}`;
   const manualPlaceholder = isXaiProvider
     ? "http://127.0.0.1:56121/callback?code=... or copied code"
     : isKimchiProvider
       ? `${placeholderUrl.replace("code=...", "token=...")} or copied token`
-      : placeholderUrl;
+      : isFreebuffProvider
+        ? "Paste your Freebuff authToken (from freebuff.llm.pm or ~/.config/manicode/credentials.json)"
+        : placeholderUrl;
 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
@@ -557,7 +593,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             <div className="space-y-4">
               <div>
                 <p className="text-sm font-medium mb-2">
-                  Step 1: Open this {isXaiProvider ? "Grok Build OAuth URL" : "URL"} in your browser
+                  Step 1: Open this {isXaiProvider ? "Grok Build OAuth URL" : isFreebuffProvider ? "URL and copy your token" : "URL"} in your browser
                 </p>
                 <div className="flex gap-2">
                   <Input value={authData?.authUrl || ""} readOnly className="flex-1 font-mono text-xs" />
@@ -565,18 +601,36 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                     Copy
                   </Button>
                 </div>
+                {isFreebuffProvider && (
+                  <div className="mt-2">
+                    <Button
+                      variant="secondary"
+                      icon="download"
+                      fullWidth
+                      onClick={handleFreebuffImport}
+                      disabled={importingFreebuff}
+                    >
+                      {importingFreebuff ? "Detecting…" : "Import token from Freebuff CLI"}
+                    </Button>
+                    <p className="mt-1 text-[10px] text-text-muted">
+                      Reads authToken from ~/.config/manicode/credentials.json
+                    </p>
+                  </div>
+                )}
               </div>
 
               <div>
                 <p className="text-sm font-medium mb-2">
-                  Step 2: Paste the {provider === "xai" ? "callback URL or copied code" : isKimchiProvider ? "callback URL or copied token" : "callback URL"} here
+                  Step 2: Paste the {provider === "xai" ? "callback URL or copied code" : isKimchiProvider ? "callback URL or copied token" : isFreebuffProvider ? "copied authToken" : "callback URL"} here
                 </p>
                 <p className="text-xs text-text-muted mb-2">
                   {provider === "xai"
                     ? "If xAI shows a code instead of redirecting, paste that code here."
                     : isKimchiProvider
                       ? "After authorization, copy the full callback URL or token from your browser."
-                    : "After authorization, copy the full URL from your browser."}
+                      : isFreebuffProvider
+                        ? "After logging in on freebuff.llm.pm, copy the authToken shown on the page and paste it here."
+                      : "After authorization, copy the full URL from your browser."}
                 </p>
                 <Input
                   value={callbackUrl}
