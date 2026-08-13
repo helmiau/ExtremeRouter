@@ -15,6 +15,7 @@ import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { getZenmuxModelsForPlan, getZenmuxPlanForCtoken } from "open-sse/services/zenmuxModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { capabilitiesFromServiceKind } from "open-sse/providers/capabilities.js";
+import { deriveComboCapabilities, memberCapabilitiesForRef } from "open-sse/providers/comboCapabilities.js";
 import { normalizeComboStrategyConfig } from "open-sse/services/comboConfig.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
@@ -322,9 +323,23 @@ export async function buildModelsList(kindFilter) {
       ...(combo.strategyConfig || {}),
       ...(comboStrategyOverrides[combo.name] || {}),
     });
-    const comboThinking = mergedStrategy.thinking?.type;
-    if (comboThinking && comboThinking !== "auto") {
-      entry.capabilities = { thinking: true, agentic: false };
+    // Combo capability = member-derived via the shared pure function: any
+    // reasoning member makes the combo "can think" — unless the strategy
+    // explicitly disables thinking (off). (Previously derived from strategy
+    // alone: an auto combo with reasoning members advertised nothing, an effort
+    // combo whose members can't reason advertised thinking:true, and a combo
+    // with thinking:off also advertised thinking:true — all misleading to
+    // clients like zcode.) The full catalog shape (vision/audio/limits) is
+    // exposed here in a later step; /api/models already emits it.
+    const members = (combo.models || []).map(memberCapabilitiesForRef);
+    const derived = deriveComboCapabilities(members, mergedStrategy);
+    entry.capabilities = { thinking: derived.thinking, agentic: derived.agentic };
+    // Keep the strategy's own intent visible ("will it actually emit reasoning"),
+    // distinct from the member-derived capability ("can it reason"). Only emitted
+    // when the strategy overrides the provider default.
+    const strategyType = mergedStrategy.thinking?.type;
+    if (strategyType && strategyType !== "auto") {
+      entry.strategy = { thinking: { type: strategyType } };
     }
     models.push(entry);
   }

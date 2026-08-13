@@ -37,3 +37,25 @@ export function toClientCaps(c) {
   if (c.thinkingFormat) caps.thinkingFormat = c.thinkingFormat;
   return caps;
 }
+
+/**
+ * Project a derived combo capability object (deriveComboCapabilities output,
+ * catalog shape: vision/audio as {input, output}, thinking as reasoning) onto
+ * the same compact client shape CapacityBadges and the dashboard consume.
+ * Badge booleans are ALWAYS present (coerced), consistent with toClientCaps.
+ * @param {object} c - deriveComboCapabilities output
+ * @returns {object} compact client caps
+ */
+export function comboToClientCaps(c) {
+  if (!c) return {};
+  const caps = {
+    vision: !!c.vision?.input,
+    search: !!c.search,
+    reasoning: !!c.thinking,
+    pdf: !!c.pdf,
+    audioInput: !!c.audio?.input,
+    videoInput: !!c.videoInput,
+  };
+  if (typeof c.maxOutput === "number" && c.maxOutput > 0) caps.maxOutput = c.maxOutput;
+  return caps;
+}

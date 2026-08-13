@@ -110,6 +110,13 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
   // once at the top so every downstream use is safe.
   const models = Array.isArray(combo?.models) ? combo.models : [];
 
+  // Combo-level derived capability (from /api/models combo entries, keyed by
+  // combo name): union of member modalities, min limits, strategy-aware
+  // thinking. Distinct from the per-member badges rendered on the chips below
+  // — this one answers "what can the combo do as a whole". Null when the
+  // combo has no entry/caps (e.g. media combos not in the LLM catalog).
+  const comboCaps = modelCaps[combo.name] || null;
+
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
@@ -209,6 +216,14 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
             <div className="flex items-center gap-2">
               <code className="truncate font-mono text-sm font-medium">{combo.name}</code>
               <Badge variant={meta.badge} size="sm">{getStrategyLabel(current)}</Badge>
+              {/* Aggregate combo capability (derived from members, monochrome so it
+                  reads differently from the per-model badges on the chips). */}
+              {comboCaps && (
+                <span className="inline-flex items-center gap-1" title="Capabilities derived from member models">
+                  <CapacityBadges caps={comboCaps} size={12} colorOverride="text-text-muted" />
+                  <span className="text-[9px] uppercase tracking-wide text-text-muted">derived</span>
+                </span>
+              )}
               {isThinkingActive && (
                 <Badge variant="cyan" size="sm" className="flex items-center gap-0.5">
                   <span className="material-symbols-outlined text-[10px]">psychology</span>
@@ -289,7 +304,10 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
         <div className="mt-3 border-t border-border-subtle pt-3">
           {/* Full model list */}
           <div className="mb-3">
-            <p className="text-[10px] uppercase tracking-wide text-text-muted mb-1.5">Models ({models.length})</p>
+            <p className="text-[10px] uppercase tracking-wide text-text-muted mb-1.5 flex items-center gap-1.5">
+              Models ({models.length})
+              {comboCaps && <CapacityBadges caps={comboCaps} size={11} colorOverride="text-text-muted" />}
+            </p>
             <div className="flex flex-col gap-1">
               {models.map((model, index) => (
                 <div key={index} className="flex items-center gap-2 rounded px-2 py-1 bg-black/[0.02] dark:bg-white/[0.02]">
