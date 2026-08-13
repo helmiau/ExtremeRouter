@@ -3,8 +3,7 @@
 import PropTypes from "prop-types";
 import { useState } from "react";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
-
-const THINKING_LEVELS = ["low", "medium", "high", "max"];
+import { thinkingLevelsForCaps, maxTokensBound } from "../playgroundCore";
 
 export default function ParameterPanel({ params, onChange, selectedModel = "" }) {
   const [expanded, setExpanded] = useState(true);
@@ -12,9 +11,14 @@ export default function ParameterPanel({ params, onChange, selectedModel = "" })
 
   const update = (key, val) => onChange({ ...params, [key]: val });
 
-  // Thinking picker: only show for reasoning-capable models.
+  // Thinking picker: only show for reasoning-capable models. The advertised
+  // level list is derived from the model's capabilities (thinkingLevels /
+  // thinkingMaxEffort, exposed via /api/models) — a static list advertised
+  // levels models don't support (e.g. GLM-5.2 only accepts high/max).
   const caps = getCaps?.(selectedModel);
   const thinkingSupported = !!caps?.reasoning;
+  const levels = thinkingLevelsForCaps(caps) || [];
+  const maxTokensCap = maxTokensBound(caps);
 
   const hasSystemPrompt = !!(params.systemPrompt && params.systemPrompt.trim());
 
@@ -57,10 +61,19 @@ export default function ParameterPanel({ params, onChange, selectedModel = "" })
             <div>
               <label className="mb-1 block text-xs font-medium text-text-muted">Thinking Level</label>
               <div className="flex flex-wrap gap-1">
-                {THINKING_LEVELS.map((lvl) => {
-                  const active = (params.reasoningEffort || "medium") === lvl;
-                  // Hide "max" unless the model explicitly supports it (thinkingMaxEffort).
-                  if (lvl === "max" && !caps?.thinkingMaxEffort) return null;
+                {/* Auto = don't send any reasoning_effort (provider default) */}
+                <button
+                  onClick={() => update("reasoningEffort", "")}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-medium capitalize transition-colors ${
+                    !params.reasoningEffort
+                      ? "bg-primary text-white"
+                      : "bg-surface-2 text-text-muted hover:bg-surface-3"
+                  }`}
+                >
+                  auto
+                </button>
+                {levels.map((lvl) => {
+                  const active = params.reasoningEffort === lvl;
                   return (
                     <button
                       key={lvl}
@@ -75,9 +88,21 @@ export default function ParameterPanel({ params, onChange, selectedModel = "" })
                     </button>
                   );
                 })}
+                {caps?.thinkingCanDisable !== false && (
+                  <button
+                    onClick={() => update("reasoningEffort", "none")}
+                    className={`rounded-lg px-2.5 py-1 text-xs font-medium capitalize transition-colors ${
+                      params.reasoningEffort === "none"
+                        ? "bg-primary text-white"
+                        : "bg-surface-2 text-text-muted hover:bg-surface-3"
+                    }`}
+                  >
+                    none
+                  </button>
+                )}
               </div>
               <p className="mt-1 text-[10px] text-text-muted">
-                Reasoning effort. Tap active level to clear.
+                Reasoning effort. Auto = provider default.
               </p>
             </div>
           )}
@@ -114,15 +139,18 @@ export default function ParameterPanel({ params, onChange, selectedModel = "" })
             onChange={(v) => update("presencePenalty", v)}
           />
 
-          {/* Max tokens */}
+          {/* Max tokens — upper bound follows the model's max output limit */}
           <div>
             <label className="mb-1 block text-xs font-medium text-text-muted">Max Tokens</label>
             <input
               type="number"
               min="1"
-              max="128000"
+              max={maxTokensCap}
               value={params.maxTokens ?? 4096}
-              onChange={(e) => update("maxTokens", parseInt(e.target.value) || 4096)}
+              onChange={(e) => {
+                const v = parseInt(e.target.value);
+                update("maxTokens", Number.isFinite(v) && v > 0 ? Math.min(v, maxTokensCap) : 4096);
+              }}
               className="w-full rounded-lg border border-border-subtle bg-surface-2 px-3 py-1.5 text-sm text-text-main focus:border-primary focus:outline-none"
             />
           </div>

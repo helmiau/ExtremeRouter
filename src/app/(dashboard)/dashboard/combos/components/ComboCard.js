@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Card, Badge, Select, ModelSelectModal, CapacityBadges } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { classifyComboThinking } from "@/shared/utils/comboThinking";
 import { STRATEGY_OPTIONS, getStrategyMeta, getStrategyLabel } from "./helpers";
 
 // ── Thinking constants ──────────────────────────────────────────────
@@ -174,27 +175,18 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
   // Check every model in the combo to determine which thinking modes are
   // supported. Grey-out unsupported options and warn when a mode is active
   // but some models lack it.
-  const modelThinking = models.map(model => ({
-    model,
-    caps: modelCaps[model] || {},
-  }));
-  const hasEffort = modelThinking.some(m => {
-    const fmt = m.caps.thinkingFormat;
-    // "deepseek" gains effort via OpenAI-style reasoning_effort after the V4
-    // tiers landed (low/high/max) — see thinkingUnified.js case "deepseek".
-    return !!m.caps.reasoning && (fmt === "openai" || fmt === "effort" || fmt === "deepseek" || !fmt);
-  });
-  const hasExtended = modelThinking.some(m => {
-    const fmt = m.caps.thinkingFormat;
-    return !!m.caps.reasoning && (fmt === "claude-adaptive" || fmt === "claude" || fmt === "extended");
-  });
-  const hasMaxEffort = modelThinking.some(m => !!m.caps.thinkingMaxEffort);
-  const unresolvableModels = modelThinking.filter(m => !m.caps.reasoning && m.caps.reasoning !== undefined);
-  const unsupportedForCurrent = thinkingType === "effort"
-    ? modelThinking.filter(m => m.caps.reasoning === true && m.caps.thinkingFormat && m.caps.thinkingFormat !== "openai" && m.caps.thinkingFormat !== "effort" && m.caps.thinkingFormat !== "deepseek")
-    : thinkingType === "extended"
-      ? modelThinking.filter(m => m.caps.reasoning === true && m.caps.thinkingFormat && m.caps.thinkingFormat !== "claude-adaptive" && m.caps.thinkingFormat !== "claude" && m.caps.thinkingFormat !== "extended")
-      : [];
+  //
+  // Classification mirrors what the runtime (thinkingUnified.applyFormat)
+  // actually accepts for each mode — not a hardcoded format list:
+  //   • effort  → reasoning_effort is translated into EVERY native format
+  //               (openai/claude-adaptive/claude-budget/gemini/zai/deepseek/...),
+  //               so any reasoning model can honor it.
+  //   • extended→ budget_tokens is consumed by the budget-capable formats
+  //               (claude-*, gemini-*, qwen, hunyuan, minimax, zai). OpenAI-style
+  //               effort formats (openai/deepseek/kimi/step) drop a budget config,
+  //               so they can't honor it.
+  const { hasEffort, hasExtended, hasMaxEffort, unresolvableModels, unsupportedForCurrent } =
+    classifyComboThinking(models.map(model => ({ model, caps: modelCaps[model] || {} })), thinkingType);
 
   return (
     <Card padding="sm" className="group transition-all hover:border-primary/20">

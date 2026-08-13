@@ -104,8 +104,21 @@ export const MODEL_CAPABILITIES = {
 // Codex OAuth (ChatGPT backend) — per-model context window reported by upstream
 // (lower than OpenAI API's 1.05M). Sol differs from Terra/Luna. Port of
 // decolua/9router GPT-5.6 Codex reasoning-overrides design.
-const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 372000, maxOutput: 128000 };
-const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
+// thinkingMaxEffort + thinkingLevels mirror the codex override matrix in
+// thinkingLevels.js so UI gates (combo "max" option, playground picker) see
+// the real level range instead of the generic openai fallback.
+const CODEX_GPT_56_SOL_CAPS = {
+  vision: true, reasoning: true, search: true, thinkingFormat: "openai",
+  contextWindow: 372000, maxOutput: 128000,
+  thinkingMaxEffort: true,
+  thinkingLevels: ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
+};
+const CODEX_GPT_56_DEFAULT_CAPS = {
+  vision: true, reasoning: true, search: true, thinkingFormat: "openai",
+  contextWindow: 272000, maxOutput: 128000,
+  thinkingMaxEffort: true,
+  thinkingLevels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+};
 
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.

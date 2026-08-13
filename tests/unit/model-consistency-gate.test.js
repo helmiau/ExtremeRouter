@@ -22,7 +22,9 @@ import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { resolveKiroEffortPath } from "open-sse/config/kiroConstants.js";
 
 const PAID_CATEGORIES = new Set(["apikey", "oauth"]);
-const KNOWN_LEVELS = new Set(["minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
+// "none" is a legitimate explicit value in the codex GPT-5.6 override matrix
+// (getThinkingLevels returns it for sol/terra/luna) — thinking-off as a level.
+const KNOWN_LEVELS = new Set(["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]);
 
 // Media model id hints — models that carry a kind or a media-looking id are not
 // billed as chat LLMs, so the pricing gate must not demand per-token rates for them.

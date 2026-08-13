@@ -24,7 +24,24 @@ export async function GET() {
           ...m,
           fullModel,
           alias: modelAliases[fullModel] || m.model,
-          caps: { vision: c.vision, search: c.search, reasoning: c.reasoning },
+          // Expose the full capability set so the UI (model picker badges,
+          // playground parameter panel) can advertise per-model thinking levels
+          // and output limits instead of hardcoded defaults.
+          caps: {
+            vision: c.vision,
+            search: c.search,
+            reasoning: c.reasoning,
+            thinkingLevels: c.thinkingLevels || null,
+            thinkingMaxEffort: c.thinkingMaxEffort || false,
+            thinkingCanDisable: c.thinkingCanDisable !== false,
+            thinkingFormat: c.thinkingFormat || null,
+            maxOutput: c.maxOutput || null,
+            contextWindow: c.contextWindow || null,
+            tools: c.tools !== false,
+            pdf: c.pdf || false,
+            audioInput: c.audioInput || false,
+            videoInput: c.videoInput || false,
+          },
         };
       });
 

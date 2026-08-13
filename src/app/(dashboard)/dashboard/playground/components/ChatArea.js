@@ -7,10 +7,20 @@ import MessageContent from "./MessageContent";
 
 export default function ChatArea({ messages, onSend, streaming }) {
   const scrollRef = useRef(null);
+  // True while the user is reading older content — don't yank them back to the
+  // bottom on every streamed chunk. Tracked via onScroll; auto-scroll only when
+  // already near the bottom (within 80px).
+  const stickToBottomRef = useRef(true);
 
-  // Auto-scroll to bottom on new messages
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+
+  // Auto-scroll to bottom on new messages when the user hasn't scrolled up
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && stickToBottomRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
@@ -30,6 +40,7 @@ export default function ChatArea({ messages, onSend, streaming }) {
   return (
     <div
       ref={scrollRef}
+      onScroll={handleScroll}
       className="custom-scrollbar flex max-h-[60vh] min-h-[200px] flex-1 flex-col gap-3 overflow-y-auto rounded-brand border border-border-subtle bg-panel p-4"
     >
       {messages.map((msg) => (

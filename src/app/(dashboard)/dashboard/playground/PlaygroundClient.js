@@ -9,6 +9,19 @@ import HistoryPanel from "./components/HistoryPanel";
 import ChatArea from "./components/ChatArea";
 import MessageContent from "./components/MessageContent";
 import { usePlaygroundStream } from "./usePlaygroundStream";
+import {
+  appendDelta,
+  compareSlotKey,
+  emptyCompareResult,
+  mergeCompareDelta,
+  mergeCompareFinal,
+  patchMessage,
+  displayMessages,
+  buildSession,
+  saveSessionsToStorage,
+  MAX_STORED_MESSAGES,
+  MAX_SESSIONS,
+} from "./playgroundCore";
 
 const STORAGE_KEY = "extremerouter.playground.sessions";
 
@@ -40,50 +53,11 @@ function loadSessions() {
   } catch { return []; }
 }
 
-// #19/B2: bound what we persist so localStorage can't blow out and silently drop
-// sessions. Messages are capped per session, the session count is capped, and on
-// a QuotaExceededError we retry once with heavy inline images stripped.
-const MAX_STORED_MESSAGES = 60;
-const MAX_SESSIONS = 100;
-
-// Clone sessions and drop the heavy inline image `dataUrl` payloads so a few
-// image chats can't keep a session over the ~5MB localStorage limit forever.
-function stripAttachmentPayload(sessions) {
-  return sessions.map((s) => ({
-    ...s,
-    messages: (s.messages || []).map((m) => {
-      if (m.role !== "user") return m;
-      return {
-        ...m,
-        displayAttachments: Array.isArray(m.displayAttachments)
-          ? m.displayAttachments.map((a) => ({ id: a.id, name: a.name, stripped: true }))
-          : undefined,
-        content: Array.isArray(m.content)
-          ? m.content.map((c) =>
-              c && c.type === "image_url"
-                ? { type: "image_url", image_url: { url: "" } }
-                : c
-            )
-          : m.content,
-      };
-    }),
-  }));
-}
-
 // Returns "saved" | "stripped" | "failed" so the UI can surface quota outcomes
-// instead of failing silently.
+// instead of failing silently. Persistence logic (capping, quota fallback with
+// stripped image payloads) lives in playgroundCore for testability.
 function saveSessions(sessions) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-    return "saved";
-  } catch {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(stripAttachmentPayload(sessions)));
-      return "stripped";
-    } catch {
-      return "failed";
-    }
-  }
+  return saveSessionsToStorage(localStorage, sessions);
 }
 
 export default function PlaygroundClient() {
@@ -159,22 +133,13 @@ export default function PlaygroundClient() {
   const handleDelta = useCallback((id, parsed) => {
     const ctx = streamContextRef.current[id];
     if (!ctx) return;
-    const append = (cur, field, val) => (val ? (cur || "") + val : cur);
     if (ctx.mode === "single") {
-      setMessages(prev => prev.map(m => m.id !== ctx.assistantId ? m : {
-        ...m,
-        content: append(m.content, "content", parsed.content),
-        reasoning: append(m.reasoning, "reasoning", parsed.reasoning),
+      setMessages(prev => patchMessage(prev, ctx.assistantId, {
+        content: appendDelta(prev.find(m => m.id === ctx.assistantId)?.content, parsed.content),
+        reasoning: appendDelta(prev.find(m => m.id === ctx.assistantId)?.reasoning, parsed.reasoning),
       }));
     } else {
-      setCompareResults(prev => {
-        const cur = prev[id] || { content: "", reasoning: "", streaming: true, error: null };
-        return { ...prev, [id]: {
-          ...cur,
-          content: append(cur.content, "content", parsed.content),
-          reasoning: append(cur.reasoning, "reasoning", parsed.reasoning),
-        }};
-      });
+      setCompareResults(prev => mergeCompareDelta(prev, id, parsed));
     }
   }, []);
 
@@ -182,7 +147,7 @@ export default function PlaygroundClient() {
     const ctx = streamContextRef.current[id];
     if (!ctx) return;
     if (ctx.mode === "single") {
-      setMessages(prev => prev.map(m => m.id === ctx.assistantId ? { ...m, streaming: false } : m));
+      setMessages(prev => patchMessage(prev, ctx.assistantId, { streaming: false }));
       setStats({
         model: ctx.modelId,
         inputTokens: usage?.prompt_tokens || 0,
@@ -190,10 +155,7 @@ export default function PlaygroundClient() {
         latencyMs: Date.now() - ctx.startTime,
       });
     } else {
-      setCompareResults(prev => ({
-        ...prev,
-        [id]: { ...prev[id], streaming: false, usage },
-      }));
+      setCompareResults(prev => mergeCompareFinal(prev, id, { streaming: false, usage }));
     }
     delete streamContextRef.current[id];
   }, []);
@@ -206,12 +168,12 @@ export default function PlaygroundClient() {
     // shouldn't surface in the chat bubble.
     const cleaned = sanitizeProviderError(message);
     if (ctx.mode === "single") {
-      setMessages(prev => prev.map(m => m.id === ctx.assistantId
-        ? { ...m, content: `❌ Error: ${cleaned}`, streaming: false, error: true } : m));
+      setMessages(prev => patchMessage(prev, ctx.assistantId, {
+        content: `❌ Error: ${cleaned}`, streaming: false, error: true,
+      }));
     } else {
-      setCompareResults(prev => ({
-        ...prev,
-        [id]: { ...prev[id], content: `❌ ${cleaned}`, streaming: false, error: true },
+      setCompareResults(prev => mergeCompareFinal(prev, id, {
+        content: `❌ ${cleaned}`, streaming: false, error: true,
       }));
     }
     delete streamContextRef.current[id];
@@ -303,10 +265,18 @@ export default function PlaygroundClient() {
     }
     setMessages(session.messages || []);
     setCurrentSession(session.id);
-    if (session.model) setSelectedModels([session.model]);
+    // Restore the full playground state: mode + model list (compare) + the
+    // last compare round. Previously only a single `model` string was stored,
+    // so compare chats could never be restored.
+    if (Array.isArray(session.models) && session.models.length > 0) {
+      setSelectedModels([...session.models]);
+    } else if (session.model) {
+      setSelectedModels([session.model]);
+    }
+    if (session.mode) setMode(session.mode);
     if (session.params) setParams(session.params);
     setStats({});
-    setCompareResults({});
+    setCompareResults(session.compareResults ? { ...session.compareResults } : {});
   }, [messages, currentSession]);
 
   const deleteSession = useCallback((id) => {
@@ -330,19 +300,20 @@ export default function PlaygroundClient() {
   }, [sessions]);
 
   const saveCurrentSession = useCallback(() => {
-    if (messages.length === 0) return;
+    // Compare mode writes to compareResults (not messages); single mode writes
+    // to messages. A session is savable as long as EITHER has content.
+    const hasMessages = messages.length > 0;
+    const hasCompare = mode === "compare" && Object.keys(compareResults).length > 0;
+    if (!hasMessages && !hasCompare) return;
     const id = currentSession || createId();
-    const title = messages.find((m) => m.role === "user")?.content?.slice(0, 40) || "New Chat";
-    const session = {
+    const session = buildSession({
       id,
-      title,
-      // #19/B2: bound stored history so localStorage can't blow out.
-      messages: messages.slice(-MAX_STORED_MESSAGES),
-      model: selectedModels[0],
+      messages,
       params,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+      selectedModels,
+      mode,
+      compareResults,
+    });
     const existing = sessions.find((s) => s.id === id);
     const updated = existing
       ? sessions.map((s) => (s.id === id ? { ...s, ...session } : s))
@@ -352,7 +323,7 @@ export default function PlaygroundClient() {
     const status = saveSessions(capped);
     setCurrentSession(id);
     flashSaveStatus(status);
-  }, [messages, currentSession, sessions, selectedModels, params, flashSaveStatus]);
+  }, [messages, currentSession, sessions, selectedModels, params, mode, compareResults, flashSaveStatus]);
 
   // ── Chat send ─────────────────────────────────────────────────────────────
 
@@ -418,12 +389,7 @@ export default function PlaygroundClient() {
       // Display messages: strip system prompt (sent in body only) + normalize
       // user content to plain text for the bubble (attachments rendered via
       // the `attachments` field, not inlined as a content array).
-      const displayMsgs = baseMessages
-        .filter((m) => m.role !== "system")
-        .map((m) => m.role === "user"
-          ? { ...m, content: m.displayText ?? m.content, attachments: m.displayAttachments }
-          : m);
-      setMessages([...displayMsgs, assistantMsg]);
+      setMessages([...displayMessages(baseMessages), assistantMsg]);
 
       streamContextRef.current["single"] = { mode: "single", assistantId, modelId, startTime };
       await streamChat("single", {
@@ -431,23 +397,30 @@ export default function PlaygroundClient() {
         apiKey,
       });
     } else {
-      // Compare mode: send to all selected models simultaneously
-      const validModels = selectedModels.filter(Boolean);
-      if (validModels.length === 0) return;
+      // Compare mode: send to all selected models simultaneously. Each slot gets
+      // its own key (compareSlotKey) so the SAME model in two slots streams into
+      // two separate panels — keying by modelId alone made the second stream
+      // overwrite the first's context and freeze at "Waiting…".
+      const slots = selectedModels
+        .map((modelId, idx) => ({ modelId, key: compareSlotKey(idx, modelId) }))
+        .filter((s) => s.modelId);
+      if (slots.length === 0) return;
 
-      setCompareResults({});
-      validModels.forEach((modelId) => {
-        streamContextRef.current[modelId] = { mode: "compare", modelId, startTime };
+      const seeded = {};
+      for (const s of slots) seeded[s.key] = emptyCompareResult();
+      setCompareResults(seeded);
+      slots.forEach((s) => {
+        streamContextRef.current[s.key] = { mode: "compare", modelId: s.modelId, startTime };
       });
 
-      await Promise.allSettled(validModels.map((modelId) =>
-        streamChat(modelId, {
-          body: { model: modelId, messages: baseMessages, ...requestParams },
+      await Promise.allSettled(slots.map((s) =>
+        streamChat(s.key, {
+          body: { model: s.modelId, messages: baseMessages, ...requestParams },
           apiKey,
         })
       ));
 
-      setStats({ compareLatencyMs: Date.now() - startTime, models: validModels.length });
+      setStats({ compareLatencyMs: Date.now() - startTime, models: slots.length });
     }
   }, [mode, selectedModels, buildRequestBody, streamChat]);
 
@@ -626,10 +599,14 @@ export default function PlaygroundClient() {
             />
           ) : (
             <div className="flex min-w-0 gap-3">
-              {selectedModels.filter(Boolean).map((modelId) => {
-                const result = compareResults[modelId];
+              {selectedModels.map((modelId, idx) => {
+                if (!modelId) return null;
+                // Per-slot key (not bare modelId) so duplicate models render
+                // as separate panels with independent streams.
+                const slotKey = compareSlotKey(idx, modelId);
+                const result = compareResults[slotKey];
                 return (
-                  <div key={modelId} className="flex min-w-0 flex-1 flex-col rounded-brand border border-border-subtle bg-panel">
+                  <div key={slotKey} className="flex min-w-0 flex-1 flex-col rounded-brand border border-border-subtle bg-panel">
                     <div className="border-b border-border-subtle px-3 py-2">
                       <span className="truncate text-xs font-medium text-text-main">{modelId}</span>
                     </div>
@@ -721,6 +698,8 @@ export default function PlaygroundClient() {
 function Composer({ onSend, streaming, onStop }) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState([]);
+  const [imageNotice, setImageNotice] = useState(null);
+  const noticeTimer = useRef(null);
   const ref = useRef(null);
 
   // MAX_IMAGE_SIZE: 5MB — base64 encoding ~4/3x the binary, so a 5MB image
@@ -728,9 +707,21 @@ function Composer({ onSend, streaming, onStop }) {
   // avoid blowing the body-size limit (10MB) and to keep localStorage sane.
   const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 
+  const flashImageNotice = (msg) => {
+    setImageNotice(msg);
+    if (noticeTimer.current) clearTimeout(noticeTimer.current);
+    noticeTimer.current = setTimeout(() => setImageNotice(null), 4000);
+  };
+
   const addImage = (file) => {
-    if (!file || !file.type.startsWith("image/")) return;
-    if (file.size > MAX_IMAGE_SIZE) return;
+    if (!file || !file.type.startsWith("image/")) {
+      flashImageNotice("Only image files can be attached");
+      return;
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      flashImageNotice("Image too large — max 5MB");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       setAttachments((prev) => [...prev, { id: createId(), dataUrl: reader.result, name: file.name }]);
@@ -791,6 +782,9 @@ function Composer({ onSend, streaming, onStop }) {
             </div>
           ))}
         </div>
+      )}
+      {imageNotice && (
+        <p className="px-1 text-[10px] text-warning" role="status" aria-live="polite">{imageNotice}</p>
       )}
       <div className="flex items-end gap-2">
         <textarea
