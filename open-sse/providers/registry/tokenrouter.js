@@ -14,7 +14,12 @@ export default {
   id: "tokenrouter",
   priority: 320,
   alias: "tokenrouter",
-  aliases: ["tr"],
+  // NOTE: no "tr" alias — trae already owns the "tr" token (its canonical
+  // alias, used by every emitted "tr/<model>" string). A duplicate "tr" here
+  // made resolveProviderAlias("tr") return whichever provider was imported
+  // last, silently routing trae models to TokenRouter (and vice versa).
+  // "tr" remains the UI badge (uiAlias) only.
+  aliases: [],
   uiAlias: "tr",
   display: {
     name: "TokenRouter",

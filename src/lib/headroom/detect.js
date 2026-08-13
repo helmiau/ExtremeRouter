@@ -70,12 +70,26 @@ export function findPython310() {
   return null;
 }
 
-// Probe whether a Headroom proxy is reachable at the given URL by hitting /health.
+// Probe whether a Headroom proxy is reachable at the given URL.
+//
+// /health aggregates an upstream reachability check (api.anthropic.com) that is
+// lazy, slow (multi-second) and can hang on restricted networks — and it is
+// irrelevant here: this app only calls the proxy's /v1/compress endpoint, it
+// never routes traffic through headroom's upstream. Probing /health therefore
+// reports a healthy proxy as "not running" while the upstream check is
+// in-flight, which keeps the token-saver toggle permanently disabled.
+// /livez is pure process liveness and responds instantly, so probe it first and
+// fall back to /health only for old headroom builds without /livez (404/405).
 export async function probeProxyRunning(url) {
   if (!url) return false;
   const base = String(url).replace(/\/$/, "");
   try {
-    const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(HEADROOM_HEALTH_TIMEOUT_MS) });
+    const res = await fetch(`${base}/livez`, { signal: AbortSignal.timeout(HEADROOM_HEALTH_TIMEOUT_MS) });
+    if (res.status === 404 || res.status === 405) {
+      // Headroom without /livez — fall back to /health with a longer timeout.
+      const health = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5000) });
+      return health.ok;
+    }
     return res.ok;
   } catch {
     return false;

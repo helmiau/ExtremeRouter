@@ -74,8 +74,7 @@ import p71 from "./mimo-free.js";
 import p72 from "./minimax-cn.js";
 import p73 from "./minimax.js";
 import p74 from "./mistral.js";
-import p75 from "./mmf.js";
-import p76 from "./muse-spark-web.js";
+import p75 from "./muse-spark-web.js";
 import p77 from "./nanobanana.js";
 import p78 from "./nebius.js";
 import p79 from "./nvidia.js";
@@ -240,7 +239,6 @@ export default [
   p73,
   p74,
   p75,
-  p76,
   p77,
   p78,
   p79,

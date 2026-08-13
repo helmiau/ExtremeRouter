@@ -11,10 +11,10 @@ export default {
   id: "venice-web",
   priority: 60,
   alias: "venice-web",
-  aliases: [
-    "venice",
-    "ven-web",
-  ],
+  // No "venice" alias — the real Venice API provider owns that token (id +
+  // canonical alias); a duplicate here was dead config that never resolved to
+  // this provider and only shadowed the intended one.
+  aliases: ["ven-web"],
   uiAlias: "ven-web",
   display: {
     name: "Venice (Web)",

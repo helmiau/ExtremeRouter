@@ -21,6 +21,7 @@ import { MimoFreeExecutor, __test__ } from "../../open-sse/executors/mimo-free.j
 import { getExecutor } from "../../open-sse/executors/index.js";
 import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "../../open-sse/config/providerModels.js";
+import { resolveProviderAlias } from "../../open-sse/services/model.js";
 import { FREE_PROVIDERS } from "../../src/shared/constants/providers.js";
 
 const {
@@ -232,7 +233,10 @@ describe("MiMo Free provider registration", () => {
 
   it("registers mimo-free as a no-auth provider in open-sse config", () => {
     expect(PROVIDERS["mimo-free"]?.noAuth).toBe(true);
-    expect(PROVIDERS.mmf?.noAuth).toBe(true);
+    // Legacy hidden duplicate provider "mmf" was removed; the "mmf" token now
+    // resolves to mimo-free (its canonical alias), not a separate provider.
+    expect(PROVIDERS.mmf).toBeUndefined();
+    expect(resolveProviderAlias("mmf")).toBe("mimo-free");
   });
 
   it("exposes only mimo-auto (the sole free-channel model)", () => {

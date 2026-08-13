@@ -19,8 +19,11 @@ export default {
   id: "inxorastudio",
   priority: 340,
   alias: "inxora",
-  aliases: ["ix"],
-  uiAlias: "ix",
+  // No "ix" alias — inferx already owns "ix"; a duplicate token made
+  // resolveProviderAlias("ix") return inferx, so inxorastudio's "ix" was
+  // dead config that also made the UI badge route elsewhere.
+  aliases: [],
+  uiAlias: "inxora",
   display: {
     name: "InxoraStudio Labs",
     icon: "science",

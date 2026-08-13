@@ -20,6 +20,7 @@ import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { getPricingForModel } from "open-sse/providers/pricing.js";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 import { resolveKiroEffortPath } from "open-sse/config/kiroConstants.js";
+import { resolveProviderAlias } from "open-sse/services/model.js";
 
 const PAID_CATEGORIES = new Set(["apikey", "oauth"]);
 // "none" is a legitimate explicit value in the codex GPT-5.6 override matrix
@@ -152,5 +153,41 @@ describe("model-consistency gate (CI)", () => {
   it("every registry LLM model satisfies pricing + capabilities + thinking invariants", () => {
     const issues = collectIssues();
     expect(issues, `model-consistency violations:\n${issues.join("\n")}`).toEqual([]);
+  });
+
+  it("provider identity tokens (id/alias/aliases) never collide", () => {
+    // A duplicate token makes resolveProviderAlias() return whichever provider
+    // the registry imported last, silently routing model strings like
+    // "tr/gemini-3.1-pro" (trae) to the other provider (tokenrouter).
+    const tokens = new Map(); // token -> provider id
+    const collisions = [];
+    for (const entry of REGISTRY) {
+      const claim = (token, kind) => {
+        if (!token) return;
+        if (tokens.has(token) && tokens.get(token) !== entry.id) {
+          collisions.push(`${token} (${kind} of ${entry.id} vs ${tokens.get(token)})`);
+        } else {
+          tokens.set(token, entry.id);
+        }
+      };
+      claim(entry.id, "id");
+      claim(entry.alias, "alias");
+      for (const a of entry.aliases || []) claim(a, "alias");
+    }
+    expect(collisions, `alias collisions:\n${collisions.join("\n")}`).toEqual([]);
+  });
+
+  it("every provider's canonical alias resolves back to itself (round-trip)", () => {
+    // Emitted model strings are built as "<alias>/<model>" (PROVIDER_MODELS
+    // is keyed by alias). If another provider shadows that alias, every such
+    // string silently routes to the wrong provider.
+    const broken = [];
+    for (const entry of REGISTRY) {
+      const token = entry.alias || entry.id;
+      if (resolveProviderAlias(token) !== entry.id) {
+        broken.push(`${entry.id}: alias "${token}" resolves to ${resolveProviderAlias(token)}`);
+      }
+    }
+    expect(broken, `alias round-trip violations:\n${broken.join("\n")}`).toEqual([]);
   });
 });
