@@ -23,6 +23,7 @@
 // 2.0+, Grok, Perplexity). Verify with: curl -s https://models.dev/api.json
 
 import { matchPattern } from "./pricing.js";
+import { resolveProviderAlias } from "../services/model.js";
 
 /**
  * Safe floor — every resolved result is merged over this so consumers
@@ -165,9 +166,10 @@ export const PROVIDER_CAPABILITIES = {
   // scoped so the generic *muse-spark* pattern can't leak native effort levels
   // onto muse-spark-web (web bridge doesn't speak OpenAI-compatible effort).
   "meta-ai": {
-    "muse-spark-1.2":            { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 },
-    "muse-spark-1.2-contributor": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 },
-    "muse-spark-1.1":            { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 },
+    // Muse Spark 1.x is fully multimodal (models.dev: image+video+pdf+audio input).
+    "muse-spark-1.2":            { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 },
+    "muse-spark-1.2-contributor": { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 },
+    "muse-spark-1.1":            { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 },
   },
   // codebuddy-intl + workbuddy — same CodeBuddy gateway on their own hosts
   // (codebuddy.ai / workbuddy.ai). WorkBuddy's flagship model is "hy3" (the
@@ -276,6 +278,14 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*o3_*",           caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
   { pattern: "*o4-*",           caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
   { pattern: "*o4_*",           caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
+  // Bare o1/o3/o4 ids (openai/o1, openai/o3, chatgpt-web/o3, copilot-web/o3, …)
+  // contain no dash/underscore, so the *o1-* / *o3_* patterns never match them
+  // and they silently lost reasoning+vision. models.dev: reasoning, image/pdf
+  // input, 200k ctx / 100k output. Specific variants (o1-mini, o3-mini, o4-mini)
+  // are still caught by the earlier patterns.
+  { pattern: "o1*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
+  { pattern: "o3*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
+  { pattern: "o4*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },
 
   // ── Grok (vision + Live Search) ──────────────────────────────────
   { pattern: "*grok-imagine-video*", caps: { videoOutput: true } },
@@ -303,9 +313,14 @@ export const PATTERN_CAPABILITIES = [
   // ── Kimi (enabled→reasoning_effort; K2.7-code cannot disable) ─────
   { pattern: "*kimi*k2.7*code*", caps: { vision: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "*kimi*k2*",       caps: { vision: true, reasoning: true, thinkingFormat: "kimi", contextWindow: 262144, maxOutput: 262144 } },
+  // kimi-latest (Moonshot chat) accepts image input (models.dev).
+  { pattern: "*kimi-latest*",   caps: { vision: true, reasoning: true, thinkingFormat: "kimi", contextWindow: 262144 } },
   { pattern: "*kimi*",          caps: { reasoning: true, thinkingFormat: "kimi", contextWindow: 262144 } },
 
   // ── GLM / Z.ai (thinking.enabled; disable via enable_thinking:false) ─
+  // GLM-5.2 exposes 1M context + reasoning_effort high|max (Z.ai docs); the
+  // generic *glm-5* caps at 200k and advertises the full effort range.
+  { pattern: "*glm-5.2*",       caps: { reasoning: true, thinkingFormat: "zai", thinkingLevels: ["high", "max"], contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*glm-5*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
   { pattern: "*glm-4.7*",       caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
   { pattern: "*glm-4*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000 } },
@@ -327,7 +342,10 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*minimax*",       caps: { reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 131072 } },
 
   // ── Xiaomi MiMo (vision, 1M / 262K ctx) ──────────────────────────
-  { pattern: "*mimo*v2.5*",     caps: { vision: true, contextWindow: 1048576, maxOutput: 131072 } },
+  // MiMo-V2.5 family — native reasoning (models.dev: reasoning:true, input
+  // text+image+audio+video, 1M ctx). OpenAI-compatible API → openai effort.
+  { pattern: "*mimo*v2.5*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "*mimo*auto*",     caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 262144, maxOutput: 131072 } },
   { pattern: "*mimo*omni*",     caps: { vision: true, audioInput: true, contextWindow: 262144, maxOutput: 131072 } },
   { pattern: "*mimo*",          caps: { vision: true, contextWindow: 262144, maxOutput: 131072 } },
 
@@ -341,6 +359,8 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*mistral*",       caps: { contextWindow: 128000 } },
 
   // ── Cohere (Command A Vision = vision; others text) ──────────────
+  // Cohere Command A Reasoning — explicit reasoning model (models.dev: 256k ctx).
+  { pattern: "*command-a-reasoning*", caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 256000, maxOutput: 32000 } },
   { pattern: "*command-a-vision*", caps: { vision: true, contextWindow: 128000 } },
   { pattern: "*command*",       caps: { contextWindow: 128000 } },
 
@@ -355,8 +375,9 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*hunyuan*",       caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "hy3*",            caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "*step-*",         caps: { reasoning: true, thinkingFormat: "step", contextWindow: 128000 } },
-  { pattern: "*nemotron*",      caps: { reasoning: true, contextWindow: 128000 } },
-  { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
+  // NVIDIA Nemotron / Inclusion Ling — OpenAI-compatible reasoning formats.
+  { pattern: "*nemotron*",      caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },
+  { pattern: "*ling-*",         caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },
 ];
 
 /**
@@ -369,6 +390,10 @@ export const PATTERN_CAPABILITIES = [
  */
 export function getCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
+  // Providers arrive as registry ids at runtime (parseModel → resolveProviderAlias)
+  // but as aliases from UI call sites (AI_MODELS, /api/models, useModelCaps,
+  // StatsBar). Normalize alias → id here so both keys resolve the same table.
+  provider = resolveProviderAlias(provider);
 
   // 1. Provider-specific override
   if (provider && PROVIDER_CAPABILITIES[provider]?.[model]) {

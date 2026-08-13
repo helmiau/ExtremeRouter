@@ -16,9 +16,11 @@ import {
 import { normalizeComboStrategyConfig } from "../../open-sse/services/comboConfig.js";
 import { resolveComboStrategyConfig, buildComboExecutionGraph, authorizeComboExecution } from "../../src/sse/services/comboExecutionPolicy.js";
 
-// oc/mimo-v2.5-free is vision-capable per MODEL_CAPABILITIES pattern
-// `*mimo*v2.5*`; audioInput/videoInput are NOT asserted for it.
+// oc/mimo-v2.5-free is vision-capable per the `*mimo*v2.5*` pattern (and
+// audio/video capable since the audit fix aligned MiMo-V2.5 with models.dev).
+// For the refusal test we need a fallback that genuinely lacks audio/video.
 const VISION_FALLBACK = DEFAULT_CAPABILITY_FALLBACK_MODEL;
+const TEXT_ONLY_FALLBACK = "openai/gpt-4o"; // vision+search, no audio/video caps
 
 describe("detectRequiredCapabilities — audio/video", () => {
   it("detects audio blocks (openai/antropic shapes)", () => {
@@ -82,9 +84,12 @@ describe("applyCapabilityAdapter", () => {
     expect(out.slice(1)).toEqual(members); // original order preserved after
   });
 
-  it("refuses to insert the fallback for audio/video (not proven capable)", () => {
-    expect(applyCapabilityAdapter(members, new Set(["audioInput"]), VISION_FALLBACK)).toBe(members);
-    expect(applyCapabilityAdapter(members, new Set(["videoInput"]), VISION_FALLBACK)).toBe(members);
+  it("refuses to insert the fallback for audio/video when the fallback cannot handle them", () => {
+    // mimo-v2.5-free IS audio/video capable now (models.dev), so it WOULD be
+    // inserted for audio/video — the refusal must be tested with a fallback
+    // whose capabilities genuinely lack audio/video (unknown ≠ capable).
+    expect(applyCapabilityAdapter(members, new Set(["audioInput"]), TEXT_ONLY_FALLBACK)).toBe(members);
+    expect(applyCapabilityAdapter(members, new Set(["videoInput"]), TEXT_ONLY_FALLBACK)).toBe(members);
   });
 
   it("returns the same array when the fallback is already a member", () => {

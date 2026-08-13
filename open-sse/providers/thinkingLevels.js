@@ -14,6 +14,7 @@
 import { getCapabilitiesForModel } from "./capabilities.js";
 import { matchPattern } from "./pricing.js";
 import { resolveKiroEffortPath } from "../config/kiroConstants.js";
+import { resolveProviderAlias } from "../services/model.js";
 
 // Shared level sets (deduped) — verified against provider docs + wire in
 // thinkingUnified.applyFormat.
@@ -64,6 +65,10 @@ const PATTERN_THINKING = [
  * @returns {string[]|null}
  */
 export function getThinkingLevels(provider, model) {
+  // Providers arrive as registry ids at runtime but as aliases from UI call
+  // sites — normalize so the Kiro gate + provider-scoped overrides match.
+  provider = resolveProviderAlias(provider);
+
   // Kiro gate FIRST: only Claude 5 / GPT-5.6 families advertise native levels.
   // resolveKiroEffortPath returns null for everything else → hide the picker.
   if (provider === "kiro" && resolveKiroEffortPath(model) === null) return null;

@@ -234,6 +234,15 @@ function applyFormat(fmt, body, cfg, caps, model, provider) {
       // Z.ai ignores thinking.disabled → must use enable_thinking:false to turn off.
       if (none && canDisable) { body.enable_thinking = false; delete body.thinking; break; }
       body.thinking = { type: "enabled" };
+      // GLM-5.2+ exposes reasoning_effort (high|max, default max) alongside deep
+      // thinking (Z.ai migrate-to-glm-5.2 docs). Older GLM (4.x/5/5.1) ignore the
+      // field — only set it for 5.2+ so legacy models stay clean.
+      if (/(^|\/)glm-5\.(2|3|4|5)\b/i.test(model)) {
+        const level = toLevel(eff);
+        if (level && level !== "auto") {
+          body.reasoning_effort = level === "max" || level === "xhigh" || level === "ultra" ? "max" : "high";
+        }
+      }
       break;
     }
     case "qwen": {

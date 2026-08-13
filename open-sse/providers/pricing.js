@@ -5,6 +5,8 @@
 //   2. MODEL_PRICING[model]               — canonical model price (provider-agnostic)
 //   3. PATTERN_PRICING                    — glob pattern match (e.g. "codex-*")
 
+import { resolveProviderAlias } from "../services/model.js";
+
 /**
  * Canonical model pricing — provider-agnostic.
  * Cover all known models; deduplicated across providers.
@@ -126,6 +128,74 @@ export const MODEL_PRICING = {
   "gpt-oss-120b-medium":          { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  },
   "vision-model":                 { input: 1.50,  output: 6.00,  cached: 0.75,  reasoning: 9.00,   cache_creation: 1.50  },
   "coder-model":                  { input: 1.50,  output: 6.00,  cached: 0.75,  reasoning: 9.00,   cache_creation: 1.50  },
+
+  // === models.dev-derived fill (audit: paid-provider LLM gaps, $/1M) ===
+  // Values sourced from https://models.dev/api.json (the same authoritative
+  // source capabilities.js cites). reasoning = output for reasoning models
+  // (codebase convention). Kept provider-agnostic; PROVIDER_PRICING overrides
+  // when a specific host charges differently.
+  "gpt-oss-120b":                 { input: 0.228, output: 0.798, reasoning: 0.798 },
+  "zai-glm-4.7":                  { input: 2.25,  output: 2.75,  reasoning: 2.75  },
+  "llama-3.3-70b":                { input: 0.70,  output: 2.80 },
+  "llama-4-scout-17b-16e-instruct": { input: 0.20, output: 0.78 },
+  "poolside/laguna-s-2.1:free":   { input: 0,     output: 0 },
+  "laguna-s-2.1:free":            { input: 0,     output: 0 },
+  "stepfun/step-3.7-flash":       { input: 0.19,  output: 1.14,  reasoning: 1.14 },
+  "step-3.7-flash":               { input: 0.185, output: 1.11,  reasoning: 1.11 },
+  "kwaipilot/kat-coder-pro":      { input: 0.30,  output: 1.20 },
+  "cline-pass/mimo-v2.5":         { input: 0.14,  output: 0.28,  reasoning: 0.28 },
+  "cline-pass/mimo-v2.5-pro":     { input: 1.74,  output: 3.48,  reasoning: 3.48 },
+  "hy3-preview":                  { input: 0,     output: 0 },
+  "hy3":                          { input: 0,     output: 0 },
+  "mimo-auto":                    { input: 0,     output: 0 },
+  "command-r-plus-08-2024":       { input: 2.50,  output: 10.00 },
+  "command-r-08-2024":            { input: 0.15,  output: 0.60 },
+  "command-a-03-2025":            { input: 2.50,  output: 10.00 },
+  "llama-3.3-70b-versatile":      { input: 0.59,  output: 0.79 },
+  "openai/gpt-oss-120b":          { input: 0.037, output: 0.17,  reasoning: 0.17 },
+  "meta-llama/Llama-3.3-70B-Instruct": { input: 0.05, output: 0.23 },
+  "meta-llama/Llama-3.2-3B-Instruct": { input: 0.0306, output: 0.0493 },
+  "NousResearch/Hermes-3-Llama-3.1-70B": { input: 0.70, output: 0.70 },
+  "mistral-large-latest":         { input: 0.50,  output: 1.50 },
+  "codestral-latest":             { input: 0.30,  output: 0.90 },
+  "codestral-2508":               { input: 0.30,  output: 0.90 },
+  "mistral-medium-latest":        { input: 1.50,  output: 7.50,  reasoning: 7.50 },
+  "mimo-v2.5":                    { input: 0.14,  output: 0.28,  reasoning: 0.28 },
+  "mimo-v2.5-pro":                { input: 0.435, output: 0.87,  reasoning: 0.87 },
+  "sonar-pro":                    { input: 3.00,  output: 15.00 },
+  "sonar":                        { input: 1.00,  output: 1.00 },
+  "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": { input: 0.371, output: 1.484 },
+  "venice-uncensored-1-2":        { input: 0.20,  output: 0.90 },
+  "zai-org-glm-5":                { input: 1.00,  output: 3.20,  reasoning: 3.20 },
+  "hermes-3-llama-3.1-405b":      { input: 1.10,  output: 3.00 },
+  "mistral-small-3-2-24b-instruct": { input: 0.09375, output: 0.25 },
+  "mimo-v2-pro":                  { input: 1.00,  output: 3.00,  reasoning: 3.00 },
+  "mimo-v2-omni":                 { input: 0.40,  output: 2.00,  reasoning: 2.00 },
+  "mimo-v2-tts":                  { input: 0,     output: 0 },
+  "mimo-v2.5-tts":                { input: 0,     output: 0 },
+  "mimo-v2.5-tts-voiceclone":     { input: 0,     output: 0 },
+  "mimo-v2.5-tts-voicedesign":    { input: 0,     output: 0 },
+  "gemma-4-31b":                  { input: 0.144, output: 0.42,  reasoning: 0.42 },
+  "llama-3.3-70b-instruct":       { input: 1.254, output: 1.254 },
+  "llama-4-maverick":             { input: 0.15,  output: 0.60 },
+  "nemotron-3-super-120b":        { input: 0.30,  output: 0.90,  reasoning: 0.90 },
+  "perplexity/sonar":             { input: 0.25,  output: 2.50 },
+  "mistralai/Mistral-7B-Instruct-v0.3": { input: 0, output: 0 },
+  "nemotron-3-ultra":             { input: 0.10,  output: 0.10,  reasoning: 0.10 },
+  "step-3.5-flash":               { input: 0.10,  output: 0.30,  reasoning: 0.30 },
+  "step-3.5-flash-2603":          { input: 0.10,  output: 0.30,  reasoning: 0.30 },
+  "step-3":                       { input: 0.2499, output: 0.6494 },
+  "openai/gpt-oss-20b":           { input: 0.03,  output: 0.14,  reasoning: 0.14 },
+  "meta-llama/Llama-4-Scout-17B-16E-Instruct": { input: 0.18, output: 0.59 },
+  "google/gemma-4-31B-it":        { input: 0,     output: 0 },
+  "XiaomiMiMo/MiMo-V2.5-Pro":     { input: 0.522, output: 1.044, reasoning: 1.044 },
+  "databricks-gpt-5":             { input: 1.25,  output: 10.00, reasoning: 10.00 },
+  "databricks-claude-sonnet-4":   { input: 3.00,  output: 15.00, reasoning: 15.00 },
+  "databricks-gemini-2-5-pro":    { input: 1.25,  output: 10.00, reasoning: 10.00 },
+  "meta-llama/llama-3.3-70b-instruct": { input: 0.05, output: 0.23 },
+  "mistralai/mistral-nemo":       { input: 0.019, output: 0.03 },
+  // Together Llama-3.3-70B-Turbo (well-known vendor rate).
+  "meta-llama/Llama-3.3-70B-Instruct-Turbo": { input: 0.88, output: 0.88 },
 };
 
 /**
@@ -134,8 +204,11 @@ export const MODEL_PRICING = {
  * Keyed by provider alias (cc, cx, gc, gh, ...) or provider id (openai, anthropic, ...).
  */
 export const PROVIDER_PRICING = {
-  // GitHub Copilot (gh) — gpt-5.3-codex has different rate than canonical
-  gh: {
+  // GitHub Copilot (gh) — gpt-5.3-codex has different rate than canonical.
+  // Keyed by provider id "github" (runtime resolves gh→github). Previously keyed
+  // "gh", which no caller passed — usage cost silently fell back to the
+  // canonical $6/$24 instead of GitHub's actual $1.75/$14.
+  github: {
     "gpt-5.3-codex": { input: 1.75, output: 14.00, cached: 0.175, reasoning: 14.00, cache_creation: 1.75 },
   },
   // Forge Workspace (forge) — tier-based pricing via /v1/models-rates
@@ -378,6 +451,8 @@ export const PATTERN_PRICING = [
   { pattern: "o1-*",            pricing: { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  } },
   { pattern: "o1",              pricing: { input: 15.00, output: 60.00, cached: 7.50,  reasoning: 90.00,  cache_creation: 15.00 } },
   { pattern: "o3-*",            pricing: { input: 10.00, output: 40.00, cached: 5.00,  reasoning: 60.00,  cache_creation: 10.00 } },
+  // Bare "o3" id (openai/o3) — the o3-* pattern needs a dash and never matched it.
+  { pattern: "o3",              pricing: { input: 10.00, output: 40.00, cached: 5.00,  reasoning: 60.00,  cache_creation: 10.00 } },
   { pattern: "o4-*",            pricing: { input: 2.00,  output: 8.00,  cached: 1.00,  reasoning: 12.00,  cache_creation: 2.00  } },
 
   // --- Qwen ---
@@ -431,6 +506,10 @@ export function matchPattern(pattern, model) {
  */
 export function getPricingForModel(provider, model) {
   if (!model) return null;
+  // Providers arrive as registry ids at runtime (usageRepo, chatCore) but as
+  // aliases from UI call sites (StatsBar). Normalize alias → id so both keys
+  // hit the same table.
+  provider = resolveProviderAlias(provider);
 
   // 1. Provider-specific override
   if (provider && PROVIDER_PRICING[provider]?.[model]) {
