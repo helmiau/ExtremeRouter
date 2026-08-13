@@ -17,10 +17,22 @@ import { VALID_NAME_REGEX, STRATEGY_OPTIONS, getStrategyMeta } from "./helpers";
 // - Drag-to-reorder model list with numbered priority indicators
 // - Empty state with icon illustration
 // - Cleaner visual hierarchy with section headers
-export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, modelCaps = {}, kindFilter = null }) {
+export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, modelCaps = {}, kindFilter = null, comboStrategies = {} }) {
+  // Effective strategy for the combo being edited. The runtime resolves the
+  // record's strategyConfig as BASE and settings.comboStrategies[name] as
+  // OVERRIDE with settings winning (resolveComboStrategyConfig in
+  // comboExecutionPolicy). Mirror that here — otherwise a combo switched to
+  // swarm via the ComboCard picker (which writes ONLY settings) still shows
+  // "Fallback" when the edit modal opens, because the DB record still carries
+  // its original fallback strategy.
+  const effectiveFallbackStrategy = (c) =>
+    (c && comboStrategies?.[c.name]?.fallbackStrategy) ||
+    c?.strategyConfig?.fallbackStrategy ||
+    "fallback";
+
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
-  const [strategy, setStrategy] = useState(combo?.strategyConfig?.fallbackStrategy || "fallback");
+  const [strategy, setStrategy] = useState(effectiveFallbackStrategy(combo));
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -36,7 +48,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
     if (isOpen && !wasOpen) {
       setName(combo?.name || "");
       setModels(Array.isArray(combo?.models) ? [...combo.models] : []);
-      setStrategy(combo?.strategyConfig?.fallbackStrategy || "fallback");
+      setStrategy(effectiveFallbackStrategy(combo));
       setNameError("");
       setShowModelSelect(false);
     }
@@ -124,7 +136,11 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models, strategyConfig: { fallbackStrategy: strategy } });
+    // Merge (not replace) the record's strategyConfig so record-level role
+    // models / thinking / autoScale survive an edit — sending only
+    // { fallbackStrategy } previously wiped the rest of the record config.
+    const mergedStrategyConfig = { ...(combo?.strategyConfig || {}), fallbackStrategy: strategy };
+    await onSave({ name: name.trim(), models, strategyConfig: mergedStrategyConfig });
     setSaving(false);
   };
 

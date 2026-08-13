@@ -86,7 +86,28 @@ export default function CombosPageInner() {
   const handleUpdate = async (id, data) => {
     try {
       const res = await fetch(`/api/combos/${id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-      if (res.ok) { await fetchData(); setEditingCombo(null); }
+      if (res.ok) {
+        // Strategy edits must ALSO land in settings.comboStrategies. Runtime
+        // resolves record strategyConfig + settings override with SETTINGS
+        // WINNING (resolveComboStrategyConfig) — writing only the record would
+        // leave a stale settings override in place, so the modal's choice would
+        // have NO runtime effect and the card picker would keep showing the old
+        // strategy. Reuse handleSetComboStrategy so role stripping, validation
+        // and the fallback-delete signal stay consistent with the card picker.
+        const fallback = data.strategyConfig?.fallbackStrategy;
+        const prevName = editingCombo?.name;
+        const nextName = data.name?.trim();
+        if (fallback) {
+          if (nextName && nextName !== prevName && comboStrategies[prevName]) {
+            // Renamed: revert the orphaned old-name settings entry so stale
+            // config can't resurrect if the name is ever reused.
+            await handleSetComboStrategy(prevName, { fallbackStrategy: "fallback" });
+          }
+          if (nextName) await handleSetComboStrategy(nextName, { fallbackStrategy: fallback });
+        }
+        await fetchData();
+        setEditingCombo(null);
+      }
       else { const err = await res.json(); alert(err.error || "Failed to update combo"); }
     } catch (error) { console.log("Error updating combo:", error); }
   };
@@ -262,8 +283,19 @@ export default function CombosPageInner() {
       {/* Create Modal */}
       <ComboFormModal key="create" isOpen={showCreateModal} onClose={() => setShowCreateModal(false)} onSave={handleCreate} activeProviders={activeProviders} modelCaps={modelCaps} />
 
-      {/* Edit Modal */}
-      <ComboFormModal key={editingCombo?.id || "new"} isOpen={!!editingCombo} combo={editingCombo} onClose={() => setEditingCombo(null)} onSave={(data) => handleUpdate(editingCombo.id, data)} activeProviders={activeProviders} modelCaps={modelCaps} />
+      {/* Edit Modal — comboStrategies passed so the strategy picker shows the
+          EFFECTIVE strategy (settings override wins), matching the runtime
+          merge — not the stale record-only strategyConfig. */}
+      <ComboFormModal
+        key={editingCombo?.id || "new"}
+        isOpen={!!editingCombo}
+        combo={editingCombo}
+        onClose={() => setEditingCombo(null)}
+        onSave={(data) => handleUpdate(editingCombo.id, data)}
+        activeProviders={activeProviders}
+        modelCaps={modelCaps}
+        comboStrategies={comboStrategies}
+      />
 
       {/* Confirm Delete */}
       <ConfirmModal isOpen={!!confirmState} onClose={() => setConfirmState(null)} onConfirm={confirmState?.onConfirm} title={confirmState?.title || "Confirm"} message={confirmState?.message} variant="danger" />
