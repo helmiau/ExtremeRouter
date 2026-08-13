@@ -304,10 +304,12 @@ export default function ComboCard({ combo, modelCaps = {}, activeProviders = [],
         <div className="mt-3 border-t border-border-subtle pt-3">
           {/* Full model list */}
           <div className="mb-3">
-            <p className="text-[10px] uppercase tracking-wide text-text-muted mb-1.5 flex items-center gap-1.5">
+            {/* div (not p): CapacityBadges renders Tooltip -> nested div, which is
+                invalid inside <p> and triggers a hydration error. */}
+            <div className="text-[10px] uppercase tracking-wide text-text-muted mb-1.5 flex items-center gap-1.5">
               Models ({models.length})
               {comboCaps && <CapacityBadges caps={comboCaps} size={11} colorOverride="text-text-muted" />}
-            </p>
+            </div>
             <div className="flex flex-col gap-1">
               {models.map((model, index) => (
                 <div key={index} className="flex items-center gap-2 rounded px-2 py-1 bg-black/[0.02] dark:bg-white/[0.02]">

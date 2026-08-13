@@ -70,4 +70,18 @@ describe("ComboCard derived capability badge", () => {
     await mount(baseProps({ combo: { id: "c2", name: "empty", models: [] } }));
     expect(container.textContent).toMatch(/empty/);
   });
+
+  it("never nests a <div> inside a <p> (hydration-safe markup)", async () => {
+    // Regression: the aggregate badge (CapacityBadges -> Tooltip -> div) was
+    // placed inside a <p> in the expanded Models header, which the HTML parser
+    // hoists out and breaks Next.js hydration.
+    await mount(baseProps());
+    // Expand the card so the Models header + strategy sections render.
+    await act(async () => container.querySelector("button").click());
+    const ps = container.querySelectorAll("p");
+    expect(ps.length).toBeGreaterThan(0); // expanded sections use <p> headers
+    for (const p of ps) {
+      expect(p.querySelector("div")).toBeNull();
+    }
+  });
 });
