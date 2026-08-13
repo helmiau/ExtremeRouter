@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { toClientCaps } from "@/shared/utils/modelCaps";
 
 // Fetch model capabilities once and expose a lookup by fullModel ("provider/model") or bare model id.
 export function useModelCaps() {
@@ -39,24 +40,10 @@ export function useModelCaps() {
     const bare = k.includes("/") ? k.slice(k.indexOf("/") + 1) : k;
     if (byId[bare]) return byId[bare];
     // Fallback: compute caps for dynamic models (passthrough/custom/suggested) not in static list.
-    // Mirror the field set exposed by /api/models so both paths return the same shape.
+    // Same compact shape as /api/models (shared/utils/modelCaps.js) so both paths agree.
     const provider = k.includes("/") ? k.slice(0, k.indexOf("/")) : null;
     const c = getCapabilitiesForModel(provider, bare);
-    return {
-      vision: c.vision,
-      search: c.search,
-      reasoning: c.reasoning,
-      thinkingLevels: c.thinkingLevels || null,
-      thinkingMaxEffort: c.thinkingMaxEffort || false,
-      thinkingCanDisable: c.thinkingCanDisable !== false,
-      thinkingFormat: c.thinkingFormat || null,
-      maxOutput: c.maxOutput || null,
-      contextWindow: c.contextWindow || null,
-      tools: c.tools !== false,
-      pdf: c.pdf || false,
-      audioInput: c.audioInput || false,
-      videoInput: c.videoInput || false,
-    };
+    return toClientCaps(c);
   };
 
   return { getCaps };

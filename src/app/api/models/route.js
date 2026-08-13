@@ -4,6 +4,7 @@ import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { toClientCaps } from "@/shared/utils/modelCaps";
 
 // GET /api/models - Get models with aliases
 export async function GET() {
@@ -24,24 +25,9 @@ export async function GET() {
           ...m,
           fullModel,
           alias: modelAliases[fullModel] || m.model,
-          // Expose the full capability set so the UI (model picker badges,
-          // playground parameter panel) can advertise per-model thinking levels
-          // and output limits instead of hardcoded defaults.
-          caps: {
-            vision: c.vision,
-            search: c.search,
-            reasoning: c.reasoning,
-            thinkingLevels: c.thinkingLevels || null,
-            thinkingMaxEffort: c.thinkingMaxEffort || false,
-            thinkingCanDisable: c.thinkingCanDisable !== false,
-            thinkingFormat: c.thinkingFormat || null,
-            maxOutput: c.maxOutput || null,
-            contextWindow: c.contextWindow || null,
-            tools: c.tools !== false,
-            pdf: c.pdf || false,
-            audioInput: c.audioInput || false,
-            videoInput: c.videoInput || false,
-          },
+          // Compact client caps (only non-default fields) so the 1352-model
+          // catalog stays small on the wire — see shared/utils/modelCaps.js.
+          caps: toClientCaps(c),
         };
       });
 

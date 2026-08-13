@@ -109,6 +109,23 @@ function cloneSession(session) {
   };
 }
 
+// Clone sessions and drop heavy attachment dataUrls so a few image chats can't
+// keep the localStorage quota blown forever. Keeps id/name for the attachment
+// preview (broken-image safe) — same escalation as the Playground.
+function stripAttachmentPayload(sessions) {
+  return sessions.map((session) => ({
+    ...session,
+    messages: (session.messages || []).map((message) => {
+      const hasAttachments = Array.isArray(message.attachments) && message.attachments.length > 0;
+      if (!hasAttachments) return message;
+      return {
+        ...message,
+        attachments: message.attachments.map((a) => ({ id: a.id, name: a.name, stripped: true })),
+      };
+    }),
+  }));
+}
+
 function getProviderLabel(connection) {
   return connection?.name || humanize(connection?.provider || connection?.id || "provider");
 }
@@ -205,6 +222,15 @@ export default function BasicChatPageClient() {
   const initializedRef = useRef(false);
   const modelMenuRef = useRef(null);
   const historyMenuRef = useRef(null);
+  // Save feedback: "saved" | "stripped" | "failed" — surfaces localStorage
+  // quota outcomes instead of silently swallowing them (mirrors Playground).
+  const [saveStatus, setSaveStatus] = useState(null);
+  const saveStatusTimer = useRef(null);
+  const flashSaveStatus = (status) => {
+    setSaveStatus(status);
+    if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
+    saveStatusTimer.current = setTimeout(() => setSaveStatus(null), 3000);
+  };
 
   useEffect(() => {
     setIsHydrated(true);
@@ -365,15 +391,28 @@ export default function BasicChatPageClient() {
 
   useEffect(() => {
     if (!isHydrated) return;
+    // Persist with quota escalation: full write → retry once with attachment
+    // payloads stripped → surface the outcome instead of a silent swallow.
+    // Autosave runs on every change, so we only surface trouble (stripped /
+    // failed) and clear the indicator once saving succeeds again.
     try {
       globalThis.localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(sessions));
       globalThis.localStorage.setItem(STORAGE_KEYS.activeSessionId, activeSessionId);
       globalThis.localStorage.setItem(STORAGE_KEYS.activeProviderId, activeProviderId);
       globalThis.localStorage.setItem(STORAGE_KEYS.draft, draft);
+      if (saveStatus) setSaveStatus(null);
     } catch {
-      // Ignore storage errors.
+      try {
+        globalThis.localStorage.setItem(STORAGE_KEYS.sessions, JSON.stringify(stripAttachmentPayload(sessions)));
+        globalThis.localStorage.setItem(STORAGE_KEYS.activeSessionId, activeSessionId);
+        globalThis.localStorage.setItem(STORAGE_KEYS.activeProviderId, activeProviderId);
+        globalThis.localStorage.setItem(STORAGE_KEYS.draft, draft);
+        flashSaveStatus("stripped");
+      } catch {
+        flashSaveStatus("failed");
+      }
     }
-  }, [isHydrated, sessions, activeSessionId, activeProviderId, draft]);
+  }, [isHydrated, sessions, activeSessionId, activeProviderId, draft, saveStatus, flashSaveStatus]);
 
   useEffect(() => {
     if (!isHydrated || loadingData || initializedRef.current) return;
@@ -799,6 +838,17 @@ export default function BasicChatPageClient() {
           </div>
 
           <div className="flex items-center gap-2">
+            {saveStatus && (
+              <span
+                role="status"
+                aria-live="polite"
+                className={`text-xs ${saveStatus === "failed" ? "text-danger" : "text-warning"}`}
+              >
+                {saveStatus === "stripped"
+                  ? "Storage full — images removed to fit"
+                  : "Chats not saved — storage full"}
+              </span>
+            )}
             <button
               type="button"
               onClick={() => setHistoryOpen((value) => !value)}
