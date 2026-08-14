@@ -95,15 +95,31 @@ export function simulateCombo({ members = [], strategyConfig = {}, inputTokens =
     worst: perCall * calls.max,
   };
 
-  // Budget rejection risk — the runtime rejects when budgets.enabled AND the
-  // worst-case cost exceeds maxEstimatedCostUsd (same comparison, same formula).
+  // Budget rejection risk — must match the runtime EXACTLY, or the pre-save
+  // "will be rejected" flag drifts from the real combo_cost_budget_exceeded.
+  //
+  // The runtime (createComboBudget via graph.leaves) sums each leaf ONCE over
+  // the execution graph's refs — members + role refs WITHOUT the display-side
+  // dedupe, because the judge/manager/audit ref is a separate call even when it
+  // duplicates a member (default fusion judge = panel[0] is a real second call
+  // to that model). The display envelope above (perCall × calls) is a UX spend
+  // range, NOT the runtime's rejection number — comparing it would over-flag
+  // rejection by up to calls.max× (e.g. fusion 2 members: runtime = 2c0+c1,
+  // old check = 3(c0+c1)).
+  const runtimeLeaves = [...members.map((m) => m.fullModel), ...Object.values(roleModels)].filter(Boolean);
+  const runtimeEstimatedUsd = runtimeLeaves.reduce((sum, fullModel) => {
+    const slash = fullModel.indexOf("/");
+    const provider = slash > 0 ? fullModel.slice(0, slash) : "";
+    const model = slash > 0 ? fullModel.slice(slash + 1) : fullModel;
+    return sum + estimateLeafCostUsd(provider, model, inputTokens);
+  }, 0);
   const limits = config.budgets;
-  let budgetRisk = { level: "ok", rejected: false };
+  let budgetRisk = { level: "ok", rejected: false, estimatedCostUsd: runtimeEstimatedUsd };
   if (limits.enabled && limits.maxEstimatedCostUsd < Infinity) {
     const limit = limits.maxEstimatedCostUsd;
-    budgetRisk = estimatedCost.worst > limit
-      ? { level: "rejected", rejected: true, limit, estimatedCostUsd: estimatedCost.worst }
-      : { level: "ok", rejected: false, limit };
+    budgetRisk = runtimeEstimatedUsd > limit
+      ? { level: "rejected", rejected: true, limit, estimatedCostUsd: runtimeEstimatedUsd }
+      : { level: "ok", rejected: false, limit, estimatedCostUsd: runtimeEstimatedUsd };
   }
 
   // Control-role capability violations (web-cookie providers cannot judge/manage).

@@ -55,10 +55,10 @@ describe("simulateCombo — cost", () => {
 
   it("fusion cost includes the judge leaf (judge || panel[0])", () => {
     const s = simulateCombo({ members: MEMBERS, strategyConfig: { fallbackStrategy: "fusion" }, inputTokens: 1000 });
-    // Leaves = panel(2) + judge(= panel[0]) → 3 calls × per-call sum. The judge
-    // ref duplicates a member ref, so the per-call set stays 2 leaves (same
-    // conservative dedupe createComboBudget applies — its `leaves` array also
-    // contains each ref once). Worst cost = perCallCost × 3 calls.
+    // Display envelope: worst = per-call sum × worst logical calls. The judge
+    // ref duplicates a member ref, so the display per-call set stays 2 leaves
+    // (the display envelope is a UX range — the runtime rejection number is
+    // asserted separately in the budget-risk suite below).
     expect(s.calls.max).toBe(3);
     expect(s.estimatedCost.worst).toBeCloseTo(s.perCallCost * 3, 10);
   });
@@ -77,6 +77,29 @@ describe("simulateCombo — cost", () => {
 });
 
 describe("simulateCombo — budget rejection risk", () => {
+  it("rejection uses the runtime's exact Σ (members + role refs, no dedupe) — not the display envelope", () => {
+    // Runtime createComboBudget sums graph.leaves ONCE: members + role refs
+    // (default fusion judge = panel[0] is a separate call → 2×c0 + c1). The
+    // old pre-fix check compared the display envelope perCall × calls.max =
+    // 3×(c0+c1), which over-flags rejection by up to calls.max×. Pick a limit
+    // BETWEEN the two numbers: the runtime accepts it, the old check rejected.
+    const inputTokens = 1000;
+    const c0 = estimateLeafCostUsd(MEMBERS[0].provider, MEMBERS[0].model, inputTokens);
+    const c1 = estimateLeafCostUsd(MEMBERS[1].provider, MEMBERS[1].model, inputTokens);
+    const runtimeUsd = 2 * c0 + c1; // members(2) + judge(= panel[0]) — no dedupe
+    const oldEnvelopeWorst = 3 * (c0 + c1);
+    const limit = runtimeUsd + 0.01; // > runtime Σ, < old envelope
+    expect(limit).toBeLessThan(oldEnvelopeWorst);
+
+    const s = simulateCombo({
+      members: MEMBERS,
+      strategyConfig: { fallbackStrategy: "fusion", budgets: { enabled: true, maxEstimatedCostUsd: limit } },
+      inputTokens,
+    });
+    expect(s.budgetRisk.rejected).toBe(false); // runtime would NOT reject
+    expect(s.budgetRisk.estimatedCostUsd).toBeCloseTo(runtimeUsd, 10);
+  });
+
   it("flags rejection when worst-case cost exceeds an enabled budget limit", () => {
     const s = simulateCombo({
       members: MEMBERS,
