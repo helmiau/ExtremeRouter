@@ -23,6 +23,10 @@ import { PROVIDER_MODELS } from "../providers/index.js";
 
 const BASE_URL = "https://codebuff.com";
 const ROOT_AGENT_ID = "base2-free";
+// Upstream rejects free-tier traffic that doesn't look like an official
+// client: session/run/chat calls must carry the codebuff SDK user agent
+// (mirrors the official CLI's ai-sdk UA — see freebuff-proxy / free-buff-lol).
+const CLI_USER_AGENT = "ai-sdk/openai-compatible/0.10.7/codebuff";
 const SESSION_LEAD_MS = 30_000; // refresh the session 30s before expiry
 const COOLDOWN_MS = 30 * 60 * 1000; // 401 → 30-minute per-token cooldown
 const PREMIUM_MODEL_IDS = [
@@ -40,6 +44,18 @@ function errorResponse(status, message, code = "FREEBUFF_ERROR", headers = {}) {
     JSON.stringify({ error: { message, type: "upstream_error", code } }),
     { status, headers: { "Content-Type": "application/json", ...headers } },
   );
+}
+
+// Build a 403 response for an upstream rejection. A 403 is a policy/CLI-gate
+// decision — NOT an auth failure — so it must never be reported as an invalid
+// token or trigger the auth cooldown. When the body signals the free-tier
+// CLI-only gate, surface that explicitly.
+function forbiddenResponse(context, bodyText = "") {
+  const isCliGate = /free_mode_cli_required|only available through the freebuff cli|freebuff cli/i.test(bodyText);
+  const message = isCliGate
+    ? `Freebuff free tier ${context} is currently restricted to the official CLI by upstream (403 free_mode_cli_required). Try again later, or use the freebuff CLI directly.`
+    : `Freebuff upstream rejected the ${context} request (403): ${(bodyText || "forbidden").slice(0, 300)}`;
+  return errorResponse(403, message, isCliGate ? "free_mode_cli_required" : "FORBIDDEN");
 }
 
 // Resolve the client's model string to a valid upstream wire id. The catalog
@@ -74,13 +90,15 @@ async function ensureSession(token, wireModel, fetchFn) {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
       "Accept": "application/json",
+      "User-Agent": CLI_USER_AGENT,
       "x-freebuff-model": wireModel,
     },
     body: "{}",
   });
   if (res.status === 401 || res.status === 403) {
-    const err = new Error("INVALID_TOKEN");
+    const err = new Error(res.status === 401 ? "INVALID_TOKEN" : "UPSTREAM_FORBIDDEN");
     err.status = res.status;
+    if (res.status === 403) err.bodyText = await res.text().catch(() => "");
     throw err;
   }
   if (!res.ok) {
@@ -109,12 +127,14 @@ async function ensureRootRun(token, fetchFn) {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
       "Accept": "application/json",
+      "User-Agent": CLI_USER_AGENT,
     },
     body: JSON.stringify({ action: "START", agentId: ROOT_AGENT_ID, ancestorRunIds: [] }),
   });
   if (res.status === 401 || res.status === 403) {
-    const err = new Error("INVALID_TOKEN");
+    const err = new Error(res.status === 401 ? "INVALID_TOKEN" : "UPSTREAM_FORBIDDEN");
     err.status = res.status;
+    if (res.status === 403) err.bodyText = await res.text().catch(() => "");
     throw err;
   }
   if (!res.ok) {
@@ -154,6 +174,22 @@ export class FreeBuffExecutor extends BaseExecutor {
     const wireModel = resolveWireModel(model || body?.model);
     const fetchFn = proxyOptions?.connectionProxyEnabled ? proxyAwareFetch : tlsFetch;
 
+    // Reuse the session created at connect-time (stored in providerSpecificData)
+    // so a restart doesn't burn a fresh 1-hour session from the daily quota.
+    const storedSession = credentials?.providerSpecificData;
+    const stateNow = tokenStates.get(token) || {};
+    if (
+      !stateNow.session &&
+      storedSession?.instanceId &&
+      storedSession?.sessionExpiresAt &&
+      new Date(storedSession.sessionExpiresAt).getTime() > Date.now() + SESSION_LEAD_MS
+    ) {
+      tokenStates.set(token, {
+        ...stateNow,
+        session: { instanceId: storedSession.instanceId, expiresAt: storedSession.sessionExpiresAt, status: "active" },
+      });
+    }
+
     // 1. Session (queued → Retry-After; expired → keep-alive).
     let session;
     try {
@@ -163,6 +199,12 @@ export class FreeBuffExecutor extends BaseExecutor {
         tokenStates.set(token, { ...(tokenStates.get(token) || {}), cooldownUntil: now + COOLDOWN_MS });
         return {
           response: errorResponse(401, "Freebuff: authToken is invalid or expired — re-copy from freebuff.llm.pm."),
+          url: `${BASE_URL}/api/v1/freebuff/session`, headers: {}, transformedBody: body,
+        };
+      }
+      if (err.message === "UPSTREAM_FORBIDDEN") {
+        return {
+          response: forbiddenResponse("session", err.bodyText),
           url: `${BASE_URL}/api/v1/freebuff/session`, headers: {}, transformedBody: body,
         };
       }
@@ -203,6 +245,12 @@ export class FreeBuffExecutor extends BaseExecutor {
           url: `${BASE_URL}/api/v1/agent-runs`, headers: {}, transformedBody: body,
         };
       }
+      if (err.message === "UPSTREAM_FORBIDDEN") {
+        return {
+          response: forbiddenResponse("agent run", err.bodyText),
+          url: `${BASE_URL}/api/v1/agent-runs`, headers: {}, transformedBody: body,
+        };
+      }
       return {
         response: errorResponse(502, `Freebuff run start failed: ${err.message || err}`),
         url: `${BASE_URL}/api/v1/agent-runs`, headers: {}, transformedBody: body,
@@ -233,6 +281,12 @@ export class FreeBuffExecutor extends BaseExecutor {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json",
           "Accept": stream ? "text/event-stream" : "application/json",
+          "User-Agent": CLI_USER_AGENT,
+          // CLI envelope: the upstream expects the same x-freebuff-* headers
+          // the official client sends (session instance binds the request to
+          // the created session/run).
+          "x-freebuff-model": wireModel,
+          ...(session.instanceId ? { "x-freebuff-instance-id": session.instanceId } : {}),
         },
         body: JSON.stringify(payload),
         signal,
@@ -245,10 +299,20 @@ export class FreeBuffExecutor extends BaseExecutor {
       };
     }
 
-    if (upstream.status === 401 || upstream.status === 403) {
+    if (upstream.status === 401) {
       tokenStates.set(token, { ...(tokenStates.get(token) || {}), cooldownUntil: now + COOLDOWN_MS });
       return {
         response: errorResponse(401, "Freebuff: authToken is invalid or expired — re-copy from freebuff.llm.pm."),
+        url: chatUrl, headers: {}, transformedBody: payload,
+      };
+    }
+
+    if (upstream.status === 403) {
+      // Policy/CLI gate, not an auth failure — surface the real reason and
+      // skip the auth cooldown.
+      const errText = await upstream.text().catch(() => "");
+      return {
+        response: forbiddenResponse("chat", errText),
         url: chatUrl, headers: {}, transformedBody: payload,
       };
     }

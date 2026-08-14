@@ -1437,15 +1437,92 @@ const PROVIDERS = {
     },
   },
 
-  // Freebuff (Account) — paste-token flow (browser_token family).
-  // There is no browser authorize endpoint: the user copies their authToken
-  // from https://freebuff.llm.pm or the Freebuff CLI credentials file, and we
-  // validate it by opening a codebuff.com free session (the cheapest upstream
+  // Freebuff (Account) — guided browser-login flow (device_code family).
+  // freebuff.llm.pm issues a fingerprint-bound login URL (POST /api/code): the
+  // user opens it, authenticates on freebuff.com (GitHub/Google), and the
+  // browser lands on the callback URL carrying the new auth_code. We poll
+  // POST /api/status with the fingerprint until login completes and receive
+  // the device-OAuth authToken directly — no manual callback-URL dance.
+  // exchangeToken below stays as the direct-paste fallback: it validates the
+  // authToken by opening a codebuff.com free session (the cheapest upstream
   // call that proves the token + returns session metadata).
   freebuff: {
     config: FREEBUFF_CONFIG,
-    flowType: "browser_token",
+    flowType: "device_code",
     buildAuthUrl: (config) => config.tokenPageUrl,
+    requestDeviceCode: async () => {
+      const res = await fetch("https://freebuff.llm.pm/api/code", { method: "POST" });
+      if (!res.ok) throw new Error(`Freebuff login URL request failed: ${res.status}`);
+      const data = await res.json().catch(() => null);
+      if (!data?.loginUrl || !data?.fingerprintId) {
+        throw new Error("Freebuff login URL request returned an invalid response");
+      }
+      // device_code carries the fingerprint so the poll route can forward it;
+      // verification_uri is the browser login URL that opens freebuff.com.
+      return {
+        device_code: data.fingerprintId,
+        user_code: "",
+        verification_uri: data.loginUrl,
+        verification_uri_complete: data.loginUrl,
+        expires_in: 300,
+        interval: 2,
+        fingerprintHash: data.fingerprintHash,
+        expiresAt: data.expiresAt,
+      };
+    },
+    pollToken: async (config, deviceCode, codeVerifier, extraData) => {
+      const res = await fetch("https://freebuff.llm.pm/api/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fingerprintId: deviceCode,
+          fingerprintHash: extraData?._fingerprintHash || "",
+          expiresAt: extraData?._expiresAt ?? null,
+        }),
+      });
+      if (!res.ok) {
+        return { ok: false, data: { error: "status_failed", error_description: `Status check failed (${res.status})` } };
+      }
+      const data = await res.json().catch(() => ({}));
+      if (data.error) {
+        return { ok: false, data: { error: "auth_failed", error_description: data.error } };
+      }
+      if (data.pending || !data.user) {
+        return { ok: true, data: { error: "authorization_pending" } };
+      }
+      // The browser login alone doesn't prove the token works with upstream —
+      // validate the authToken against the codebuff.com session endpoint
+      // BEFORE the connection is saved (same check the paste flow uses).
+      const token = String(data.user.authToken || "").trim();
+      if (!token) {
+        return { ok: false, data: { error: "auth_failed", error_description: "freebuff.llm.pm returned no authToken" } };
+      }
+      try {
+        const check = await tlsFetch(`${config.baseUrl}/api/v1/freebuff/session`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": FREEBUFF_CLI_USER_AGENT,
+            "x-freebuff-model": config.defaultModel,
+          },
+          body: "{}",
+        });
+        if (check.status === 401 || check.status === 403) {
+          return { ok: false, data: { error: "auth_failed", error_description: "Invalid or expired Freebuff authToken — re-copy from freebuff.llm.pm" } };
+        }
+        if (!check.ok) {
+          return { ok: false, data: { error: "session_failed", error_description: `Freebuff session failed: ${check.status}` } };
+        }
+        const session = await check.json().catch(() => ({}));
+        // Attach the session envelope so mapTokens persists instanceId +
+        // expiry and the executor can reuse this session later.
+        return { ok: true, data: { access_token: token, _user: { ...data.user, _session: session } } };
+      } catch (err) {
+        return { ok: false, data: { error: "session_failed", error_description: err.message || "Freebuff session check failed" } };
+      }
+    },
     exchangeToken: async (config, token) => {
       const t = String(token || "").trim();
       if (!t) throw new Error("Missing Freebuff authToken");
@@ -1455,6 +1532,7 @@ const PROVIDERS = {
           "Authorization": `Bearer ${t}`,
           "Content-Type": "application/json",
           "Accept": "application/json",
+          "User-Agent": FREEBUFF_CLI_USER_AGENT,
           "x-freebuff-model": config.defaultModel,
         },
         body: "{}",
@@ -1467,7 +1545,8 @@ const PROVIDERS = {
       return { access_token: t, _session: data };
     },
     mapTokens: (tokens) => {
-      const session = tokens._session || {};
+      const session = tokens._session || tokens._user?._session || {};
+      const user = tokens._user || {};
       const expiresAt = session.expiresAt ? new Date(session.expiresAt) : null;
       return {
         accessToken: tokens.access_token,
@@ -1476,16 +1555,27 @@ const PROVIDERS = {
         expiresIn: expiresAt && !Number.isNaN(expiresAt.getTime())
           ? Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000))
           : null,
-        email: session.email || null,
+        email: session.email || user.email || null,
+        displayName: user.name || null,
         providerSpecificData: {
           authMethod: "auth_token",
           instanceId: session.instanceId || "",
           sessionExpiresAt: session.expiresAt || "",
+          ...(user.id ? { userId: user.id } : {}),
+          ...(user.fingerprintId ? { fingerprintId: user.fingerprintId } : {}),
         },
       };
     },
   },
 };
+
+/**
+ * Get provider handler
+ */
+// Upstream codebuff.com free tier only serves requests that carry an
+// official-client User-Agent (CLI/SDK) — without it the session endpoint
+// 401s even for valid tokens.
+const FREEBUFF_CLI_USER_AGENT = "ai-sdk/openai-compatible/0.10.7/codebuff";
 
 /**
  * Get provider handler

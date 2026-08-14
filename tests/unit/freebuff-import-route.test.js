@@ -43,10 +43,27 @@ beforeEach(async () => {
 });
 
 describe("GET /api/oauth/freebuff/import", () => {
-  it("returns the token when credentials.json has authToken", async () => {
-    readFileSyncMock.mockReturnValue(JSON.stringify({ authToken: "  cli-token-123  " }));
+  it("returns the token from the nested `default` profile (real CLI shape)", async () => {
+    readFileSyncMock.mockReturnValue(JSON.stringify({
+      default: {
+        id: "u1",
+        name: "Me",
+        email: "me@freebuff.test",
+        authToken: "  cli-token-123  ",
+        fingerprintId: "freebuff-go-abc",
+        fingerprintHash: "hash-1",
+      },
+    }));
     const res = await GET();
     expect(res.body.provider).toBe("freebuff");
+    expect(res.body.tokenFound).toBe(true);
+    expect(res.body.token).toBe("cli-token-123");
+    expect(res.body.email).toBe("me@freebuff.test");
+  });
+
+  it("falls back to a legacy top-level authToken", async () => {
+    readFileSyncMock.mockReturnValue(JSON.stringify({ authToken: "  cli-token-123  " }));
+    const res = await GET();
     expect(res.body.tokenFound).toBe(true);
     expect(res.body.token).toBe("cli-token-123");
   });

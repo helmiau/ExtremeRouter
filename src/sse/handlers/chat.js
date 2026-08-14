@@ -538,6 +538,16 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       return result.response;
     }
 
+    // Freebuff free-tier CLI gate: upstream 403s chat with
+    // free_mode_cli_required for ALL free-tier accounts (server-side policy).
+    // It's not an account-health problem — model-locking the connection and
+    // appending "reset after …" would mislabel a permanent gate as a transient
+    // rate limit, and fallback accounts would hit the same wall. Surface the
+    // executor's clear message and stop here.
+    if (provider === "freebuff" && result.status === 403 && /restricted to the official CLI|free_mode_cli_required/i.test(result.error || "")) {
+      return result.response;
+    }
+
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
     // H3 FIX: Pass the vault keyName from credentials so markVaultKeyRateLimited
     // targets the exact key that errored, not LAST_ISSUED (which races under concurrency).

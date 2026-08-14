@@ -43,15 +43,17 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
   // Exchange tokens
   const exchangeTokens = useCallback(async (code, state) => {
-    if (!authData) return;
+    // Freebuff's paste fallback runs from the device flow where authData is
+    // not populated — the exchange route accepts it without PKCE/redirect.
+    if (!authData && provider !== "freebuff") return;
     try {
       const res = await fetch(`/api/oauth/${provider}/exchange`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           code,
-          redirectUri: authData.redirectUri,
-          codeVerifier: authData.codeVerifier,
+          redirectUri: authData?.redirectUri || `${window.location.origin}/callback`,
+          codeVerifier: authData?.codeVerifier,
           state,
           ...(oauthMeta ? { meta: oauthMeta } : {}),
         }),
@@ -158,7 +160,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(null);
 
       // Device code flow providers
-      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode", "codebuddy-cn", "codebuddy-intl", "workbuddy", "qoder"];
+      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode", "codebuddy-cn", "codebuddy-intl", "workbuddy", "qoder", "freebuff"];
       if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);
         setStep("waiting");
@@ -197,6 +199,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               _qoderNonce: data._qoderNonce,
               _qoderMachineId: data._qoderMachineId,
               _qoderVerifier: data.codeVerifier,
+            }
+          : provider === "freebuff"
+          ? {
+              _fingerprintHash: data.fingerprintHash,
+              _expiresAt: data.expiresAt,
             }
           : null;
         startPolling(
@@ -291,11 +298,6 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         if (!popupRef.current) {
           setStep("input");
         }
-      } else if (provider === "freebuff") {
-        // Freebuff has no browser authorize endpoint — the token is copied
-        // from freebuff.llm.pm (opened here). Go straight to the paste box.
-        setStep("input");
-        window.open(data.authUrl, "_blank");
       } else if (!isLocalhost || provider === "codex" || provider === "xai") {
         // Non-localhost or proxy failed: manual input mode
         setStep("input");
@@ -700,6 +702,47 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 Waiting for authorization...
               </div>
             )}
+          </>
+        )}
+
+        {/* Freebuff fallback: paste an existing authToken / import from CLI.
+            Shown alongside the guided login so users who already have a token
+            (CLI credentials or freebuff.llm.pm) can connect without re-logging. */}
+        {isFreebuffProvider && step === "waiting" && isDeviceCode && deviceData && (
+          <>
+            <div className="flex items-center gap-3 my-1">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-text-muted uppercase tracking-wider">Or paste an existing Freebuff authToken</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm font-medium mb-2">Paste your Freebuff authToken (from freebuff.llm.pm or ~/.config/manicode/credentials.json)</p>
+                <Input
+                  value={callbackUrl}
+                  onChange={(e) => setCallbackUrl(e.target.value)}
+                  placeholder={manualPlaceholder}
+                  className="font-mono text-xs"
+                />
+              </div>
+              <Button
+                variant="secondary"
+                icon="download"
+                fullWidth
+                onClick={handleFreebuffImport}
+                disabled={importingFreebuff}
+              >
+                {importingFreebuff ? "Detecting…" : "Import token from Freebuff CLI"}
+              </Button>
+              <div className="flex gap-2">
+                <Button onClick={handleManualSubmit} fullWidth disabled={!callbackUrl}>
+                  Connect
+                </Button>
+                <Button onClick={handleClose} variant="ghost" fullWidth>
+                  Cancel
+                </Button>
+              </div>
+            </div>
           </>
         )}
 

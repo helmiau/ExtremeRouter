@@ -151,7 +151,7 @@ export async function GET(request, { params }) {
         : undefined;
       
       // Providers that don't use PKCE for device code
-      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy-cn", "codebuddy-intl", "workbuddy", "qoder"];
+      const noPkceDeviceProviders = ["github", "kiro", "kimi-coding", "kilocode", "codebuddy-cn", "codebuddy-intl", "workbuddy", "qoder", "freebuff"];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
         deviceData = await requestDeviceCode(provider, undefined, deviceOptions);
@@ -279,6 +279,10 @@ export async function POST(request, { params }) {
       let result;
       if (noPkceProviders.includes(provider)) {
         result = await pollForToken(provider, deviceCode);
+      } else if (provider === "freebuff") {
+        // Freebuff forwards the fingerprint via extraData (_fingerprintHash/
+        // _expiresAt) and needs no PKCE verifier.
+        result = await pollForToken(provider, deviceCode, null, extraData);
       } else if (provider === "kiro") {
         // Kiro needs extraData (clientId, clientSecret) from device code response
         result = await pollForToken(provider, deviceCode, null, extraData);

@@ -28,7 +28,7 @@ export default {
     notice: {
       signupUrl: "https://freebuff.llm.pm",
       apiKeyUrl: "https://freebuff.llm.pm",
-      text: "Connect your Freebuff account with your authToken. Get it from https://freebuff.llm.pm (log in) or the Freebuff CLI at ~/.config/manicode/credentials.json (authToken field).",
+      text: "Connect your Freebuff account with a guided browser login (freebuff.com GitHub/Google) — no manual token needed. Already have an authToken? Paste it from https://freebuff.llm.pm or import it from the Freebuff CLI (~/.config/manicode/credentials.json).",
     },
   },
   category: "oauth",

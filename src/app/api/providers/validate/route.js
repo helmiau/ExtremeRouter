@@ -1416,6 +1416,7 @@ export async function POST(request) {
                 Authorization: `Bearer ${token}`,
                 "Content-Type": "application/json",
                 Accept: "application/json",
+                "User-Agent": "ai-sdk/openai-compatible/0.10.7/codebuff",
                 "x-freebuff-model": "deepseek/deepseek-v4-flash",
               },
               body: "{}",

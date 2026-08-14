@@ -23,9 +23,24 @@ function readAuthToken() {
   try {
     const raw = fs.readFileSync(credentialsPath(), "utf8");
     const data = JSON.parse(raw);
-    const token = typeof data?.authToken === "string" ? data.authToken.trim() : "";
-    if (!token) return { tokenFound: false, error: "credentials.json exists but has no authToken field" };
-    return { tokenFound: true, token };
+    // The Freebuff CLI stores the active account under a `default` profile:
+    //   { "default": { "id", "name", "email", "authToken", "fingerprintId", "fingerprintHash" } }
+    // Older versions also wrote the token at the top level — accept both.
+    let token = typeof data?.authToken === "string" ? data.authToken.trim() : "";
+    let name = null;
+    let email = null;
+    if (!token && data && typeof data === "object") {
+      const profile = data.default || Object.values(data).find((v) => v && typeof v === "object" && typeof v.authToken === "string");
+      if (profile) {
+        token = String(profile.authToken || "").trim();
+        name = profile.name || null;
+        email = profile.email || null;
+      }
+    }
+    if (!token) {
+      return { tokenFound: false, error: "credentials.json has no authToken field — log in with the Freebuff CLI once (npm i -g freebuff && freebuff), or copy the token from freebuff.llm.pm." };
+    }
+    return { tokenFound: true, token, name, email };
   } catch (err) {
     if (err.code === "ENOENT") {
       return { tokenFound: false, error: "Freebuff CLI credentials not found. Install the CLI (npm i -g freebuff), log in once, or copy your token from freebuff.llm.pm." };

@@ -79,15 +79,18 @@ describe("FreeBuffExecutor protocol", () => {
     const res = await executor.execute({ model: "deepseek/deepseek-v4-flash", body: { messages: [{ role: "user", content: "hi" }] }, stream: false, credentials: creds(), log });
     expect(res.response.status).toBe(200);
 
-    // Session POST carries the x-freebuff-model header.
+    // Session POST carries the x-freebuff-model header + CLI user agent.
     const sessionCall = fetchMock.mock.calls.find(([u]) => u.endsWith("/api/v1/freebuff/session"));
     expect(sessionCall[1].headers["x-freebuff-model"]).toBe("deepseek/deepseek-v4-flash");
     expect(sessionCall[1].headers.Authorization).toBe("Bearer tok-test-1");
+    expect(sessionCall[1].headers["User-Agent"]).toBe("ai-sdk/openai-compatible/0.10.7/codebuff");
 
-    // Root run: ancestorRunIds must be an EMPTY ARRAY (null 400s upstream).
+    // Root run: ancestorRunIds must be an EMPTY ARRAY (null 400s upstream);
+    // carries the CLI user agent.
     const runCall = fetchMock.mock.calls.find(([u]) => u.endsWith("/api/v1/agent-runs"));
     const runBody = JSON.parse(runCall[1].body);
     expect(runBody).toEqual({ action: "START", agentId: "base2-free", ancestorRunIds: [] });
+    expect(runCall[1].headers["User-Agent"]).toBe("ai-sdk/openai-compatible/0.10.7/codebuff");
 
     // Chat body carries the mandatory 4-field metadata envelope.
     const chatCall = fetchMock.mock.calls.find(([u]) => u.endsWith("/api/v1/chat/completions"));
@@ -99,6 +102,28 @@ describe("FreeBuffExecutor protocol", () => {
       client_id: expect.stringMatching(/^[0-9a-f]{13}$/),
       freebuff_instance_id: "inst-abc123",
     });
+
+    // Chat carries the CLI-envelope x-freebuff-* headers (session binding).
+    expect(chatCall[1].headers["x-freebuff-model"]).toBe("deepseek/deepseek-v4-flash");
+    expect(chatCall[1].headers["x-freebuff-instance-id"]).toBe("inst-abc123");
+    expect(chatCall[1].headers["User-Agent"]).toBe("ai-sdk/openai-compatible/0.10.7/codebuff");
+  });
+
+  it("reuses the connect-time session stored on the connection (no extra session POST)", async () => {
+    routeFetch({});
+    const connCreds = creds("tok-stored").accessToken && creds("tok-stored");
+    connCreds.providerSpecificData = {
+      instanceId: "inst-stored",
+      sessionExpiresAt: new Date(Date.now() + 3600_000).toISOString(),
+    };
+    const res = await executor.execute({ model: "deepseek/deepseek-v4-flash", body: { messages: [] }, stream: false, credentials: connCreds, log });
+    expect(res.response.status).toBe(200);
+
+    // No session POST — the stored session is reused; run + chat still fire.
+    const sessionCalls = fetchMock.mock.calls.filter(([u]) => u.endsWith("/api/v1/freebuff/session"));
+    expect(sessionCalls).toHaveLength(0);
+    const chatCall = fetchMock.mock.calls.find(([u]) => u.endsWith("/api/v1/chat/completions"));
+    expect(chatCall[1].headers["x-freebuff-instance-id"]).toBe("inst-stored");
   });
 
   it("reuses the session and root run on subsequent requests (one POST each)", async () => {
@@ -129,6 +154,39 @@ describe("FreeBuffExecutor protocol", () => {
     expect(res.response.status).toBe(503);
     const data = await res.response.json();
     expect(data.error.code).toBe("queued");
+  });
+
+  it("maps upstream 403 free_mode_cli_required to a clear CLI-gate error (no auth cooldown)", async () => {
+    fetchMock.mockImplementation(async (url, opts = {}) => {
+      if (url.endsWith("/api/v1/freebuff/session")) return jsonResponse({ status: "active", instanceId: "inst-403", expiresAt: new Date(Date.now() + 3600_000).toISOString() }, 200);
+      if (url.endsWith("/api/v1/agent-runs")) return jsonResponse({ runId: "run-403" }, 200);
+      if (url.endsWith("/api/v1/chat/completions")) {
+        return { status: 403, ok: false, headers: { get: () => null }, json: async () => ({}), text: async () => "{\"error\":\"Free mode is only available through the freebuff CLI (free_mode_cli_required)\"}", body: null };
+      }
+      return jsonResponse({}, 500);
+    });
+
+    const res = await executor.execute({ model: "deepseek/deepseek-v4-flash", body: { messages: [] }, stream: false, credentials: creds("tok-403gate"), log });
+    expect(res.response.status).toBe(403);
+    const data = await res.response.json();
+    expect(data.error.code).toBe("free_mode_cli_required");
+    expect(data.error.message).toMatch(/restricted to the official CLI/);
+    expect(data.error.message).not.toMatch(/invalid or expired/);
+
+    // 403 is not an auth failure — the token is NOT put into cooldown.
+    const res2 = await executor.execute({ model: "deepseek/deepseek-v4-flash", body: { messages: [] }, stream: false, credentials: creds("tok-403gate"), log });
+    expect(res2.response.status).toBe(403);
+  });
+
+  it("surfaces a 403 on session creation without claiming the token is invalid", async () => {
+    fetchMock.mockImplementation(async (url) =>
+      url.endsWith("/api/v1/freebuff/session") ? jsonResponse({ error: "free_mode_cli_required" }, 403) : jsonResponse({}, 500)
+    );
+    const res = await executor.execute({ model: "deepseek/deepseek-v4-flash", body: { messages: [] }, stream: false, credentials: creds("tok-403session"), log });
+    expect(res.response.status).toBe(403);
+    const data = await res.response.json();
+    expect(data.error.code).toBe("free_mode_cli_required");
+    expect(data.error.message).not.toMatch(/invalid or expired/);
   });
 
   it("maps 401 to a re-login error and enters a per-token cooldown", async () => {
