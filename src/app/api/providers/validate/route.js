@@ -980,6 +980,29 @@ export async function POST(request) {
           break;
         }
 
+        case "tencent-aistudio-web": {
+          const cookie = apiKey.replace(/^Cookie:\s*/i, "");
+          const res = await fetch("https://aistudio.tencent.ai/api/chat/HunyuanDefault", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "application/json",
+              Cookie: cookie,
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              Referer: "https://aistudio.tencent.ai/",
+              Origin: "https://aistudio.tencent.ai",
+            },
+            body: JSON.stringify({ model: "HunyuanDefault", messages: [{ role: "user", content: "hi" }] }),
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired aistudio.tencent.ai session cookie — re-copy your Cookie header.";
+          } else {
+            isValid = true;
+          }
+          break;
+        }
+
         case "doubao-web": {
           const cookie = apiKey.replace(/^Cookie:\s*/i, "");
           const res = await fetch("https://www.doubao.com/samantha/contact/list", {

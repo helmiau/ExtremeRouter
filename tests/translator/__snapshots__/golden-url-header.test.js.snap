@@ -1916,6 +1916,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > t3-web → headers (
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > tencent-aistudio-web → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > together → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2936,6 +2955,13 @@ exports[`GOLDEN buildUrl (default executor providers) > t3-web → url (stream +
 {
   "nonStream": "https://t3.chat",
   "stream": "https://t3.chat",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > tencent-aistudio-web → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://aistudio.tencent.ai",
+  "stream": "https://aistudio.tencent.ai",
 }
 `;
 

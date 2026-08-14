@@ -59,6 +59,7 @@ import { PuterExecutor } from "./puter.js";
 import { PollinationsExecutor } from "./pollinations.js";
 // OAuth import-token providers (ported from OmniRoute)
 import { TraeExecutor } from "./trae.js";
+import { TencentAIStudioWebExecutor } from "./tencent-aistudio-web.js";
 
 const executors = {
   antigravity: new AntigravityExecutor(),
@@ -129,6 +130,8 @@ const executors = {
   puter: new PuterExecutor(),
   pollinations: new PollinationsExecutor(),
   trae: new TraeExecutor(),
+  "tencent-aistudio-web": new TencentAIStudioWebExecutor(),
+  tasw: new TencentAIStudioWebExecutor(), // Alias for tencent-aistudio-web
 };
 
 const defaultCache = new Map();
@@ -206,3 +209,4 @@ export { PuterExecutor } from "./puter.js";
 export { PollinationsExecutor } from "./pollinations.js";
 // OAuth import-token providers (ported from OmniRoute)
 export { TraeExecutor } from "./trae.js";
+export { TencentAIStudioWebExecutor } from "./tencent-aistudio-web.js";

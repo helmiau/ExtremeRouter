@@ -845,6 +845,21 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid or expired venice.ai session cookie" };
       }
+      case "tencent-aistudio-web": {
+        const res = await fetchWithConnectionProxy("https://aistudio.tencent.ai/api/chat/HunyuanDefault", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            Cookie: connection.apiKey.replace(/^Cookie:\s*/i, ""),
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            Referer: "https://aistudio.tencent.ai/", Origin: "https://aistudio.tencent.ai",
+          },
+          body: JSON.stringify({ model: "HunyuanDefault", messages: [{ role: "user", content: "hi" }] }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Invalid or expired aistudio.tencent.ai session cookie — re-copy your Cookie header" };
+      }
       case "doubao-web": {
         const res = await fetchWithConnectionProxy("https://www.doubao.com/samantha/contact/list", {
           method: "GET",
