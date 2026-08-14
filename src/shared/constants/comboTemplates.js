@@ -110,7 +110,7 @@ export const COMBO_TEMPLATES = [
     preferredProviders: {
       "MiniMax-M2.7": "minimax",
       "glm-5.1": "glm",
-      "gpt-5.4": "kr",
+      "gpt-5.4": "gh", // free tier via GitHub Copilot (kiro does not carry gpt-5.4)
     },
     strategyConfig: {
       fallbackStrategy: "fallback",

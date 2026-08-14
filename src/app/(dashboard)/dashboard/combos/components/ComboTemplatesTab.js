@@ -4,7 +4,8 @@ import { useState } from "react";
 import { Card, Button, Badge, EmptyState } from "@/shared/components";
 import { COMBO_TEMPLATES } from "@/shared/constants/comboTemplates";
 import { getStrategyMeta, getStrategyLabel } from "./helpers";
-import { resolveProviderId, getProviderAlias } from "@/shared/constants/providers";
+import { resolveProviderId } from "@/shared/constants/providers";
+import { resolveTemplateModels, resolveTemplateStrategyConfig } from "./templateResolution";
 
 // ComboTemplatesTab — redesigned template gallery with provider availability badges.
 // Replaces the old ComboTemplates.js component.
@@ -16,41 +17,9 @@ export default function ComboTemplatesTab({ combos, connections, modelIndex = {}
   );
   const existingNames = new Set((combos || []).map((c) => c.name));
 
-  // Resolve a template's model references to ACTUAL connected providers that
-  // carry the same model. The model name is the PRIMARY key — templates no
-  // longer tether a model to one provider. An optional preferred provider is
-  // only a hint: it wins when connected, otherwise we fall back to any other
-  // connected provider that exposes the same model (e.g. template wants
-  // "claude-opus-4-7" on cc, but the user only has kiro connected — we use
-  // kiro). Supports both formats:
-  //   - "claude-opus-4-7"           (model name only — preferred from template.preferredProviders)
-  //   - "cc/claude-opus-4-7"        (legacy: provider/model — preferred embedded)
-  const resolveModels = (template) => (template.models || []).map((ref) => {
-    const slash = ref.indexOf("/");
-    const hasProviderPrefix = slash > 0;
-    const modelName = hasProviderPrefix ? ref.slice(slash + 1) : ref;
-    const embeddedPreferred = hasProviderPrefix ? ref.slice(0, slash) : "";
-    // Preferred hint: explicit in the ref (legacy) or in preferredProviders map.
-    const preferred = embeddedPreferred || (template.preferredProviders || {})[modelName] || "";
-    const preferredId = preferred ? resolveProviderId(preferred) : "";
-    // modelIndex is keyed by provider ALIAS (from /api/models: provider=alias).
-    // connectedProviders is keyed by provider ID (connections[].provider=id).
-    // Canonicalize candidates alias→id so the comparison actually matches.
-    const candidates = (modelIndex[modelName] || [])
-      .map((p) => resolveProviderId(p))
-      .filter((p) => connectedProviders.has(p));
-    if (preferredId && candidates.includes(preferredId)) {
-      // Store with the app-wide ALIAS prefix (cc/claude-opus-4-7) so modelCaps
-      // lookups and ModelSelectModal highlighting match other combos.
-      const alias = getProviderAlias(preferredId);
-      return { ref, modelName, provider: preferredId, providerAlias: alias, full: `${alias}/${modelName}`, available: true };
-    }
-    if (candidates.length > 0) {
-      const alias = getProviderAlias(candidates[0]);
-      return { ref, modelName, provider: candidates[0], providerAlias: alias, full: `${alias}/${modelName}`, available: true, resolvedFrom: preferred };
-    }
-    return { ref, modelName, provider: preferredId || preferred, full: hasProviderPrefix ? ref : modelName, available: false };
-  });
+  // Resolve template model refs against the connected catalog (pure logic in
+  // ./templateResolution — model-name based, preferred provider is only a hint).
+  const resolveModels = (template) => resolveTemplateModels(template, { modelIndex, connectedProviders });
 
   const handleApply = async (template) => {
     setApplying(template.id);
@@ -60,46 +29,37 @@ export default function ComboTemplatesTab({ combos, connections, modelIndex = {}
       const resolved = resolveModels(template);
       const usable = resolved.filter((m) => m.available);
       const models = usable.map((m) => m.full);
+      if (models.length === 0) {
+        alert("No connected provider has any of this template's models.");
+        return;
+      }
+
+      // Resolve role models BEFORE creating the combo so the server validates
+      // control roles (manager/judge/staff/audit) against the template's REAL
+      // strategy — POST /api/combos runs validateComboRoles with whatever
+      // strategyConfig is sent. Without this, a role-invalid combo (e.g. a
+      // web-cookie provider as swarm manager) would be created silently and
+      // only fail at runtime.
+      const strategyConfig = resolveTemplateStrategyConfig(template, resolved);
+
       const res = await fetch("/api/combos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: template.name, models, kind: null }),
+        body: JSON.stringify({ name: template.name, models, kind: template.kind || "llm", strategyConfig }),
       });
       if (!res.ok) {
         const err = await res.json();
         alert(err.error || "Failed to create combo from template");
         return;
       }
-      // IMPORTANT: /api/settings does a shallow merge of top-level keys, so
-      // PATCHing { comboStrategies: {...} } would REPLACE the whole object and
-      // wipe every other combo's strategy. Fetch current strategies first and
-      // merge the new entry in.
-      const cur = await fetch("/api/settings").then((r) => r.json()).catch(() => ({}));
-      // Templates can ship a rich strategyConfig (thinking, autoScale, role
-      // models). Fall back to { fallbackStrategy } for legacy templates.
-      // Role models (manager/judge/staff/audit) are resolved to connected
-      // providers the same way the member models are.
-      const strategyConfig = template.strategyConfig ? { ...template.strategyConfig } : { fallbackStrategy: template.strategy };
-      // Role models may be model-name-only (new format) or provider/model
-      // (legacy). Resolve by model name against the resolved members map.
-      const resolvedByName = Object.fromEntries(resolved.map((m) => [m.modelName, m.full]));
-      for (const roleKey of ["managerModel", "staffModel", "auditModel", "judgeModel"]) {
-        const roleRef = strategyConfig[roleKey];
-        if (!roleRef) continue;
-        const slash = roleRef.indexOf("/");
-        const roleModelName = slash > 0 ? roleRef.slice(slash + 1) : roleRef;
-        if (resolvedByName[roleModelName]) {
-          strategyConfig[roleKey] = resolvedByName[roleModelName];
-        }
-      }
-      const merged = {
-        ...(cur?.comboStrategies || {}),
-        [template.name]: strategyConfig,
-      };
+      // Runtime merges the combo record's strategyConfig with the settings
+      // override (settings wins), so mirror the strategy there too. The repo
+      // deep-merges comboStrategies per combo name, so a bare PATCH preserves
+      // every other combo's strategy — no need to fetch-and-merge.
       const stratRes = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comboStrategies: merged }),
+        body: JSON.stringify({ comboStrategies: { [template.name]: strategyConfig } }),
       });
       if (!stratRes.ok) {
         const err = await stratRes.json().catch(() => ({}));
@@ -212,7 +172,7 @@ export default function ComboTemplatesTab({ combos, connections, modelIndex = {}
                   disabled={isCreated || applying === tpl.id || !allConnected}
                   onClick={() => handleApply(tpl)}
                 >
-                  {applying === tpl.id ? "Creating..." : isCreated ? "Already Created" : allConnected ? "Apply Template" : `Apply (${readyCount}/${totalCount} ready)`}
+                  {applying === tpl.id ? "Creating..." : isCreated ? "Already Created" : allConnected ? "Apply Template" : `Missing ${totalCount - readyCount} model${totalCount - readyCount !== 1 ? "s" : ""}`}
                 </Button>
               </div>
             </Card>
