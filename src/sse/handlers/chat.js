@@ -556,7 +556,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // Record health + circuit breaker for retryable failures only.
     const latencyMs = Date.now() - attemptStart;
-    recordHealthSample(provider, { success: false, latencyMs, status: result.status }, chatSettings);
+    // Client aborts (499) are cancellations, not provider-health events — a
+    // user hitting Stop (or a combo closing a straggler panel leaf) must not
+    // drag down the provider's success rate in the health dashboard.
+    if (result.status !== 499) {
+      recordHealthSample(provider, { success: false, latencyMs, status: result.status }, chatSettings);
+    }
     if (isRetryableFailure(result.status) && !opts.skipBreaker) {
       recordBreakerFailure(provider, result.status, chatSettings, breakerKeyVal);
     } else if (!opts.skipBreaker) {
