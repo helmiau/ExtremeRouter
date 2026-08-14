@@ -155,7 +155,8 @@ export const PROVIDER_CAPABILITIES = {
     "glm-5.0":            { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 48000 },
     "glm-5.0-turbo":      { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 48000 },
     "glm-5v-turbo":       { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 38000 },
-    "glm-4.7":            { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 48000 },
+    // glm-4.7 removed from upstream catalog (2026-08-14); hy3 (Hunyuan) added.
+    "hy3":                { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 192000, maxOutput: 64000 },
     "minimax-m3":         { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 512000, maxOutput: 48000 },
     "minimax-m2.7":       { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 48000 },
     "kimi-k2.7":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 256000, maxOutput: 32000 },
@@ -350,8 +351,11 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*kimi*",          caps: { reasoning: true, thinkingFormat: "kimi", contextWindow: 262144 } },
 
   // ── GLM / Z.ai (thinking.enabled; disable via enable_thinking:false) ─
-  // GLM-5.2 exposes 1M context + reasoning_effort high|max (Z.ai docs); the
-  // generic *glm-5* caps at 200k and advertises the full effort range.
+  // GLM-5.3 exposes 1M context + reasoning_effort low|high|max (default max;
+  // https://z.ai/blog/glm-5.3). GLM-5.2 exposes 1M context + reasoning_effort
+  // high|max (Z.ai docs); the generic *glm-5* caps at 200k and advertises the
+  // full effort range.
+  { pattern: "*glm-5.3*",       caps: { reasoning: true, thinkingFormat: "zai", thinkingLevels: ["low", "high", "max"], contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*glm-5.2*",       caps: { reasoning: true, thinkingFormat: "zai", thinkingLevels: ["high", "max"], contextWindow: 1000000, maxOutput: 128000 } },
   { pattern: "*glm-5*",         caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },
   { pattern: "*glm-4.7*",       caps: { reasoning: true, thinkingFormat: "zai", contextWindow: 200000, maxOutput: 128000 } },

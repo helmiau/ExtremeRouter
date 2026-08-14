@@ -50,7 +50,9 @@ export default {
     { id: "glm-5.0", name: "GLM-5.0" },
     { id: "glm-5.0-turbo", name: "GLM-5.0-Turbo" },
     { id: "glm-5v-turbo", name: "GLM-5v-Turbo" },
-    { id: "glm-4.7", name: "GLM-4.7" },
+    // glm-4.7 removed from the upstream CodeBuddy CN catalog (2026-08-14);
+    // replaced by hy3 (Hunyuan, 192k context / 64k output, reasoning + vision).
+    { id: "hy3", name: "Hy3" },
     { id: "minimax-m3", name: "MiniMax-M3" },
     { id: "minimax-m2.7", name: "MiniMax-M2.7" },
     { id: "kimi-k2.7", name: "Kimi-K2.7-Code" },

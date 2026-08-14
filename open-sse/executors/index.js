@@ -19,6 +19,7 @@ import { XiaomiTokenplanExecutor } from "./xiaomi-tokenplan.js";
 import { MimoFreeExecutor } from "./mimo-free.js";
 import { CodeBuddyExecutor } from "./codebuddy-cn.js";
 import { ChatGLMExecutor } from "./chatglm-cn.js";
+import { GlmExecutor } from "./glm.js";
 import { DefaultExecutor } from "./default.js";
 import { DevinExecutor } from "./devin.js";
 // Web-cookie providers (ported from OmniRoute)
@@ -88,6 +89,9 @@ const executors = {
   workbuddy: new CodeBuddyExecutor("workbuddy"),
   devin: new DevinExecutor(),
   "chatglm-cn": new ChatGLMExecutor(),
+  // GLM effort tiers (glm-5.3-high/-low) resolved to base id + reasoning_effort.
+  glm: new GlmExecutor("glm"),
+  "glm-cn": new GlmExecutor("glm-cn"),
   // Web-cookie providers (ported from OmniRoute)
   "deepseek-web": new DeepSeekWebExecutor(),
   "qwen-web": new QwenWebExecutor(),
@@ -164,6 +168,7 @@ export { MimoFreeExecutor } from "./mimo-free.js";
 export { CodeBuddyExecutor } from "./codebuddy-cn.js";
 export { DevinExecutor } from "./devin.js";
 export { ChatGLMExecutor } from "./chatglm-cn.js";
+export { GlmExecutor } from "./glm.js";
 // Web-cookie providers (ported from OmniRoute)
 export { DeepSeekWebExecutor } from "./deepseek-web.js";
 export { QwenWebExecutor } from "./qwen-web.js";

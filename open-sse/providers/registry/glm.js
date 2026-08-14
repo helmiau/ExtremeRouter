@@ -47,6 +47,15 @@ export default {
     },
   ],
   models: [
+    // GLM-5.3 (2026-08-14): one upstream id; effort is the reasoning_effort
+    // param (low|high|max, default max) on the coding chat/completions endpoint.
+    // The -high/-low entries are aliases resolved by GlmExecutor
+    // (parseGlmEffortTier → base "glm-5.3" + effort selector); upstreamModelId
+    // keeps the base id out of the wire model. Default context not yet published
+    // by Z.ai; 1M mirrored from GLM-5.2 (same base model). https://z.ai/blog/glm-5.3
+    { id: "glm-5.3", name: "GLM 5.3" },
+    { id: "glm-5.3-high", name: "GLM 5.3 High", upstreamModelId: "glm-5.3" },
+    { id: "glm-5.3-low", name: "GLM 5.3 Low", upstreamModelId: "glm-5.3" },
     { id: "glm-5.2", name: "GLM 5.2" },
     { id: "glm-5.1", name: "GLM 5.1" },
     { id: "glm-5", name: "GLM 5" },
