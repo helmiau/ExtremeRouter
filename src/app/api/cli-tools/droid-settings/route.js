@@ -1,50 +1,27 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
 import path from "path";
 import os from "os";
-
-const execAsync = promisify(exec);
+import {
+  checkBinaryInstalled,
+  readJsonTolerant,
+  readTextFile,
+  writeJsonFile,
+  mkdirp,
+  ensureSuffix,
+  settingsError,
+} from "@/lib/cliTools";
 
 const getDroidDir = () => path.join(os.homedir(), ".factory");
 const getDroidSettingsPath = () => path.join(getDroidDir(), "settings.json");
 
 // Check if droid CLI is installed (via which/where or config file exists)
-const checkDroidInstalled = async () => {
-  try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where droid" : "which droid";
-    const env = isWindows
-      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
-      : process.env;
-    await execAsync(command, { windowsHide: true, env });
-    return true;
-  } catch {
-    try {
-      await fs.access(getDroidSettingsPath());
-      return true;
-    } catch {
-      return false;
-    }
-  }
-};
+const checkDroidInstalled = () =>
+  checkBinaryInstalled({ binary: "droid", configPaths: [getDroidSettingsPath()] });
 
-// Read current settings.json
-const readSettings = async () => {
-  try {
-    const settingsPath = getDroidSettingsPath();
-    const content = await fs.readFile(settingsPath, "utf-8");
-    // Tolerate JSONC (trailing commas) and treat unparseable files as "no config"
-    // rather than throwing a 500 that the UI misreads as "tool not installed".
-    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
-    return JSON.parse(stripped);
-  } catch (error) {
-    return null;
-  }
-};
+// Read current settings.json (tolerates JSONC)
+const readSettings = () => readJsonTolerant(getDroidSettingsPath());
 
 // Check if settings has ExtremeRouter customModels
 const hasExtremeRouterConfig = (settings) => {
@@ -56,7 +33,7 @@ const hasExtremeRouterConfig = (settings) => {
 export async function GET() {
   try {
     const isInstalled = await checkDroidInstalled();
-    
+
     if (!isInstalled) {
       return NextResponse.json({
         installed: false,
@@ -74,8 +51,7 @@ export async function GET() {
       settingsPath: getDroidSettingsPath(),
     });
   } catch (error) {
-    console.log("Error checking droid settings:", error);
-    return NextResponse.json({ error: "Failed to check droid settings" }, { status: 500 });
+    return settingsError("Error checking droid settings", error, "Failed to check droid settings");
   }
 }
 
@@ -85,10 +61,10 @@ export async function GET() {
 export async function POST(request) {
   try {
     const { baseUrl, apiKey, model, models, activeModel } = await request.json();
-    
+
     // Accept either `models` (array) or `model` (string, legacy)
     const modelsArray = Array.isArray(models) ? models.slice() : (typeof model === "string" ? [model] : []);
-    
+
     if (!baseUrl || modelsArray.length === 0) {
       return NextResponse.json({ error: "baseUrl and at least one model are required" }, { status: 400 });
     }
@@ -97,14 +73,10 @@ export async function POST(request) {
     const settingsPath = getDroidSettingsPath();
 
     // Ensure directory exists
-    await fs.mkdir(droidDir, { recursive: true });
+    await mkdirp(droidDir);
 
-    // Read existing settings or create new
-    let settings = {};
-    try {
-      const existingSettings = await fs.readFile(settingsPath, "utf-8");
-      settings = JSON.parse(existingSettings);
-    } catch { /* No existing settings */ }
+    // Read existing settings or create new (tolerates JSONC)
+    const settings = (await readSettings()) || {};
 
     // Ensure customModels array exists
     if (!settings.customModels) {
@@ -115,7 +87,7 @@ export async function POST(request) {
     settings.customModels = settings.customModels.filter(m => !m.id?.startsWith("custom:ExtremeRouter"));
 
     // Normalize baseUrl to ensure /v1 suffix
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+    const normalizedBaseUrl = ensureSuffix(baseUrl, "/v1");
     const keyToUse = apiKey || "your_api_key";
 
     // Determine active model: prefer explicit activeModel, else first of modelsArray
@@ -158,7 +130,7 @@ export async function POST(request) {
     }
 
     // Write settings
-    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
+    await writeJsonFile(settingsPath, settings);
 
     return NextResponse.json({
       success: true,
@@ -166,8 +138,7 @@ export async function POST(request) {
       settingsPath,
     });
   } catch (error) {
-    console.log("Error updating droid settings:", error);
-    return NextResponse.json({ error: "Failed to update droid settings" }, { status: 500 });
+    return settingsError("Error updating droid settings", error, "Failed to update droid settings");
   }
 }
 
@@ -176,25 +147,21 @@ export async function DELETE() {
   try {
     const settingsPath = getDroidSettingsPath();
 
-    // Read existing settings
-    let settings = {};
-    try {
-      const existingSettings = await fs.readFile(settingsPath, "utf-8");
-      settings = JSON.parse(existingSettings);
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        return NextResponse.json({
-          success: true,
-          message: "No settings file to reset",
-        });
-      }
-      throw error;
+    // Distinguish "no file" (clean reset message) from other read errors.
+    if ((await readTextFile(settingsPath, null)) === null) {
+      return NextResponse.json({
+        success: true,
+        message: "No settings file to reset",
+      });
     }
+
+    // Read existing settings (tolerates JSONC)
+    const settings = (await readSettings()) || {};
 
     // Remove ExtremeRouter customModels
     if (settings.customModels) {
       settings.customModels = settings.customModels.filter(m => !m.id?.startsWith("custom:ExtremeRouter"));
-      
+
       // Remove customModels array if empty
       if (settings.customModels.length === 0) {
         delete settings.customModels;
@@ -202,14 +169,13 @@ export async function DELETE() {
     }
 
     // Write updated settings
-    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
+    await writeJsonFile(settingsPath, settings);
 
     return NextResponse.json({
       success: true,
       message: "ExtremeRouter settings removed successfully",
     });
   } catch (error) {
-    console.log("Error resetting droid settings:", error);
-    return NextResponse.json({ error: "Failed to reset droid settings" }, { status: 500 });
+    return settingsError("Error resetting droid settings", error, "Failed to reset droid settings");
   }
 }

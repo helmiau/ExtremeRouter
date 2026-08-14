@@ -4,11 +4,12 @@ import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
-import { exec } from "child_process";
-import { promisify } from "util";
 import { parseTOML, stringifyTOML } from "confbox";
-
-const execAsync = promisify(exec);
+import {
+  checkBinaryInstalled,
+  mkdirp,
+  settingsError,
+} from "@/lib/cliTools";
 
 const getJcodeConfigDir = () => path.join(os.homedir(), ".jcode");
 const getConfigPath = () => path.join(getJcodeConfigDir(), "config.toml");
@@ -18,21 +19,8 @@ const getProviderEnvPath = () => {
   return path.join(configDir, "jcode", "provider-extremerouter.env");
 };
 
-const checkJcodeInstalled = async () => {
-  try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where jcode" : "which jcode";
-    await execAsync(command, { windowsHide: true });
-    return true;
-  } catch {
-    try {
-      await fs.access(getJcodeConfigDir());
-      return true;
-    } catch {
-      return false;
-    }
-  }
-};
+const checkJcodeInstalled = () =>
+  checkBinaryInstalled({ binary: "jcode", configPaths: [getJcodeConfigDir()] });
 
 const readConfig = async () => {
   try {
@@ -159,14 +147,13 @@ export async function POST(request) {
       requires_api_key: true,
     };
 
-    const configDir = getJcodeConfigDir();
-    await fs.mkdir(configDir, { recursive: true });
+    await mkdirp(getJcodeConfigDir());
 
     await writeConfig(config);
 
     const xdgConfigDir = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
     const jcodeConfigDir = path.join(xdgConfigDir, "jcode");
-    await fs.mkdir(jcodeConfigDir, { recursive: true });
+    await mkdirp(jcodeConfigDir);
 
     const env = await readProviderEnv();
     env.JCODE_EXTREMEROUTER_API_KEY = apiKey;
@@ -178,11 +165,7 @@ export async function POST(request) {
       configPath: getConfigPath(),
     });
   } catch (error) {
-    console.error("Error configuring jcode:", error);
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    return settingsError("Error configuring jcode", error, error.message);
   }
 }
 
@@ -207,10 +190,6 @@ export async function DELETE() {
       message: "extremerouter configuration removed from jcode",
     });
   } catch (error) {
-    console.error("Error removing jcode configuration:", error);
-    return NextResponse.json(
-      { error: error.message },
-      { status: 500 }
-    );
+    return settingsError("Error removing jcode configuration", error, error.message);
   }
 }

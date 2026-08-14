@@ -1,77 +1,33 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
 import path from "path";
 import os from "os";
-
-const execAsync = promisify(exec);
+import {
+  checkBinaryInstalled,
+  readJsonTolerant,
+  readTextFile,
+  writeJsonFile,
+  mkdirp,
+  ensureSuffix,
+  settingsError,
+} from "@/lib/cliTools";
 
 // Get claude settings path based on OS
-const getClaudeSettingsPath = () => {
-  const homeDir = os.homedir();
-  return path.join(homeDir, ".claude", "settings.json");
-};
-
+const getClaudeSettingsPath = () => path.join(os.homedir(), ".claude", "settings.json");
 
 // Check if claude CLI is installed (via which/where or config file exists)
-const checkClaudeInstalled = async () => {
-  try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where claude" : "which claude";
-    const env = isWindows
-      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
-      : process.env;
-    await execAsync(command, { windowsHide: true, env });
-    return true;
-  } catch {
-    try {
-      await fs.access(getClaudeSettingsPath());
-      return true;
-    } catch {
-      return false;
-    }
-  }
-};
+const checkClaudeInstalled = () =>
+  checkBinaryInstalled({ binary: "claude", configPaths: [getClaudeSettingsPath()] });
 
-// Read current settings
-const readSettings = async () => {
-  try {
-    const settingsPath = getClaudeSettingsPath();
-    const content = await fs.readFile(settingsPath, "utf-8");
-    // Tolerate JSONC (trailing commas, comments) and treat unparseable files as
-    // "no config" rather than throwing a 500 that the UI misreads as "tool not
-    // installed". String-safe: skip // and /* */ only outside quoted strings.
-    let stripped = "";
-    let inString = false, escaped = false;
-    for (let i = 0; i < content.length; i++) {
-      const ch = content[i];
-      if (escaped) { stripped += ch; escaped = false; continue; }
-      if (inString) {
-        if (ch === "\\") escaped = true;
-        else if (ch === '"') inString = false;
-        stripped += ch;
-        continue;
-      }
-      if (ch === '"') { inString = true; stripped += ch; continue; }
-      if (ch === "/" && content[i + 1] === "/") { while (i < content.length && content[i] !== "\n") i++; continue; }
-      if (ch === "/" && content[i + 1] === "*") { i += 2; while (i < content.length && !(content[i] === "*" && content[i + 1] === "/")) i++; i++; continue; }
-      stripped += ch;
-    }
-    stripped = stripped.replace(/,(\s*[}\]])/g, "$1");
-    return JSON.parse(stripped);
-  } catch (error) {
-    return null;
-  }
-};
+// Read current settings (tolerates JSONC trailing commas/comments)
+const readSettings = () => readJsonTolerant(getClaudeSettingsPath());
 
 // GET - Check claude CLI and read current settings
 export async function GET() {
   try {
     const isInstalled = await checkClaudeInstalled();
-    
+
     if (!isInstalled) {
       return NextResponse.json({
         installed: false,
@@ -90,11 +46,7 @@ export async function GET() {
       settingsPath: getClaudeSettingsPath(),
     });
   } catch (error) {
-    console.log("Error checking claude settings:", error);
-    return NextResponse.json(
-      { error: "Failed to check claude settings" },
-      { status: 500 }
-    );
+    return settingsError("Error checking claude settings", error, "Failed to check claude settings");
   }
 }
 
@@ -102,7 +54,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const { env } = await request.json();
-    
+
     if (!env || typeof env !== "object") {
       return NextResponse.json(
         { error: "Invalid env object" },
@@ -114,16 +66,14 @@ export async function POST(request) {
     const claudeDir = path.dirname(settingsPath);
 
     // Ensure .claude directory exists
-    await fs.mkdir(claudeDir, { recursive: true });
+    await mkdirp(claudeDir);
 
     // Read current settings (tolerates JSONC trailing commas/comments)
-    const currentSettings = await readSettings() || {};
+    const currentSettings = (await readSettings()) || {};
 
     // Normalize ANTHROPIC_BASE_URL to ensure /v1 suffix
     if (env.ANTHROPIC_BASE_URL) {
-      env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL.endsWith("/v1") 
-        ? env.ANTHROPIC_BASE_URL 
-        : `${env.ANTHROPIC_BASE_URL}/v1`;
+      env.ANTHROPIC_BASE_URL = ensureSuffix(env.ANTHROPIC_BASE_URL, "/v1");
     }
 
     // Merge new env with existing settings
@@ -137,18 +87,14 @@ export async function POST(request) {
     };
 
     // Write new settings
-    await fs.writeFile(settingsPath, JSON.stringify(newSettings, null, 2));
+    await writeJsonFile(settingsPath, newSettings);
 
     return NextResponse.json({
       success: true,
       message: "Settings updated successfully",
     });
   } catch (error) {
-    console.log("Error updating claude settings:", error);
-    return NextResponse.json(
-      { error: "Failed to update claude settings" },
-      { status: 500 }
-    );
+    return settingsError("Error updating claude settings", error, "Failed to update claude settings");
   }
 }
 
@@ -168,22 +114,20 @@ export async function DELETE() {
     const settingsPath = getClaudeSettingsPath();
 
     // Read current settings (tolerates JSONC trailing commas/comments)
-    try {
-      await fs.access(settingsPath);
-    } catch {
+    if ((await readTextFile(settingsPath, null)) === null) {
       return NextResponse.json({
         success: true,
         message: "No settings file to reset",
       });
     }
-    const currentSettings = await readSettings() || {};
+    const currentSettings = (await readSettings()) || {};
 
     // Remove specified env fields
     if (currentSettings.env) {
       RESET_ENV_KEYS.forEach((key) => {
         delete currentSettings.env[key];
       });
-      
+
       // Clean up empty env object
       if (Object.keys(currentSettings.env).length === 0) {
         delete currentSettings.env;
@@ -191,18 +135,13 @@ export async function DELETE() {
     }
 
     // Write updated settings
-    await fs.writeFile(settingsPath, JSON.stringify(currentSettings, null, 2));
+    await writeJsonFile(settingsPath, currentSettings);
 
     return NextResponse.json({
       success: true,
       message: "Settings reset successfully",
     });
   } catch (error) {
-    console.log("Error resetting claude settings:", error);
-    return NextResponse.json(
-      { error: "Failed to reset claude settings" },
-      { status: 500 }
-    );
+    return settingsError("Error resetting claude settings", error, "Failed to reset claude settings");
   }
 }
-

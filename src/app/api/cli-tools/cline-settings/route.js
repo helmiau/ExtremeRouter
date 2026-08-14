@@ -1,48 +1,25 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
 import path from "path";
 import os from "os";
-
-const execAsync = promisify(exec);
+import {
+  checkBinaryInstalled,
+  readJsonTolerant,
+  writeJsonFile,
+  mkdirp,
+  stripSuffix,
+  settingsError,
+} from "@/lib/cliTools";
 
 const getDataDir = () => path.join(os.homedir(), ".cline", "data");
 const getGlobalStatePath = () => path.join(getDataDir(), "globalState.json");
 const getSecretsPath = () => path.join(getDataDir(), "secrets.json");
 
-const checkInstalled = async () => {
-  try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where cline" : "which cline";
-    const env = isWindows
-      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
-      : process.env;
-    await execAsync(command, { windowsHide: true, env });
-    return true;
-  } catch {
-    try {
-      await fs.access(getGlobalStatePath());
-      return true;
-    } catch {
-      return false;
-    }
-  }
-};
+const checkInstalled = () =>
+  checkBinaryInstalled({ binary: "cline", configPaths: [getGlobalStatePath()] });
 
-const readJson = async (filePath) => {
-  try {
-    const content = await fs.readFile(filePath, "utf-8");
-    // Tolerate JSONC (trailing commas) and treat unparseable files as "no config"
-    // rather than throwing a 500 that the UI misreads as "tool not installed".
-    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
-    return JSON.parse(stripped);
-  } catch (error) {
-    return null;
-  }
-};
+const readJson = (filePath) => readJsonTolerant(filePath);
 
 const hasExtremeRouterConfig = (globalState) => {
   if (!globalState) return false;
@@ -71,8 +48,7 @@ export async function GET() {
       globalStatePath: getGlobalStatePath(),
     });
   } catch (error) {
-    console.log("Error checking cline settings:", error);
-    return NextResponse.json({ error: "Failed to check cline settings" }, { status: 500 });
+    return settingsError("Error checking cline settings", error, "Failed to check cline settings");
   }
 }
 
@@ -83,10 +59,10 @@ export async function POST(request) {
       return NextResponse.json({ error: "baseUrl, apiKey and model are required" }, { status: 400 });
     }
 
-    await fs.mkdir(getDataDir(), { recursive: true });
+    await mkdirp(getDataDir());
 
     // Cline expects base WITHOUT /v1
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl.slice(0, -3) : baseUrl;
+    const normalizedBaseUrl = stripSuffix(baseUrl, "/v1");
 
     const globalState = (await readJson(getGlobalStatePath())) || {};
     globalState.actModeApiProvider = "openai";
@@ -94,16 +70,15 @@ export async function POST(request) {
     globalState.openAiBaseUrl = normalizedBaseUrl;
     globalState.openAiModelId = model;
     globalState.planModeOpenAiModelId = model;
-    await fs.writeFile(getGlobalStatePath(), JSON.stringify(globalState, null, 2));
+    await writeJsonFile(getGlobalStatePath(), globalState);
 
     const secrets = (await readJson(getSecretsPath())) || {};
     secrets.openAiApiKey = apiKey;
-    await fs.writeFile(getSecretsPath(), JSON.stringify(secrets, null, 2));
+    await writeJsonFile(getSecretsPath(), secrets);
 
     return NextResponse.json({ success: true, message: "Cline settings applied successfully!", globalStatePath: getGlobalStatePath() });
   } catch (error) {
-    console.log("Error updating cline settings:", error);
-    return NextResponse.json({ error: "Failed to update cline settings" }, { status: 500 });
+    return settingsError("Error updating cline settings", error, "Failed to update cline settings");
   }
 }
 
@@ -121,15 +96,14 @@ export async function DELETE() {
       globalState.actModeApiProvider = "cline";
       globalState.planModeApiProvider = "cline";
     }
-    await fs.writeFile(getGlobalStatePath(), JSON.stringify(globalState, null, 2));
+    await writeJsonFile(getGlobalStatePath(), globalState);
 
     const secrets = (await readJson(getSecretsPath())) || {};
     delete secrets.openAiApiKey;
-    await fs.writeFile(getSecretsPath(), JSON.stringify(secrets, null, 2));
+    await writeJsonFile(getSecretsPath(), secrets);
 
     return NextResponse.json({ success: true, message: "ExtremeRouter settings removed from Cline" });
   } catch (error) {
-    console.log("Error resetting cline settings:", error);
-    return NextResponse.json({ error: "Failed to reset cline settings" }, { status: 500 });
+    return settingsError("Error resetting cline settings", error, "Failed to reset cline settings");
   }
 }

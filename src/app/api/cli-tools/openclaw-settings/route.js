@@ -1,13 +1,16 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
 import path from "path";
-import os from "os";
-
-const execAsync = promisify(exec);
+import {
+  checkBinaryInstalled,
+  readJsonTolerant,
+  readTextFile,
+  writeJsonFile,
+  mkdirp,
+  ensureSuffix,
+  settingsError,
+} from "@/lib/cliTools";
 
 // OpenClaw 2026.5.x writes agents[].model as either a plain string
 // (legacy) or as an object `{ primary, fallbacks }`. Normalize to the
@@ -22,39 +25,11 @@ const getOpenClawDir = () => path.join(os.homedir(), ".openclaw");
 const getOpenClawSettingsPath = () => path.join(getOpenClawDir(), "openclaw.json");
 
 // Check if openclaw CLI is installed (via which/where or config file exists)
-const checkOpenClawInstalled = async () => {
-  try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where openclaw" : "which openclaw";
-    // On Windows, inject %APPDATA%\npm into PATH so npm global packages are found
-    const env = isWindows
-      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
-      : process.env;
-    await execAsync(command, { windowsHide: true, env });
-    return true;
-  } catch {
-    try {
-      await fs.access(getOpenClawSettingsPath());
-      return true;
-    } catch {
-      return false;
-    }
-  }
-};
+const checkOpenClawInstalled = () =>
+  checkBinaryInstalled({ binary: "openclaw", configPaths: [getOpenClawSettingsPath()] });
 
-// Read current settings.json
-const readSettings = async () => {
-  try {
-    const settingsPath = getOpenClawSettingsPath();
-    const content = await fs.readFile(settingsPath, "utf-8");
-    // Tolerate JSONC (trailing commas) and treat unparseable files as "no config"
-    // rather than throwing a 500 that the UI misreads as "tool not installed".
-    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
-    return JSON.parse(stripped);
-  } catch (error) {
-    return null;
-  }
-};
+// Read current settings.json (tolerates JSONC)
+const readSettings = () => readJsonTolerant(getOpenClawSettingsPath());
 
 // Check if settings has ExtremeRouter config
 const hasExtremeRouterConfig = (settings) => {
@@ -66,7 +41,8 @@ const hasExtremeRouterConfig = (settings) => {
 const readAgentModel = async (agentDir) => {
   try {
     const modelsPath = path.join(agentDir, "models.json");
-    const content = await fs.readFile(modelsPath, "utf-8");
+    const content = await readTextFile(modelsPath, null);
+    if (content === null) return null;
     const data = JSON.parse(content);
     const models = data?.providers?.["@rsalmn/extremerouter"]?.models;
     return models?.[0]?.id || null;
@@ -79,7 +55,7 @@ const readAgentModel = async (agentDir) => {
 export async function GET() {
   try {
     const isInstalled = await checkOpenClawInstalled();
-    
+
     if (!isInstalled) {
       return NextResponse.json({
         installed: false,
@@ -109,20 +85,15 @@ export async function GET() {
       settingsPath: getOpenClawSettingsPath(),
     });
   } catch (error) {
-    console.log("Error checking openclaw settings:", error);
-    return NextResponse.json({ error: "Failed to check openclaw settings" }, { status: 500 });
+    return settingsError("Error checking openclaw settings", error, "Failed to check openclaw settings");
   }
 }
 
 // Write per-agent models.json
 const writeAgentModels = async (agentDir, model, baseUrl, apiKey) => {
-  await fs.mkdir(agentDir, { recursive: true });
+  await mkdirp(agentDir);
   const modelsPath = path.join(agentDir, "models.json");
-  let existing = {};
-  try {
-    const content = await fs.readFile(modelsPath, "utf-8");
-    existing = JSON.parse(content);
-  } catch { /* No existing */ }
+  const existing = (await readJsonTolerant(modelsPath)) || {};
 
   if (!existing.providers) existing.providers = {};
   existing.providers["@rsalmn/extremerouter"] = {
@@ -131,7 +102,7 @@ const writeAgentModels = async (agentDir, model, baseUrl, apiKey) => {
     api: "openai-completions",
     models: [{ id: model, name: model.split("/").pop() || model }],
   };
-  await fs.writeFile(modelsPath, JSON.stringify(existing, null, 2));
+  await writeJsonFile(modelsPath, existing);
 };
 
 // POST - Update ExtremeRouter settings (merge with existing settings)
@@ -139,7 +110,7 @@ export async function POST(request) {
   try {
     // agentModels: { [agentId]: modelId } for per-agent override
     const { baseUrl, apiKey, model, agentModels = {} } = await request.json();
-    
+
     if (!baseUrl || !model) {
       return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
     }
@@ -147,13 +118,9 @@ export async function POST(request) {
     const openclawDir = getOpenClawDir();
     const settingsPath = getOpenClawSettingsPath();
 
-    await fs.mkdir(openclawDir, { recursive: true });
+    await mkdirp(openclawDir);
 
-    let settings = {};
-    try {
-      const existingSettings = await fs.readFile(settingsPath, "utf-8");
-      settings = JSON.parse(existingSettings);
-    } catch { /* No existing settings */ }
+    const settings = (await readSettings()) || {};
 
     if (!settings.agents) settings.agents = {};
     if (!settings.agents.defaults) settings.agents.defaults = {};
@@ -162,7 +129,7 @@ export async function POST(request) {
     if (!settings.models) settings.models = {};
     if (!settings.models.providers) settings.models.providers = {};
 
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+    const normalizedBaseUrl = ensureSuffix(baseUrl, "/v1");
     const fullModelId = `extremerouter/${model}`;
 
     // Remove all old extremerouter/* entries from agents.defaults.models
@@ -221,7 +188,7 @@ export async function POST(request) {
       );
     }
 
-    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
+    await writeJsonFile(settingsPath, settings);
 
     return NextResponse.json({
       success: true,
@@ -229,8 +196,7 @@ export async function POST(request) {
       settingsPath,
     });
   } catch (error) {
-    console.log("Error updating openclaw settings:", error);
-    return NextResponse.json({ error: "Failed to update openclaw settings" }, { status: 500 });
+    return settingsError("Error updating openclaw settings", error, "Failed to update openclaw settings");
   }
 }
 
@@ -239,25 +205,20 @@ export async function DELETE() {
   try {
     const settingsPath = getOpenClawSettingsPath();
 
-    // Read existing settings
-    let settings = {};
-    try {
-      const existingSettings = await fs.readFile(settingsPath, "utf-8");
-      settings = JSON.parse(existingSettings);
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        return NextResponse.json({
-          success: true,
-          message: "No settings file to reset",
-        });
-      }
-      throw error;
+    // Distinguish "no file" (clean reset message) from other read errors.
+    if ((await readTextFile(settingsPath, null)) === null) {
+      return NextResponse.json({
+        success: true,
+        message: "No settings file to reset",
+      });
     }
+
+    const settings = (await readSettings()) || {};
 
     // Remove ExtremeRouter from models.providers
     if (settings.models && settings.models.providers) {
       delete settings.models.providers["@rsalmn/extremerouter"];
-      
+
       // Remove providers object if empty
       if (Object.keys(settings.models.providers).length === 0) {
         delete settings.models.providers;
@@ -281,14 +242,13 @@ export async function DELETE() {
     }
 
     // Write updated settings
-    await fs.writeFile(settingsPath, JSON.stringify(settings, null, 2));
+    await writeJsonFile(settingsPath, settings);
 
     return NextResponse.json({
       success: true,
       message: "ExtremeRouter settings removed successfully",
     });
   } catch (error) {
-    console.log("Error resetting openclaw settings:", error);
-    return NextResponse.json({ error: "Failed to reset openclaw settings" }, { status: 500 });
+    return settingsError("Error resetting openclaw settings", error, "Failed to reset openclaw settings");
   }
 }

@@ -5,6 +5,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import crypto from "crypto";
+import { readJsonTolerant } from "@/lib/cliTools";
 import { DEFAULT_PLUGINS, LOCAL_STDIO_PLUGINS, buildManagedMcpServers } from "@/shared/constants/coworkPlugins";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
@@ -115,17 +116,8 @@ const get1pRoot = () => {
 
 const get1pConfigPath = () => path.join(get1pRoot(), "claude_desktop_config.json");
 
-const read1pConfig = async () => {
-  try {
-    const content = await fs.readFile(get1pConfigPath(), "utf-8");
-    // Tolerate JSONC (trailing commas) and treat unparseable files as empty config
-    // rather than throwing a 500 that the UI misreads as "tool not installed".
-    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
-    return JSON.parse(stripped) || {};
-  } catch (error) {
-    return {};
-  }
-};
+const read1pConfig = async () =>
+  (await readJsonTolerant(get1pConfigPath())) || {};
 
 const write1pConfig = async (cfg) => {
   await fs.mkdir(get1pRoot(), { recursive: true });
@@ -196,23 +188,11 @@ const checkInstalled = async () => {
   return false;
 };
 
-const readJson = async (filePath) => {
-  try {
-    const content = await fs.readFile(filePath, "utf-8");
-    // Tolerate JSONC (trailing commas) and treat unparseable files as "no config"
-    // rather than throwing a 500 that the UI misreads as "tool not installed".
-    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
-    return JSON.parse(stripped);
-  } catch (error) {
-    return null;
-  }
-};
-
 const ensureMeta = async () => {
   const writeMetaPath = getWriteMetaPath();
-  let meta = await readJson(writeMetaPath);
+  let meta = await readJsonTolerant(writeMetaPath);
   if (!meta || !meta.appliedId) {
-    const existingRead = await readJson(await getMetaPath());
+    const existingRead = await readJsonTolerant(await getMetaPath());
     if (existingRead?.appliedId) {
       meta = existingRead;
     } else {
@@ -247,11 +227,11 @@ export async function GET() {
     if (!installed) {
       return NextResponse.json({ installed: false, config: null, message: "Claude Desktop (Cowork mode) not detected" });
     }
-    const meta = await readJson(await getMetaPath());
+    const meta = await readJsonTolerant(await getMetaPath());
     const appliedId = meta?.appliedId || null;
     const configDir = await getConfigDir();
     const configPath = appliedId ? path.join(configDir, `${appliedId}.json`) : null;
-    const config = configPath ? await readJson(configPath) : null;
+    const config = configPath ? await readJsonTolerant(configPath) : null;
 
     const baseUrl = config?.inferenceGatewayBaseUrl || null;
     const models = Array.isArray(config?.inferenceModels)
@@ -370,7 +350,7 @@ export async function POST(request) {
 
 export async function DELETE() {
   try {
-    const meta = await readJson(await getMetaPath());
+    const meta = await readJsonTolerant(await getMetaPath());
     if (!meta?.appliedId) {
       return NextResponse.json({ success: true, message: "No active config to reset" });
     }

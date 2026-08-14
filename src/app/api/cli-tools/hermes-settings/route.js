@@ -1,13 +1,17 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
 import path from "path";
 import os from "os";
-
-const execAsync = promisify(exec);
+import {
+  checkBinaryInstalled,
+  readTextFile,
+  writeTextFile,
+  mkdirp,
+  ensureSuffix,
+  upsertEnvLine,
+  settingsError,
+} from "@/lib/cliTools";
 
 const PROVIDER_NAME = "@rsalmn/extremerouter";
 const API_KEY_ENV = "OPENAI_API_KEY";
@@ -28,7 +32,7 @@ const parseModelBlock = (yaml) => {
   if (!match) return null;
   const body = match[1] || "";
   const get = (key) => {
-    const m = body.match(new RegExp(`^[ \\t]+${key}:[ \\t]*["']?([^"'\\r\\n]+)["']?`, "m"));
+    const m = body.match(new RegExp(`^[ \\t]+${key}:[ \\t]*["']?([^"'\r\n]+)["']?`, "m"));
     return m ? m[1].trim() : null;
   };
   return {
@@ -45,52 +49,11 @@ const upsertModelBlock = (yaml, newBlock) => {
 
 const removeModelBlock = (yaml) => yaml.replace(MODEL_BLOCK_RE, "").replace(/^\n+/, "");
 
-// .env helpers — upsert/remove single KEY=VALUE line
-const upsertEnvVar = (envText, key, value) => {
-  const re = new RegExp(`^${key}=.*$`, "m");
-  const line = `${key}=${value}`;
-  if (re.test(envText)) return envText.replace(re, line);
-  return envText.length > 0 && !envText.endsWith("\n") ? `${envText}\n${line}\n` : `${envText}${line}\n`;
-};
+const checkHermesInstalled = () =>
+  checkBinaryInstalled({ binary: "hermes", configPaths: [getHermesConfigPath()] });
 
-const removeEnvVar = (envText, key) => {
-  const re = new RegExp(`^${key}=.*\\r?\\n?`, "m");
-  return envText.replace(re, "");
-};
-
-const checkHermesInstalled = async () => {
-  try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where hermes" : "which hermes";
-    await execAsync(command, { windowsHide: true });
-    return true;
-  } catch {
-    try {
-      await fs.access(getHermesConfigPath());
-      return true;
-    } catch {
-      return false;
-    }
-  }
-};
-
-const readConfigYaml = async () => {
-  try {
-    return await fs.readFile(getHermesConfigPath(), "utf-8");
-  } catch (error) {
-    if (error.code === "ENOENT") return "";
-    throw error;
-  }
-};
-
-const readEnvFile = async () => {
-  try {
-    return await fs.readFile(getHermesEnvPath(), "utf-8");
-  } catch (error) {
-    if (error.code === "ENOENT") return "";
-    throw error;
-  }
-};
+const readConfigYaml = () => readTextFile(getHermesConfigPath(), "");
+const readEnvFile = () => readTextFile(getHermesEnvPath(), "");
 
 // Detect extremerouter by base_url containing localhost/127.0.0.1 or matching tunnel URL
 const hasExtremeRouterConfig = (modelCfg) => {
@@ -113,8 +76,7 @@ export async function GET() {
       configPath: getHermesConfigPath(),
     });
   } catch (error) {
-    console.log("Error checking hermes settings:", error);
-    return NextResponse.json({ error: "Failed to check hermes settings" }, { status: 500 });
+    return settingsError("Error checking hermes settings", error, "Failed to check hermes settings");
   }
 }
 
@@ -125,21 +87,20 @@ export async function POST(request) {
       return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
     }
 
-    const dir = getHermesDir();
-    await fs.mkdir(dir, { recursive: true });
+    await mkdirp(getHermesDir());
 
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+    const normalizedBaseUrl = ensureSuffix(baseUrl, "/v1");
 
     // Update config.yaml — replace/insert model: block, keep everything else
     const existingYaml = await readConfigYaml();
     const newYaml = upsertModelBlock(existingYaml, buildModelBlock(model, normalizedBaseUrl));
-    await fs.writeFile(getHermesConfigPath(), newYaml);
+    await writeTextFile(getHermesConfigPath(), newYaml);
 
     // Update .env — upsert OPENAI_API_KEY only when caller provides one
     if (apiKey) {
       const existingEnv = await readEnvFile();
-      const newEnv = upsertEnvVar(existingEnv, API_KEY_ENV, apiKey);
-      await fs.writeFile(getHermesEnvPath(), newEnv);
+      const newEnv = upsertEnvLine(existingEnv, API_KEY_ENV, apiKey);
+      await writeTextFile(getHermesEnvPath(), newEnv);
     }
 
     return NextResponse.json({
@@ -148,28 +109,21 @@ export async function POST(request) {
       configPath: getHermesConfigPath(),
     });
   } catch (error) {
-    console.log("Error updating hermes settings:", error);
-    return NextResponse.json({ error: "Failed to update hermes settings" }, { status: 500 });
+    return settingsError("Error updating hermes settings", error, "Failed to update hermes settings");
   }
 }
 
 export async function DELETE() {
   try {
     const configPath = getHermesConfigPath();
-    let yaml = "";
-    try {
-      yaml = await fs.readFile(configPath, "utf-8");
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        return NextResponse.json({ success: true, message: "No config file to reset" });
-      }
-      throw error;
+    const yaml = await readTextFile(configPath, null);
+    if (yaml === null) {
+      return NextResponse.json({ success: true, message: "No config file to reset" });
     }
     const newYaml = removeModelBlock(yaml);
-    await fs.writeFile(configPath, newYaml);
+    await writeTextFile(configPath, newYaml);
     return NextResponse.json({ success: true, message: `${PROVIDER_NAME} model block removed` });
   } catch (error) {
-    console.log("Error resetting hermes settings:", error);
-    return NextResponse.json({ error: "Failed to reset hermes settings" }, { status: 500 });
+    return settingsError("Error resetting hermes settings", error, "Failed to reset hermes settings");
   }
 }

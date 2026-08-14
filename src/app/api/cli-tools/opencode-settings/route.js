@@ -1,52 +1,28 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { exec } from "child_process";
-import { promisify } from "util";
-import fs from "fs/promises";
 import path from "path";
 import os from "os";
-
-const execAsync = promisify(exec);
+import {
+  checkBinaryInstalled,
+  readJsonTolerant,
+  readTextFile,
+  writeJsonFile,
+  mkdirp,
+  ensureSuffix,
+  settingsError,
+} from "@/lib/cliTools";
 
 const getConfigDir = () => path.join(os.homedir(), ".config", "opencode");
 const getConfigPath = () => path.join(getConfigDir(), "opencode.json");
 
 // Check if opencode CLI is installed (via which/where or config file exists)
-const checkOpenCodeInstalled = async () => {
-  try {
-    const isWindows = os.platform() === "win32";
-    const command = isWindows ? "where opencode" : "which opencode";
-    const env = isWindows
-      ? { ...process.env, PATH: `${process.env.APPDATA}\\npm;${process.env.PATH}` }
-      : process.env;
-    await execAsync(command, { windowsHide: true, env });
-    return true;
-  } catch {
-    try {
-      await fs.access(getConfigPath());
-      return true;
-    } catch {
-      return false;
-    }
-  }
-};
+const checkOpenCodeInstalled = () =>
+  checkBinaryInstalled({ binary: "opencode", configPaths: [getConfigPath()] });
 
-const readConfig = async () => {
-  try {
-    const content = await fs.readFile(getConfigPath(), "utf-8");
-    // opencode config files may use JSONC format (trailing commas, comments).
-    // Strip trailing commas before parsing to avoid SyntaxError on valid JSONC.
-    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
-    return JSON.parse(stripped);
-  } catch (error) {
-    if (error.code === "ENOENT") return null;
-    // If the config file exists but is unparseable (corrupted, exotic JSONC),
-    // treat it as "no config" rather than throwing a 500 that the UI
-    // misinterprets as "opencode not installed".
-    return null;
-  }
-};
+// Read current config (tolerates JSONC comments/trailing commas; treats
+// missing or unparseable files as "no config").
+const readConfig = () => readJsonTolerant(getConfigPath());
 
 const hasExtremeRouterConfig = (config) => {
   if (!config?.provider) return false;
@@ -82,8 +58,7 @@ export async function GET() {
         },
     });
   } catch (error) {
-    console.log("Error checking opencode settings:", error);
-    return NextResponse.json({ error: "Failed to check opencode settings" }, { status: 500 });
+    return settingsError("Error checking opencode settings", error, "Failed to check opencode settings");
   }
 }
 
@@ -102,16 +77,12 @@ export async function POST(request) {
     const configDir = getConfigDir();
     const configPath = getConfigPath();
 
-    await fs.mkdir(configDir, { recursive: true });
+    await mkdirp(configDir);
 
-    // Read existing config or start fresh
-    let config = {};
-    try {
-      const existing = await fs.readFile(configPath, "utf-8");
-      config = JSON.parse(existing);
-    } catch { /* No existing config */ }
+    // Read existing config or start fresh (tolerates JSONC)
+    const config = (await readConfig()) || {};
 
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+    const normalizedBaseUrl = ensureSuffix(baseUrl, "/v1");
     const keyToUse = apiKey || "sk_extremerouter";
     const effectiveSubagentModel = subagentModel || modelsArray[0];
 
@@ -159,7 +130,7 @@ export async function POST(request) {
       model: `extremerouter/${effectiveSubagentModel}`,
     };
 
-    await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+    await writeJsonFile(configPath, config);
 
     return NextResponse.json({
       success: true,
@@ -167,8 +138,7 @@ export async function POST(request) {
       configPath,
     });
   } catch (error) {
-    console.log("Error applying opencode settings:", error);
-    return NextResponse.json({ error: "Failed to apply settings" }, { status: 500 });
+    return settingsError("Error applying opencode settings", error, "Failed to apply settings");
   }
 }
 
@@ -178,16 +148,12 @@ export async function PATCH(request) {
     const { clearActiveModel } = await request.json();
     const configPath = getConfigPath();
 
-    let config = {};
-    try {
-      const existing = await fs.readFile(configPath, "utf-8");
-      config = JSON.parse(existing);
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        return NextResponse.json({ success: true, message: "No config file found" });
-      }
-      throw error;
+    // Distinguish "no file" (clean message) from other read errors.
+    if ((await readTextFile(configPath, null)) === null) {
+      return NextResponse.json({ success: true, message: "No config file found" });
     }
+
+    const config = (await readConfig()) || {};
 
     if (clearActiveModel === true) {
       // Clear active model but keep models in the list
@@ -196,15 +162,14 @@ export async function PATCH(request) {
       }
     }
 
-    await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+    await writeJsonFile(configPath, config);
 
     return NextResponse.json({
       success: true,
       message: "Settings updated",
     });
   } catch (error) {
-    console.log("Error patching opencode settings:", error);
-    return NextResponse.json({ error: "Failed to patch settings" }, { status: 500 });
+    return settingsError("Error patching opencode settings", error, "Failed to patch settings");
   }
 }
 
@@ -215,21 +180,17 @@ export async function DELETE(request) {
     const modelToRemove = searchParams.get("model");
     const configPath = getConfigPath();
 
-    let config = {};
-    try {
-      const existing = await fs.readFile(configPath, "utf-8");
-      config = JSON.parse(existing);
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        return NextResponse.json({ success: true, message: "No config file to reset" });
-      }
-      throw error;
+    // Distinguish "no file" (clean reset message) from other read errors.
+    if ((await readTextFile(configPath, null)) === null) {
+      return NextResponse.json({ success: true, message: "No config file to reset" });
     }
+
+    const config = (await readConfig()) || {};
 
     // If specific model provided, remove just that model
     if (modelToRemove && config.provider?.["@rsalmn/extremerouter"]?.models) {
       delete config.provider["@rsalmn/extremerouter"].models[modelToRemove];
-      
+
       // If no models left, remove the provider
       if (Object.keys(config.provider["@rsalmn/extremerouter"].models).length === 0) {
         delete config.provider["@rsalmn/extremerouter"];
@@ -252,14 +213,13 @@ export async function DELETE(request) {
       if (Object.keys(config.agent).length === 0) delete config.agent;
     }
 
-    await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+    await writeJsonFile(configPath, config);
 
     return NextResponse.json({
       success: true,
       message: modelToRemove ? `Model "${modelToRemove}" removed` : "ExtremeRouter settings removed from OpenCode",
     });
   } catch (error) {
-    console.log("Error resetting opencode settings:", error);
-    return NextResponse.json({ error: "Failed to reset opencode settings" }, { status: 500 });
+    return settingsError("Error resetting opencode settings", error, "Failed to reset opencode settings");
   }
 }

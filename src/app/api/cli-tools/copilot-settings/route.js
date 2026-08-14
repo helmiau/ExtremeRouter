@@ -1,9 +1,15 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import {
+  readJsonTolerant,
+  readTextFile,
+  writeJsonFile,
+  mkdirp,
+  settingsError,
+} from "@/lib/cliTools";
 
 // Resolve chatLanguageModels.json path per OS
 const getConfigPath = () => {
@@ -18,17 +24,7 @@ const getConfigPath = () => {
   return path.join(home, ".config", "Code", "User", "chatLanguageModels.json");
 };
 
-const readConfig = async () => {
-  try {
-    const content = await fs.readFile(getConfigPath(), "utf-8");
-    // Tolerate JSONC (trailing commas) and treat unparseable files as "no config"
-    // rather than throwing a 500 that the UI misreads as "tool not installed".
-    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
-    return JSON.parse(stripped);
-  } catch (error) {
-    return null;
-  }
-};
+const readConfig = () => readJsonTolerant(getConfigPath());
 
 const hasExtremeRouterConfig = (config) => {
   if (!Array.isArray(config)) return false;
@@ -55,8 +51,7 @@ export async function GET() {
       currentUrl: entry?.models?.[0]?.url || null,
     });
   } catch (error) {
-    console.log("Error checking copilot settings:", error);
-    return NextResponse.json({ error: "Failed to check copilot settings" }, { status: 500 });
+    return settingsError("Error checking copilot settings", error, "Failed to check copilot settings");
   }
 }
 
@@ -70,15 +65,12 @@ export async function POST(request) {
     }
 
     const configPath = getConfigPath();
-    await fs.mkdir(path.dirname(configPath), { recursive: true });
+    await mkdirp(path.dirname(configPath));
 
     // Read existing config array
     let config = [];
-    try {
-      const existing = await fs.readFile(configPath, "utf-8");
-      const parsed = JSON.parse(existing);
-      config = Array.isArray(parsed) ? parsed : [];
-    } catch { /* No existing config */ }
+    const existing = await readJsonTolerant(configPath);
+    if (Array.isArray(existing)) config = existing;
 
     const endpointUrl = `${baseUrl}/chat/completions#models.ai.azure.com`;
     const keyToUse = apiKey || "sk_extremerouter";
@@ -106,7 +98,7 @@ export async function POST(request) {
       config.push(newEntry);
     }
 
-    await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+    await writeJsonFile(configPath, config);
 
     return NextResponse.json({
       success: true,
@@ -114,8 +106,7 @@ export async function POST(request) {
       configPath,
     });
   } catch (error) {
-    console.log("Error updating copilot settings:", error);
-    return NextResponse.json({ error: "Failed to update copilot settings" }, { status: 500 });
+    return settingsError("Error updating copilot settings", error, "Failed to update copilot settings");
   }
 }
 
@@ -124,27 +115,23 @@ export async function DELETE() {
   try {
     const configPath = getConfigPath();
 
-    let config = [];
-    try {
-      const existing = await fs.readFile(configPath, "utf-8");
-      const parsed = JSON.parse(existing);
-      config = Array.isArray(parsed) ? parsed : [];
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        return NextResponse.json({ success: true, message: "No config file to reset" });
-      }
-      throw error;
+    // Distinguish "no file" (clean reset message) from other read errors.
+    if ((await readTextFile(configPath, null)) === null) {
+      return NextResponse.json({ success: true, message: "No config file to reset" });
     }
 
+    let config = [];
+    const existing = await readJsonTolerant(configPath);
+    if (Array.isArray(existing)) config = existing;
+
     config = config.filter((e) => e.name !== "ExtremeRouter");
-    await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+    await writeJsonFile(configPath, config);
 
     return NextResponse.json({
       success: true,
       message: "ExtremeRouter removed from Copilot config",
     });
   } catch (error) {
-    console.log("Error resetting copilot settings:", error);
-    return NextResponse.json({ error: "Failed to reset copilot settings" }, { status: 500 });
+    return settingsError("Error resetting copilot settings", error, "Failed to reset copilot settings");
   }
 }
