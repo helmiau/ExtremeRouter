@@ -89,6 +89,146 @@ function cleanResponse(text, strip = true) {
   return t;
 }
 
+// ── Workflow API answer extraction ────────────────────────────────────────
+//
+// Workflow API (`intended_usage: "workflow_root"`). Perplexity moved the answer
+// text here from markdown_block: it now arrives as one WORKFLOW_ITEM_TEXT item
+// whose `text_payload.variant` is "answer", nested under a workflow step. Other
+// variants ("thinking") and item types (queries, sources) are not answer text.
+//
+// Patches are JSON-diff style: {op:"add", path:"/steps/1", value:{items:[…]}}
+// {op:"add", path:"/steps/1/items/0/payload/text_payload/chunks/2", value:"…"}
+// {op:"replace", path:"/steps/1/items/0/payload/text_payload/text", value:"…"}
+// Only answer-variant items are accumulated; step/status patches are ignored.
+// mdState keys are per step+item so the /chunks/<k> indices of two concurrent
+// items can never overwrite each other.
+
+/** Answer-text items carry this `variant`; "thinking" and friends are not answer text. */
+const WORKFLOW_ANSWER_VARIANT = "answer";
+
+function workflowUsageKey(stepIdx, itemIdx) {
+  return `workflow_root:${stepIdx}:${itemIdx}`;
+}
+
+function isAnswerItem(item) {
+  if (!item) return false;
+  const payloadVariant = item.payload?.text_payload?.variant;
+  return (payloadVariant ?? item.variant) === WORKFLOW_ANSWER_VARIANT;
+}
+
+/** Seed an accumulator from a materialized answer item. Chunks win over `text`:
+ * the terminal frame can carry a `text` that lags the chunk track (same
+ * precedence markdown_block already uses for `chunks` over `answer`). */
+function seedFromAnswerItem(acc, item) {
+  const tp = item.payload?.text_payload;
+  if (!tp) return;
+  if (Array.isArray(tp.chunks) && tp.chunks.length > 0) {
+    acc.chunks = tp.chunks.map((c) => String(c));
+  } else if (typeof tp.text === "string" && tp.text.length > 0) {
+    acc.chunks = [tp.text];
+  }
+}
+
+function ensureWorkflowAcc(mdState, key) {
+  let acc = mdState.get(key);
+  if (!acc) {
+    acc = { chunks: [] };
+    mdState.set(key, acc);
+  }
+  return acc;
+}
+
+/** Apply a `field: "workflow_block"` diff patch set. */
+function applyWorkflowDiff(mdState, patches) {
+  for (const patch of patches) {
+    const path = patch.path ?? "";
+
+    // Whole step materialized — pick up every answer item it carries.
+    const stepMatch = /^\/steps\/(\d+)$/.exec(path);
+    if (stepMatch) {
+      const stepIdx = Number.parseInt(stepMatch[1], 10);
+      const step = patch.value ?? {};
+      (step.items ?? []).forEach((item, itemIdx) => {
+        if (!isAnswerItem(item)) return;
+        seedFromAnswerItem(ensureWorkflowAcc(mdState, workflowUsageKey(stepIdx, itemIdx)), item);
+      });
+      continue;
+    }
+
+    // Single item appended to an existing step.
+    const itemMatch = /^\/steps\/(\d+)\/items\/(\d+)$/.exec(path);
+    if (itemMatch) {
+      const item = patch.value ?? {};
+      if (!isAnswerItem(item)) continue;
+      const key = workflowUsageKey(
+        Number.parseInt(itemMatch[1], 10),
+        Number.parseInt(itemMatch[2], 10)
+      );
+      seedFromAnswerItem(ensureWorkflowAcc(mdState, key), item);
+      continue;
+    }
+
+    // Incremental chunk append — the streaming hot path.
+    const chunkMatch = /^\/steps\/(\d+)\/items\/(\d+)\/payload\/text_payload\/chunks\/(\d+)$/.exec(path);
+    if (chunkMatch && typeof patch.value === "string") {
+      const key = workflowUsageKey(
+        Number.parseInt(chunkMatch[1], 10),
+        Number.parseInt(chunkMatch[2], 10)
+      );
+      // Only extend a track already seeded by an answer item: a chunk patch
+      // carries no variant, so an unseeded key could be a "thinking" track.
+      const acc = mdState.get(key);
+      if (!acc) continue;
+      acc.chunks[Number.parseInt(chunkMatch[3], 10)] = patch.value;
+      continue;
+    }
+
+    // Terminal `text` materialization — only used when no chunks arrived.
+    const textMatch = /^\/steps\/(\d+)\/items\/(\d+)\/payload\/text_payload\/text$/.exec(path);
+    if (textMatch && typeof patch.value === "string" && patch.value.length > 0) {
+      const key = workflowUsageKey(
+        Number.parseInt(textMatch[1], 10),
+        Number.parseInt(textMatch[2], 10)
+      );
+      const acc = mdState.get(key);
+      if (!acc || acc.chunks.join("").length > 0) continue;
+      acc.chunks = [patch.value];
+    }
+  }
+}
+
+/** Accumulate every answer item of a materialized workflow_block. */
+function applyWorkflowBlock(mdState, workflow) {
+  (workflow.steps ?? []).forEach((step, stepIdx) => {
+    (step.items ?? []).forEach((item, itemIdx) => {
+      if (!isAnswerItem(item)) return;
+      seedFromAnswerItem(ensureWorkflowAcc(mdState, workflowUsageKey(stepIdx, itemIdx)), item);
+    });
+  });
+}
+
+/** Deterministic full answer text across all accumulated workflow items.
+ * Items within one step are contiguous parts of the same answer (joined
+ * without a separator); steps are separated by a blank line. */
+function workflowAnswerText(mdState) {
+  const entries = [];
+  for (const [key, acc] of mdState.entries()) {
+    const m = /^workflow_root:(\d+):(\d+)$/.exec(key);
+    entries.push({ step: m ? Number(m[1]) : 0, item: m ? Number(m[2]) : 0, acc });
+  }
+  entries.sort((a, b) => a.step - b.step || a.item - b.item);
+  const byStep = new Map();
+  for (const e of entries) {
+    if (!byStep.has(e.step)) byStep.set(e.step, []);
+    byStep.get(e.step).push(e.acc.chunks.join(""));
+  }
+  return [...byStep.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, parts]) => parts.join(""))
+    .join("\n\n")
+    .trim();
+}
+
 async function* readPplxSseEvents(body, signal) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
@@ -213,6 +353,29 @@ async function* extractContent(eventStream, signal) {
   let backendUuid = null;
   let seenLen = 0;
   const seenThinking = new Set();
+  // Perplexity migrated the answer text to workflow_block; accumulated per
+  // step+item so concurrent items' chunk indices never clobber each other.
+  const workflowState = new Map();
+
+  // Flush accumulated workflow answer text as delta chunks. Runs on every
+  // workflow frame AND once at stream end (terminal `text` may materialize
+  // without a chunk track). Shrinks (re-seed) reset the cursor safely.
+  const flushWorkflow = () => {
+    if (workflowState.size === 0) return null;
+    const wf = workflowAnswerText(workflowState);
+    if (wf.length > seenLen) {
+      const delta = wf.slice(seenLen);
+      fullAnswer = wf;
+      seenLen = wf.length;
+      return delta;
+    }
+    if (wf.length < seenLen) {
+      // Track reset — re-align cursor without emitting negative delta.
+      fullAnswer = wf;
+      seenLen = wf.length;
+    }
+    return null;
+  };
 
   for await (const event of readPplxSseEvents(eventStream, signal)) {
     if (event.error_code || event.error_message) {
@@ -256,6 +419,22 @@ async function* extractContent(eventStream, signal) {
         }
       }
 
+      // Content: workflow_block answer items. Perplexity moved the answer text
+      // here from markdown_block, so this must run BEFORE the markdown gate —
+      // the carrying usage is "workflow_root", which that gate rejects.
+      if (block.workflow_block) {
+        applyWorkflowBlock(workflowState, block.workflow_block);
+        const delta = flushWorkflow();
+        if (delta) yield { delta, answer: fullAnswer, backendUuid: backendUuid ?? undefined };
+        continue;
+      }
+      if (block.diff_block?.field === "workflow_block") {
+        applyWorkflowDiff(workflowState, block.diff_block.patches ?? []);
+        const delta = flushWorkflow();
+        if (delta) yield { delta, answer: fullAnswer, backendUuid: backendUuid ?? undefined };
+        continue;
+      }
+
       if (!usage.includes("markdown")) continue;
       const mb = block.markdown_block;
       if (!mb) continue;
@@ -286,7 +465,12 @@ async function* extractContent(eventStream, signal) {
       }
     }
 
-    if (event.final || event.status === "COMPLETED") break;
+    if (event.final || event.status === "COMPLETED") {
+      // Terminal `text` may land on the final frame with no chunk track.
+      const tail = flushWorkflow();
+      if (tail) yield { delta: tail, answer: fullAnswer, backendUuid: backendUuid ?? undefined };
+      break;
+    }
   }
   yield { delta: "", answer: fullAnswer, backendUuid: backendUuid ?? undefined, done: true };
 }
@@ -500,6 +684,9 @@ export class PerplexityWebExecutor extends BaseExecutor {
   }
 }
 
-export { parseOpenAIMessages, buildQuery, buildPplxRequestBody, formatToolsHint, sessionKey };
+export {
+  parseOpenAIMessages, buildQuery, buildPplxRequestBody, formatToolsHint, sessionKey,
+  applyWorkflowDiff, applyWorkflowBlock, workflowAnswerText, isAnswerItem,
+};
 
 export default PerplexityWebExecutor;

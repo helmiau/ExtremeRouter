@@ -18,6 +18,10 @@ import {
   buildPplxRequestBody,
   formatToolsHint,
   PerplexityWebExecutor,
+  applyWorkflowDiff,
+  applyWorkflowBlock,
+  workflowAnswerText,
+  isAnswerItem,
 } from "../../open-sse/executors/perplexity-web.js";
 
 const originalFetch = global.fetch;
@@ -302,5 +306,145 @@ describe("PerplexityWebExecutor.execute", () => {
     expect(response.status).toBe(429);
     const j = await response.json();
     expect(j.error.message).toMatch(/rate limited/i);
+  });
+});
+
+describe("workflow_block answer extraction", () => {
+  const answerItem = (text, variant = "answer") => ({
+    type: "WORKFLOW_ITEM_TEXT",
+    variant,
+    payload: { text_payload: { variant, text, is_streaming: true } },
+  });
+
+  it("isAnswerItem: only the answer variant counts", () => {
+    expect(isAnswerItem(answerItem("hi"))).toBe(true);
+    expect(isAnswerItem(answerItem("think", "thinking"))).toBe(false);
+    expect(isAnswerItem({ type: "WORKFLOW_ITEM_QUERY", variant: "query" })).toBe(false);
+    expect(isAnswerItem(null)).toBe(false);
+  });
+
+  it("applyWorkflowBlock: materialized block with multiple steps/items", () => {
+    const md = new Map();
+    applyWorkflowBlock(md, {
+      status: "completed",
+      steps: [
+        { status: "completed", items: [answerItem("Hello")] },
+        { status: "completed", items: [answerItem("World"), answerItem("!")] },
+      ],
+    });
+    expect(workflowAnswerText(md)).toBe("Hello\n\nWorld!");
+  });
+
+  it("applyWorkflowDiff: whole step materialization picks up answer items", () => {
+    const md = new Map();
+    applyWorkflowDiff(md, [
+      { op: "add", path: "/steps/1", value: { items: [answerItem("step one")] } },
+      { op: "add", path: "/steps/2", value: { items: [answerItem("step two")] } },
+    ]);
+    expect(workflowAnswerText(md)).toBe("step one\n\nstep two");
+  });
+
+  it("applyWorkflowDiff: single item appended to an existing step", () => {
+    const md = new Map();
+    applyWorkflowDiff(md, [
+      { op: "add", path: "/steps/0/items/0", value: answerItem("A") },
+      { op: "add", path: "/steps/0/items/1", value: answerItem("B") },
+    ]);
+    expect(workflowAnswerText(md)).toBe("AB");
+  });
+
+  it("applyWorkflowDiff: streaming chunk appends extend an answer track", () => {
+    const md = new Map();
+    applyWorkflowDiff(md, [
+      { op: "add", path: "/steps/0/items/0", value: answerItem("He") },
+      { op: "add", path: "/steps/0/items/0/payload/text_payload/chunks/0", value: "Hel" },
+      { op: "add", path: "/steps/0/items/0/payload/text_payload/chunks/1", value: "lo" },
+    ]);
+    // Terminal text lags the chunk track; chunks win.
+    expect(workflowAnswerText(md)).toBe("Hello");
+  });
+
+  it("applyWorkflowDiff: chunk patch without a seeded answer track is ignored", () => {
+    const md = new Map();
+    applyWorkflowDiff(md, [
+      // Thinking track materialized as a whole item (not answer variant).
+      { op: "add", path: "/steps/0/items/0", value: answerItem("thinking...", "thinking") },
+      // Chunk patch targeting that unseeded key must NOT create an answer track.
+      { op: "add", path: "/steps/0/items/0/payload/text_payload/chunks/0", value: "leak" },
+    ]);
+    expect(workflowAnswerText(md)).toBe("");
+  });
+
+  it("applyWorkflowDiff: terminal text used only when no chunks arrived", () => {
+    const md = new Map();
+    applyWorkflowDiff(md, [
+      { op: "add", path: "/steps/0/items/0", value: answerItem("") },
+      { op: "replace", path: "/steps/0/items/0/payload/text_payload/text", value: "final" },
+    ]);
+    expect(workflowAnswerText(md)).toBe("final");
+
+    // Text patch is ignored once a chunk track exists.
+    const md2 = new Map();
+    applyWorkflowDiff(md2, [
+      { op: "add", path: "/steps/0/items/0", value: answerItem("chunks win") },
+      { op: "replace", path: "/steps/0/items/0/payload/text_payload/text", value: "ignored" },
+    ]);
+    expect(workflowAnswerText(md2)).toBe("chunks win");
+  });
+
+  it("ignores step/status patches and query items", () => {
+    const md = new Map();
+    applyWorkflowDiff(md, [
+      { op: "replace", path: "/status", value: "completed" },
+      { op: "add", path: "/steps/0/status", value: "completed" },
+      { op: "add", path: "/steps/0/items/0", value: { type: "WORKFLOW_ITEM_QUERY", payload: {} } },
+    ]);
+    expect(workflowAnswerText(md)).toBe("");
+  });
+
+  it("executor extracts workflow_block answers end-to-end (non-streaming)", async () => {
+    global.fetch = vi.fn(async () => mockPplxStream([
+      {
+        backend_uuid: "resp-uuid-wf",
+        blocks: [
+          { intended_usage: "workflow_root", diff_block: { field: "workflow_block", patches: [
+            { op: "add", path: "/steps/0", value: { items: [answerItem("Hel")] } },
+            { op: "add", path: "/steps/0/items/0/payload/text_payload/chunks/0", value: "Hel" },
+            { op: "add", path: "/steps/0/items/0/payload/text_payload/chunks/1", value: "lo world" },
+          ] } },
+        ],
+        status: "COMPLETED",
+      },
+    ]));
+    const exec = new PerplexityWebExecutor();
+    const { response } = await exec.execute({
+      model: "pplx-auto",
+      body: { messages: [{ role: "user", content: "hi" }], stream: false },
+      stream: false,
+      credentials: { apiKey: "cookie-abc" },
+    });
+    expect(response.status).toBe(200);
+    const j = await response.json();
+    expect(j.choices[0].message.content).toBe("Hello world");
+  });
+
+  it("executor falls back to markdown_block when workflow absent", async () => {
+    global.fetch = vi.fn(async () => mockPplxStream([
+      {
+        backend_uuid: "resp-uuid-md",
+        blocks: [{ intended_usage: "markdown", markdown_block: { chunks: ["plain answer"], progress: "DONE" } }],
+        status: "COMPLETED",
+      },
+    ]));
+    const exec = new PerplexityWebExecutor();
+    const { response } = await exec.execute({
+      model: "pplx-auto",
+      body: { messages: [{ role: "user", content: "hi" }], stream: false },
+      stream: false,
+      credentials: { apiKey: "cookie-abc" },
+    });
+    expect(response.status).toBe(200);
+    const j = await response.json();
+    expect(j.choices[0].message.content).toBe("plain answer");
   });
 });
