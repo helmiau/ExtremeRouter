@@ -9,6 +9,7 @@ import { translate } from "@/i18n/runtime";
 import ConnectionRow from "../ConnectionRow";
 import VaultPoolBadge from "../VaultPoolBadge";
 import FreeBuffProfile from "../FreeBuffProfile";
+import FeloProfile from "../FeloProfile";
 import V0Profile from "../V0Profile";
 import QwenCloudProfile from "../QwenCloudProfile";
 import InxoraProfile from "../InxoraProfile";
@@ -112,6 +113,9 @@ export default function ConnectionsCard({
             )}
           </div>
           <VaultPoolBadge providerId={providerId} />
+          {providerId === "felo-web" && connections.length > 0 && (
+            <FeloProfile connectionId={connections[0].id} />
+          )}
           {providerId === "freebuff-web" && connections.length > 0 && (
             <FreeBuffProfile connectionId={connections[0].id} />
           )}

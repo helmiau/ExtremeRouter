@@ -3,23 +3,33 @@ import { BaseExecutor } from "./base.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 /**
- * FeloWebExecutor — anonymous, free access to Felo (felo.ai), a
- * chat/search-agent aggregator. No API key or session cookie required.
+ * FeloWebExecutor — free access to Felo (felo.ai), a chat/search-agent
+ * aggregator. Since mid-2026 Felo gates thread creation behind a Cloudflare
+ * Turnstile *session* token (`cf_token`): anonymous requests get HTTP 400
+ * `turnstile_session_token_required`. The user obtains the token by running a
+ * search in a browser and copying it from sessionStorage
+ * (`turnstile_session_token`), then pastes it as `cf_token=<token>` in the
+ * connection credentials. Optionally `bearer=<6h_...>` (the `authorization`
+ * header value) and/or `cookie=<full Cookie header>` can be appended so the
+ * stream request authenticates and the profile endpoint works.
  *
  * Flow:
- * 1. POST /api-proxy/main/search/threads — opens a search thread, returns `stream_key`.
- * 2. GET /api/message/v1/stream/{stream_key}?offset=0 — SSE-shaped stream. Each line is
- *    `data:{...}` (no space after the colon). The JSON payload carries a double-encoded
- *    `content` string; parsing that yields `{ data: { type, data } }` where `type` is
- *    `"answer"` (incremental/snapshot text) or `"final_contexts"` (sources, dropped —
- *    no OpenAI-compatible slot for citations here).
+ * 1. POST /api-proxy/main/search/threads { ..., cf_token } — opens a search
+ *    thread, returns `stream_key`.
+ * 2. GET /api/message/v1/stream/{stream_key}?offset=0 — SSE stream. Lines are
+ *    `data:{...}` (no space) or `event: stream` + `data:{...}`; the payload
+ *    carries a double-encoded `content` string that yields
+ *    `{ data: { type, data } }` with type `"answer"` (incremental/snapshot
+ *    text). `reasoning`/`message`/`related_questions`/`deduction_info` events
+ *    are ignored.
  *
- * Reverse-engineered, scrape-style integration — may break without notice if Felo
- * changes its frontend contract. Port of OmniRoute felo-web.
+ * Reverse-engineered, scrape-style integration — may break without notice if
+ * Felo changes its frontend contract. Port of OmniRoute felo-web.
  */
 
 export const FELO_BASE = "https://felo.ai";
 export const FELO_THREADS_URL = `${FELO_BASE}/api-proxy/main/search/threads`;
+export const FELO_USER_INFO_URL = `${FELO_BASE}/api-proxy/ext/user/info`;
 
 export function feloStreamUrl(streamKey) {
   return `${FELO_BASE}/api/message/v1/stream/${encodeURIComponent(streamKey)}?offset=0`;
@@ -70,6 +80,50 @@ export function resolveFeloCategory(model) {
   return FELO_MODEL_CATEGORIES[normalizeFeloModel(model)];
 }
 
+/**
+ * Parse the pasted credential string into { cfToken, bearer, cookie }.
+ *
+ * Accepted shapes (case-insensitive keys):
+ *   - `cf_token=<turnstile session token>`            (required)
+ *   - `cfToken=<...>` / `turnstile=<...>` aliases
+ *   - `bearer=<6h_...>`  — authorization header value for the stream/profile
+ *   - `cookie=<full Cookie header>` — for the stream/profile requests
+ *   - a bare value (no `=`) is treated as the cf_token itself
+ *   - a `cookie: ...` prefix is stripped (full-header paste convenience)
+ */
+export function parseFeloCredential(raw) {
+  const str = String(raw || "").trim().replace(/^cookie:\s*/i, "");
+  if (!str) return { cfToken: "", bearer: "", cookie: "" };
+
+  // Split on `;` so cookie values may themselves contain `=` (cookie pairs).
+  // Unknown keys are collected back into the cookie header string.
+  const parts = str.split(";").map((p) => p.trim()).filter(Boolean);
+  let cfToken = "";
+  let bearer = "";
+  const cookieParts = [];
+  for (const part of parts) {
+    const eq = part.indexOf("=");
+    if (eq < 0) {
+      // Bare value (no `=` anywhere) → treat as the turnstile token itself.
+      if (parts.length === 1) cfToken = part;
+      continue;
+    }
+    const key = part.slice(0, eq).trim().toLowerCase();
+    const value = part.slice(eq + 1).trim();
+    if (key === "cf_token" || key === "cftoken" || key === "turnstile") {
+      if (!cfToken) cfToken = value;
+    } else if (key === "bearer") {
+      bearer = value;
+    } else if (key === "cookie") {
+      cookieParts.push(value);
+    } else {
+      // Unknown pair (e.g. felo-user-token=...) — part of the cookie header.
+      cookieParts.push(part);
+    }
+  }
+  return { cfToken, bearer, cookie: cookieParts.join("; ") };
+}
+
 export function extractFeloLastUserPrompt(messages) {
   const lastUser = [...messages].reverse().find((m) => m.role === "user");
   if (!lastUser) return "";
@@ -85,7 +139,7 @@ export function extractFeloLastUserPrompt(messages) {
     .join("\n");
 }
 
-export function buildFeloThreadPayload(model, prompt) {
+export function buildFeloThreadPayload(model, prompt, cfToken) {
   const searchUuid = randomUUID();
   return {
     query: prompt,
@@ -109,6 +163,7 @@ export function buildFeloThreadPayload(model, prompt) {
     process_id: searchUuid,
     stream_protocol: "message_center_v1",
     enable_task_state: true,
+    cf_token: cfToken,
   };
 }
 
@@ -127,16 +182,29 @@ function extractFeloAnswerText(contentJson) {
  * Parse a single line of Felo's SSE-shaped stream, diffing against the running
  * snapshot: each `answer` event carries the full text-so-far, and only the new
  * suffix is new content.
+ *
+ * Tolerates both legacy `data:{...}` (no space) lines and the newer framing
+ * where the event is named `stream` (DevTools shows `stream\t{...}` — either
+ * `event: stream` + `data:{...}` on the wire, or the payload on the same line).
  */
 export function parseFeloStreamLine(line, previousText) {
   const trimmed = line.trim();
-  if (!trimmed.startsWith("data:{")) {
+  if (!trimmed) {
+    return { newText: null, nextPreviousText: previousText };
+  }
+
+  let raw = null;
+  if (trimmed.startsWith("data:")) {
+    raw = trimmed.slice(5).trim();
+  } else if (/^stream[\t ]/.test(trimmed)) {
+    raw = trimmed.replace(/^stream[\t ]+/, "");
+  } else {
     return { newText: null, nextPreviousText: previousText };
   }
 
   let outer;
   try {
-    outer = JSON.parse(trimmed.slice(5));
+    outer = JSON.parse(raw);
   } catch {
     return { newText: null, nextPreviousText: previousText };
   }
@@ -236,13 +304,28 @@ async function processFeloResponse(response, streaming) {
 
 export class FeloWebExecutor extends BaseExecutor {
   constructor() {
-    super("felo-web", { baseUrl: FELO_BASE, format: "openai", noAuth: true });
+    super("felo-web", { baseUrl: FELO_BASE, format: "openai" });
   }
 
-  async execute({ model, body, stream, signal, log, proxyOptions }) {
+  async execute({ model, body, stream, credentials, signal, log, proxyOptions }) {
     const bodyObj = body || {};
     const messages = Array.isArray(bodyObj.messages) ? bodyObj.messages : [];
     const isStreaming = stream !== false;
+
+    // Thread creation is Turnstile-gated since mid-2026: anonymous requests
+    // get 400 turnstile_session_token_required. A LOGGED-IN session (the
+    // `6h_...` bearer / felo-user-token cookie) is accepted by the endpoint
+    // (bad tokens → 401 unauthorized), so either cf_token OR session auth works.
+    const { cfToken, bearer, cookie } = parseFeloCredential(credentials?.apiKey);
+    if (!cfToken && !bearer && !cookie) {
+      return this.result(
+        feloErrorResponse(
+          401,
+          "Felo: no credentials provided. Paste `cf_token=<turnstile_session_token>` (DevTools → Network → search/threads request → Payload) for anonymous access, or `bearer=<6h_...>` / `cookie=felo-user-token=<6h_...>` from your logged-in felo.ai session.",
+        ),
+        body,
+      );
+    }
 
     if (messages.length === 0) {
       return this.result(feloErrorResponse(400, "No messages provided"), body);
@@ -261,15 +344,21 @@ export class FeloWebExecutor extends BaseExecutor {
     const mergedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
 
     try {
-      const streamKey = await this.createFeloThread(model, prompt, mergedSignal, proxyOptions);
+      const streamKey = await this.createFeloThread(model, prompt, cfToken, bearer, cookie, mergedSignal, proxyOptions);
       if (streamKey instanceof Response) {
         clearTimeout(timeout);
         return this.result(streamKey, body);
       }
 
+      // Stream request now carries the session bearer/cookie when provided
+      // (the frontend sends `authorization: Bearer 6h_...` + felo-user-token).
+      const streamHeaders = { ...FELO_STREAM_REQUEST_HEADERS };
+      if (bearer) streamHeaders.Authorization = `Bearer ${bearer}`;
+      if (cookie) streamHeaders.Cookie = cookie;
+
       const streamResponse = await proxyAwareFetch(
         feloStreamUrl(streamKey),
-        { method: "GET", headers: FELO_STREAM_REQUEST_HEADERS, signal: mergedSignal },
+        { method: "GET", headers: streamHeaders, signal: mergedSignal },
         proxyOptions
       );
       clearTimeout(timeout);
@@ -291,17 +380,47 @@ export class FeloWebExecutor extends BaseExecutor {
   }
 
   /** Returns the resolved `stream_key`, or an error Response to propagate as-is. */
-  async createFeloThread(model, prompt, signal, proxyOptions) {
+  async createFeloThread(model, prompt, cfToken, bearer, cookie, signal, proxyOptions) {
+    // Mirror the frontend: logged-in sessions authenticate via the Bearer/cookie
+    // on the thread POST too (bad sessions → 401 unauthorized), so a valid
+    // `6h_...` session may bypass the Turnstile requirement entirely.
+    const threadHeaders = { ...FELO_HEADERS };
+    if (bearer) threadHeaders.Authorization = `Bearer ${bearer}`;
+    if (cookie) threadHeaders.Cookie = cookie;
+
     const threadResponse = await proxyAwareFetch(
       FELO_THREADS_URL,
       {
         method: "POST",
-        headers: FELO_HEADERS,
-        body: JSON.stringify(buildFeloThreadPayload(model, prompt)),
+        headers: threadHeaders,
+        body: JSON.stringify(buildFeloThreadPayload(model, prompt, cfToken)),
         signal,
       },
       proxyOptions
     );
+
+    if (threadResponse.status === 400) {
+      // Distinguish Turnstile rejection from generic validation errors so the
+      // user gets an actionable message instead of a mystery 400.
+      const errText = await threadResponse.text().catch(() => "");
+      let errorType = "";
+      try {
+        errorType = JSON.parse(errText)?.detail?.error_type || "";
+      } catch { /* non-JSON body */ }
+      if (errorType === "turnstile_session_token_required") {
+        return feloErrorResponse(400, "Felo: thread creation needs valid auth — add `cf_token` (from the search/threads request payload in DevTools) or a valid `bearer`/`cookie` session.");
+      }
+      if (errorType === "turnstile_session_token_invalid" || errorType === "turnstile_session_token_expired") {
+        return feloErrorResponse(401, "Felo: cf_token is invalid or expired — re-copy it from the search/threads request payload in DevTools.");
+      }
+      return feloErrorResponse(400, "Felo thread creation failed with HTTP 400");
+    }
+
+    if (threadResponse.status === 401) {
+      // Bad Bearer/session token (not a Turnstile issue) — the endpoint checks
+      // Authorization first and rejects invalid sessions with 401 unauthorized.
+      return feloErrorResponse(401, "Felo: session unauthorized — re-copy your `bearer`/`cookie` from felo.ai DevTools.");
+    }
 
     if (!threadResponse.ok) {
       const status = threadResponse.status >= 500 ? 502 : threadResponse.status;

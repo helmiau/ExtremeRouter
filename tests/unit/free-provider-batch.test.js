@@ -7,7 +7,7 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 
 const REGISTRY = (await import("../../open-sse/providers/registry/index.js")).default;
 const { mapModel, generateRequestToken, TheOldLlmExecutor } = await import("../../open-sse/executors/theoldllm.js");
-const { parseFeloStreamLine, accumulateFeloStreamText, FeloWebExecutor } = await import("../../open-sse/executors/felo-web.js");
+const { parseFeloStreamLine, accumulateFeloStreamText, parseFeloCredential, FeloWebExecutor } = await import("../../open-sse/executors/felo-web.js");
 const { AihordeExecutor } = await import("../../open-sse/executors/aihorde.js");
 const { MimocodeExecutor, MIMO_SYSTEM_MARKER } = await import("../../open-sse/executors/mimocode.js");
 const { getExecutor } = await import("../../open-sse/executors/index.js");
@@ -46,7 +46,7 @@ describe("free gateway registry (batch port)", () => {
   });
 
   it("no-auth providers are flagged noAuth + free category", () => {
-    for (const id of ["uncloseai", "hackclub", "g4f-groq", "g4f-gemini", "g4f-pollinations", "g4f-ollama", "g4f-nvidia", "theoldllm", "felo-web", "aihorde", "mimocode"]) {
+    for (const id of ["uncloseai", "hackclub", "g4f-groq", "g4f-gemini", "g4f-pollinations", "g4f-ollama", "g4f-nvidia", "theoldllm", "aihorde", "mimocode"]) {
       const e = entry(id);
       expect(e.noAuth, `${id} should be noAuth`).toBe(true);
       expect(e.category).toBe("free");
@@ -140,7 +140,59 @@ describe("FeloWebExecutor", () => {
     expect(accumulateFeloStreamText(body)).toBe("AB");
   });
 
-  it("opens a thread and streams the answer", async () => {
+  it("parses cf_token/bearer/cookie credential formats", () => {
+    expect(parseFeloCredential("cf_token=abc123")).toEqual({ cfToken: "abc123", bearer: "", cookie: "" });
+    expect(parseFeloCredential("cf_token=abc; bearer=6h_x; cookie=a=b; c=d")).toEqual({ cfToken: "abc", bearer: "6h_x", cookie: "a=b; c=d" });
+    expect(parseFeloCredential("turnstile=xyz")).toEqual({ cfToken: "xyz", bearer: "", cookie: "" });
+    expect(parseFeloCredential("bare-token")).toEqual({ cfToken: "bare-token", bearer: "", cookie: "" });
+    expect(parseFeloCredential("")).toEqual({ cfToken: "", bearer: "", cookie: "" });
+  });
+
+  it("tolerates the new `stream` event framing", () => {
+    const inner = JSON.stringify({ data: { type: "answer", data: { text: "Hi" } } });
+    const outer = JSON.stringify({ is_complete: false, content: inner });
+    const line = `stream\t${outer}`;
+
+    const r = parseFeloStreamLine(line, "");
+    expect(r.newText).toBe("Hi");
+  });
+
+  it("rejects execution without any credentials", async () => {
+    fetchMock.mockReset();
+    const exec = new FeloWebExecutor();
+    const out = await exec.execute({
+      model: "felo-chat",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: true,
+      credentials: {},
+      log: { error: () => {} },
+    });
+    expect(out.response.status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sends bearer/cookie on the thread POST so a logged-in session can bypass turnstile", async () => {
+    fetchMock.mockReset()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ stream_key: "sk-1" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(
+        'data:{"content":"{}"}\n',
+        { status: 200, headers: { "Content-Type": "text/event-stream" } }
+      ));
+    const exec = new FeloWebExecutor();
+    const out = await exec.execute({
+      model: "felo-chat",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: true,
+      credentials: { apiKey: "bearer=6h_xyz; cookie=felo-user-token=6h_xyz" },
+      log: { error: () => {} },
+    });
+    expect(out.response.status).toBe(200);
+    const [, threadOpts] = fetchMock.mock.calls[0];
+    expect(threadOpts.headers.Authorization).toBe("Bearer 6h_xyz");
+    expect(threadOpts.headers.Cookie).toBe("felo-user-token=6h_xyz");
+  });
+
+  it("opens a thread with cf_token and streams the answer", async () => {
     fetchMock.mockReset()
       .mockResolvedValueOnce(new Response(JSON.stringify({ stream_key: "sk-1" }), { status: 200 }))
       .mockResolvedValueOnce(new Response(
@@ -152,13 +204,37 @@ describe("FeloWebExecutor", () => {
       model: "felo-chat",
       body: { messages: [{ role: "user", content: "hi" }] },
       stream: true,
-      credentials: {},
+      credentials: { apiKey: "cf_token=test-token" },
       log: { error: () => {} },
     });
     expect(out.response.status).toBe(200);
+    // cf_token must ride along in the thread payload
+    const [, opts] = fetchMock.mock.calls[0];
+    expect(JSON.parse(opts.body).cf_token).toBe("test-token");
     const text = await out.response.text();
     expect(text).toContain("Hi there");
     expect(text).toContain("data: [DONE]");
+  });
+
+  it("sends bearer/cookie on the stream request when provided", async () => {
+    fetchMock.mockReset()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ stream_key: "sk-1" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(
+        'data:{"content":"{}"}\n',
+        { status: 200, headers: { "Content-Type": "text/event-stream" } }
+      ));
+    const exec = new FeloWebExecutor();
+    const out = await exec.execute({
+      model: "felo-chat",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: true,
+      credentials: { apiKey: "cf_token=t; bearer=6h_xyz; cookie=a=b; c=d" },
+      log: { error: () => {} },
+    });
+    expect(out.response.status).toBe(200);
+    const [, streamOpts] = fetchMock.mock.calls[1];
+    expect(streamOpts.headers.Authorization).toBe("Bearer 6h_xyz");
+    expect(streamOpts.headers.Cookie).toBe("a=b; c=d");
   });
 });
 

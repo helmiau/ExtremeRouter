@@ -4,6 +4,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
+import { parseFeloCredential } from "open-sse/executors/felo-web.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import {
   refreshProviderCredentials,
@@ -858,13 +859,37 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "The Old LLM blocked this egress IP (Vercel bot protection) — configure a residential proxy" };
       }
       case "felo-web": {
+        // Turnstile-gated since mid-2026: thread creation needs cf_token OR a
+        // logged-in session (bearer/cookie). Probe the thread endpoint so we can
+        // distinguish "missing auth" from "invalid/expired token".
+        const { cfToken, bearer, cookie } = parseFeloCredential(connection.apiKey || "");
+        if (!cfToken && !bearer && !cookie) {
+          return { valid: false, error: "Missing Felo credentials — paste cf_token (DevTools → Network → search/threads request → Payload) or your logged-in bearer/cookie" };
+        }
+        const probeHeaders = { "Content-Type": "application/json", Accept: "*/*", Origin: "https://felo.ai", Referer: "https://felo.ai/search?q=hello", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36" };
+        if (bearer) probeHeaders.Authorization = `Bearer ${bearer}`;
+        if (cookie) probeHeaders.Cookie = cookie;
         const res = await fetchWithConnectionProxy("https://felo.ai/api-proxy/main/search/threads", {
           method: "POST",
-          headers: { "Content-Type": "application/json", Accept: "*/*", Origin: "https://felo.ai", Referer: "https://felo.ai/search?q=hello", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36" },
-          body: JSON.stringify({ query: "hi", category: "chat" }),
+          headers: probeHeaders,
+          body: JSON.stringify({ query: "hi", category: "chat", cf_token: cfToken }),
         }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
-        return { valid, error: valid ? null : "Felo rejected the request" };
+        if (res.status === 400) {
+          const j = await res.json().catch(() => ({}));
+          const errorType = j?.detail?.error_type || "";
+          if (errorType === "turnstile_session_token_required") {
+            return { valid: false, error: "Auth not accepted — add cf_token (DevTools → Network → search/threads request → Payload) or a valid logged-in bearer/cookie" };
+          }
+          if (errorType === "turnstile_session_token_invalid" || errorType === "turnstile_session_token_expired") {
+            return { valid: false, error: "cf_token invalid or expired — re-copy it from the search/threads request payload in DevTools" };
+          }
+          return { valid: false, error: "Felo rejected the request (HTTP 400)" };
+        }
+        if (res.status === 401 || res.status === 403) {
+          return { valid: false, error: "Session unauthorized — re-copy your bearer/cookie from felo.ai DevTools" };
+        }
+        const valid = res.ok;
+        return { valid, error: valid ? null : `Felo returned ${res.status}` };
       }
       case "aihorde": {
         const res = await fetchWithConnectionProxy("https://oai.aihorde.net/v1/chat/completions", {
