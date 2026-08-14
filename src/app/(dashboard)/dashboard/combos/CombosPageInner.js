@@ -8,11 +8,13 @@ import ComboOverview from "./components/ComboOverview";
 import ComboList from "./components/ComboList";
 import ComboTemplatesTab from "./components/ComboTemplatesTab";
 import ComboFormModal from "./components/ComboFormModal";
+import ComboLabPanel from "./components/ComboLabPanel";
 
 const TABS = [
   { value: "overview", label: "Overview" },
   { value: "combos", label: "Combos" },
   { value: "templates", label: "Templates" },
+  { value: "lab", label: "Lab" },
 ];
 
 export default function CombosPageInner() {
@@ -278,6 +280,16 @@ export default function CombosPageInner() {
 
       {activeTab === "templates" && (
         <ComboTemplatesTab combos={combos} connections={activeProviders} modelIndex={modelIndex} onApply={fetchData} />
+      )}
+
+      {activeTab === "lab" && (
+        <div className="flex flex-col gap-3">
+          <p className="text-[11px] text-text-muted">
+            What-if engine — compare routing strategies side-by-side using your historical latency, cost and reliability data,
+            then apply the recommended strategy to any combo.
+          </p>
+          <ComboLabPanel activeProviders={activeProviders} />
+        </div>
       )}
 
       {/* Create Modal */}
