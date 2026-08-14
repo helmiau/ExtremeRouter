@@ -39,7 +39,7 @@ import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
  * @param {object} options.credentials - Provider credentials
  * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, semanticCacheEnabled, semanticCacheThreshold, pxpipeEnabled, pxpipeDir, pxpipeMinChars, pxpipeTimeoutMs, externalSignal }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, semanticCacheEnabled, semanticCacheThreshold, pxpipeEnabled, pxpipeDir, pxpipeMinChars, pxpipeTimeoutMs, externalSignal, comboContext }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -490,7 +490,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         request: extractRequestConfig(body, stream),
         providerRequest: translatedBody || null,
         response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
-        status: "error"
+        status: "error",
+        combo: comboContext
       })).catch(() => { });
 
       const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
@@ -544,7 +545,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           request: extractRequestConfig(body, stream),
           providerRequest: finalBody || translatedBody || null,
           response: { error: message, status: statusCode, thinking: null },
-          status: "error"
+          status: "error",
+          combo: comboContext
         })).catch(() => { });
 
         const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
@@ -563,7 +565,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         request: extractRequestConfig(body, stream),
         providerRequest: finalBody || translatedBody || null,
         response: { error: message, status: statusCode, thinking: null },
-        status: "error"
+        status: "error",
+        combo: comboContext
       })).catch(() => { });
 
       const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
@@ -579,6 +582,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     savedTokensByMechanism, savedBytesByMechanism,
     cavemanActive: !!cavemanEnabled, ponytailActive: !!ponytailEnabled,
     retryCount: executorRetryCount,
+    combo: comboContext,
   };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);

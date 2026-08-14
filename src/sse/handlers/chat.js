@@ -295,6 +295,14 @@ async function dispatchResolvedCombo({ body, graph, clientRawRequest, request, a
       trafficClass: opts.trafficClass || (opts.isPanel ? "panel" : "user"),
       thinking: effectiveThinking,
       keyObj,
+      // Combo observability: record which combo/strategy/role produced this
+      // provider call so requestDetails is audit-able against template intent.
+      comboContext: {
+        name: comboName,
+        strategy,
+        role: opts.role || (opts.isPanel ? "panel" : null),
+        trafficClass: opts.trafficClass || (opts.isPanel ? "panel" : "user"),
+      },
     });
   };
 
@@ -504,6 +512,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // in-flight provider calls when quorum grace expires, hard timeout fires,
       // or the client disconnects.
       externalSignal: opts.signal,
+      // Combo observability: which combo/strategy/role/trafficClass produced
+      // this provider call (undefined for plain single-model requests).
+      comboContext: opts.comboContext,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,

@@ -94,6 +94,9 @@ async function flushToDatabase() {
             status: item.status || null,
             latency: item.latency || {},
             tokens: item.tokens || {},
+            // Combo observability: which combo/strategy/role/trafficClass
+            // produced this call (null for plain single-model requests).
+            combo: item.combo || null,
             request: truncateField(item.request, config.maxJsonSize),
             providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
             providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
