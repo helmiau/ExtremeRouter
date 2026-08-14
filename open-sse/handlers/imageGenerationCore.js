@@ -1,4 +1,4 @@
-import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { createErrorResult, createErrorResultFromError, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getExecutor } from "../executors/index.js";
@@ -87,7 +87,7 @@ export async function handleImageGenerationCore({
     } catch (error) {
       const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
       log?.debug?.("IMAGE", `Executor error: ${errMsg}`);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+      return createErrorResultFromError(error, HTTP_STATUS.BAD_GATEWAY, errMsg);
     }
   }
 
@@ -115,7 +115,7 @@ export async function handleImageGenerationCore({
   } catch (error) {
     const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
     log?.debug?.("IMAGE", `Fetch error: ${errMsg}`);
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    return createErrorResultFromError(error, HTTP_STATUS.BAD_GATEWAY, errMsg);
   }
 
   // Handle 401/403 — try token refresh (skipped for noAuth providers)

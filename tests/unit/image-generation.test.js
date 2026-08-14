@@ -519,6 +519,26 @@ describe("handleImageGenerationCore", () => {
     expect(result.error).toContain("Network timeout");
   });
 
+  it("maps client aborts (AbortError) to 499, not 502", async () => {
+    // A combo closing a straggler image leaf (or a client disconnect) aborts
+    // the fetch mid-flight — that is a cancellation, not a provider failure.
+    // Returning 502 would lock a healthy account via markAccountUnavailable.
+    const abort = new Error("This operation was aborted");
+    abort.name = "AbortError";
+    global.fetch.mockRejectedValueOnce(abort);
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "test" },
+      modelInfo: { provider: "openai", model: "dall-e-3" },
+      credentials: { apiKey: "test-key" },
+      log: null,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.status).toBe(499);
+    expect(result.error).toBe("Request aborted");
+  });
+
   it("calls onRequestSuccess callback on success", async () => {
     global.fetch.mockResolvedValueOnce(
       new Response(

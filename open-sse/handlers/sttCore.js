@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { createErrorResult } from "../utils/error.js";
+import { createErrorResult, createErrorResultFromError } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 // Build auth headers from sttConfig + token
@@ -188,6 +188,6 @@ export async function handleSttCore({ provider, model, formData, credentials, st
       default:                return await transcribeOpenAICompatible(cfg, file, model, token, formData);
     }
   } catch (err) {
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, err.message || "STT request failed");
+    return createErrorResultFromError(err, HTTP_STATUS.BAD_GATEWAY, err.message || "STT request failed");
   }
 }

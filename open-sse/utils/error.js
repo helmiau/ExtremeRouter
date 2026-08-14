@@ -1,5 +1,6 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -112,6 +113,28 @@ export function createErrorResult(statusCode, message, resetsAtMs) {
     resetsAtMs,
     response: errorResponse(statusCode, message)
   };
+}
+
+/**
+ * Create an error result from a thrown exception, mapping client aborts to 499.
+ *
+ * Codebase convention (chatCore.js): an AbortError means the request was
+ * cancelled — a client stop/disconnect, or a combo closing a straggler leaf —
+ * NOT a provider failure. Returning 502 for it would mislabel the cancellation
+ * and (via markAccountUnavailable) lock a healthy account for the cooldown.
+ * All other exceptions keep the caller's status (default 502).
+ *
+ * @param {Error} error - The thrown exception
+ * @param {number} [statusCode=502] - Status for non-abort failures
+ * @param {string} [message] - Override message (defaults to error.message);
+ *   ignored for aborts, which always report "Request aborted"
+ * @returns {{ success: false, status: number, error: string, response: Response }}
+ */
+export function createErrorResultFromError(error, statusCode = HTTP_STATUS.BAD_GATEWAY, message) {
+  const isAbort = error?.name === "AbortError";
+  const status = isAbort ? 499 : statusCode;
+  const msg = isAbort ? "Request aborted" : (message || error?.message || "Request failed");
+  return createErrorResult(status, msg);
 }
 
 /**
