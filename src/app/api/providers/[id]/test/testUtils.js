@@ -845,6 +845,45 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid or expired venice.ai session cookie" };
       }
+      case "theoldllm": {
+        const res = await fetchWithConnectionProxy("https://theoldllm.vercel.app/api/chatgpt", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+          },
+          body: JSON.stringify({ model: "GPT_5_4", messages: [{ role: "user", content: "ping" }], stream: false }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "The Old LLM blocked this egress IP (Vercel bot protection) — configure a residential proxy" };
+      }
+      case "felo-web": {
+        const res = await fetchWithConnectionProxy("https://felo.ai/api-proxy/main/search/threads", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "*/*", Origin: "https://felo.ai", Referer: "https://felo.ai/search?q=hello", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36" },
+          body: JSON.stringify({ query: "hi", category: "chat" }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "Felo rejected the request" };
+      }
+      case "aihorde": {
+        const res = await fetchWithConnectionProxy("https://oai.aihorde.net/v1/chat/completions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: "Bearer 0000000000" },
+          body: JSON.stringify({ model: "google/gemma-4-31b", messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false }),
+        }, effectiveProxy);
+        const valid = res.status !== 401 && res.status !== 403;
+        return { valid, error: valid ? null : "AI Horde anonymous key rejected" };
+      }
+      case "mimocode": {
+        const res = await fetchWithConnectionProxy("https://api.xiaomimimo.com/api/free-ai/bootstrap", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ client: "test" }),
+        }, effectiveProxy);
+        const valid = res.ok && !!((await res.json().catch(() => null))?.jwt);
+        return { valid, error: valid ? null : "MiMoCode bootstrap failed — free tier may be rate limited" };
+      }
       case "tencent-aistudio-web": {
         const res = await fetchWithConnectionProxy("https://aistudio.tencent.ai/api/chat/HunyuanDefault", {
           method: "POST",

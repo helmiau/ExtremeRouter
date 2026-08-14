@@ -60,6 +60,10 @@ import { PollinationsExecutor } from "./pollinations.js";
 // OAuth import-token providers (ported from OmniRoute)
 import { TraeExecutor } from "./trae.js";
 import { TencentAIStudioWebExecutor } from "./tencent-aistudio-web.js";
+import { TheOldLlmExecutor } from "./theoldllm.js";
+import { FeloWebExecutor } from "./felo-web.js";
+import { AihordeExecutor } from "./aihorde.js";
+import { MimocodeExecutor } from "./mimocode.js";
 
 const executors = {
   antigravity: new AntigravityExecutor(),
@@ -132,6 +136,13 @@ const executors = {
   trae: new TraeExecutor(),
   "tencent-aistudio-web": new TencentAIStudioWebExecutor(),
   tasw: new TencentAIStudioWebExecutor(), // Alias for tencent-aistudio-web
+  "theoldllm": new TheOldLlmExecutor(),
+  tllm: new TheOldLlmExecutor(), // Alias for theoldllm
+  "felo-web": new FeloWebExecutor(),
+  felo: new FeloWebExecutor(), // Alias for felo-web
+  aihorde: new AihordeExecutor("aihorde"),
+  mimocode: new MimocodeExecutor("mimocode"),
+  mcode: new MimocodeExecutor("mimocode"), // Alias for mimocode
 };
 
 const defaultCache = new Map();
@@ -210,3 +221,7 @@ export { PollinationsExecutor } from "./pollinations.js";
 // OAuth import-token providers (ported from OmniRoute)
 export { TraeExecutor } from "./trae.js";
 export { TencentAIStudioWebExecutor } from "./tencent-aistudio-web.js";
+export { TheOldLlmExecutor } from "./theoldllm.js";
+export { FeloWebExecutor } from "./felo-web.js";
+export { AihordeExecutor } from "./aihorde.js";
+export { MimocodeExecutor } from "./mimocode.js";

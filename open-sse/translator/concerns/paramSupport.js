@@ -12,6 +12,11 @@ const STRIP_RULES = [
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
   // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
   { provider: "cloudflare-ai", flattenContent: true },
+  // AI Horde: workers run raw text-completion backends — no tool calling, and
+  // the Aphrodite OpenAI-compatible facade 500s on single-text-part content
+  // arrays (plain-string form only). Port of OmniRoute aihorde registry quirks.
+  { provider: "aihorde", drop: ["tools", "tool_choice", "parallel_tool_calls"] },
+  { provider: "aihorde", flattenContent: true },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.

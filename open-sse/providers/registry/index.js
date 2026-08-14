@@ -163,6 +163,22 @@ import p162 from "./meta-ai.js";
 import p163 from "./helyxai.js";
 import p164 from "./freebuff.js";
 import p165 from "./tencent-aistudio-web.js";
+import p166 from "./aihorde.js";
+import p167 from "./bazaarlink.js";
+import p168 from "./dahl.js";
+import p169 from "./dgrid.js";
+import p170 from "./felo-web.js";
+import p171 from "./freetheai.js";
+import p172 from "./g4f-gemini.js";
+import p173 from "./g4f-groq.js";
+import p174 from "./g4f-nvidia.js";
+import p175 from "./g4f-ollama.js";
+import p176 from "./g4f-pollinations.js";
+import p177 from "./hackclub.js";
+import p178 from "./llm7.js";
+import p179 from "./mimocode.js";
+import p180 from "./theoldllm.js";
+import p181 from "./uncloseai.js";
 
 export default [
   p0,
@@ -329,4 +345,20 @@ export default [
   p163,
   p164,
   p165,
+  p166,
+  p167,
+  p168,
+  p169,
+  p170,
+  p171,
+  p172,
+  p173,
+  p174,
+  p175,
+  p176,
+  p177,
+  p178,
+  p179,
+  p180,
+  p181,
 ];
