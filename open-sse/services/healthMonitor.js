@@ -170,7 +170,7 @@ export function getProviderHealth(provider) {
   const cutoff = now - m.windowMs;
   const samples = m.samples.filter((s) => s.ts >= cutoff);
   if (samples.length === 0) {
-    return { provider, total: 0, successes: 0, failures: 0, successRate: null, avgLatencyMs: null, p95LatencyMs: null, lastError: null, lastErrorAt: null };
+    return { provider, total: 0, successes: 0, failures: 0, successRate: null, avgLatencyMs: null, p50LatencyMs: null, p95LatencyMs: null, p99LatencyMs: null, lastError: null, lastErrorAt: null };
   }
 
   const successes = samples.filter((s) => s.success).length;
@@ -180,9 +180,11 @@ export function getProviderHealth(provider) {
     ? Math.round(latencySamples.reduce((a, b) => a + b, 0) / latencySamples.length)
     : null;
   // H3 fix: use nearest-rank method with proper handling for small samples.
-  const p95LatencyMs = latencySamples.length > 0
-    ? Math.round(percentile([...latencySamples].sort((a, b) => a - b), 0.95))
-    : null;
+  const sortedLatencies = [...latencySamples].sort((a, b) => a - b);
+  const p50LatencyMs = latencySamples.length > 0 ? Math.round(percentile(sortedLatencies, 0.5)) : null;
+  const p95LatencyMs = latencySamples.length > 0 ? Math.round(percentile(sortedLatencies, 0.95)) : null;
+  // H5: p99 for tail-latency visibility in the health heatmap.
+  const p99LatencyMs = latencySamples.length > 0 ? Math.round(percentile(sortedLatencies, 0.99)) : null;
 
   const lastFailure = [...samples].reverse().find((s) => !s.success);
 
@@ -193,7 +195,9 @@ export function getProviderHealth(provider) {
     failures,
     successRate: successes / samples.length,
     avgLatencyMs,
+    p50LatencyMs,
     p95LatencyMs,
+    p99LatencyMs,
     // L1 fix: map status 0 to "Network error" for clarity.
     lastError: lastFailure
       ? (String(lastFailure.status) === "0" ? "Network error" : String(lastFailure.status))
