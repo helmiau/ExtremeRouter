@@ -32,10 +32,23 @@ export function isValidModel(aliasOrId, modelId) {
   return models.some(m => m.id === modelId);
 }
 
-// Legacy AI_MODELS for backward compatibility
-export const AI_MODELS = Object.entries(MODELS).flatMap(([alias, models]) =>
-  models.map(m => ({ provider: alias, model: m.id, name: m.name }))
-);
+// Legacy AI_MODELS for backward compatibility. Dedupe by provider/model — some
+// providers (e.g. gemini) legitimately list the same model id for multiple kinds
+// (LLM + STT), which would otherwise emit duplicate refs into the LLM catalog
+// and break React list keys in consumers of /api/models.
+export const AI_MODELS = (() => {
+  const seen = new Set();
+  const out = [];
+  for (const [alias, models] of Object.entries(MODELS)) {
+    for (const m of models) {
+      const full = `${alias}/${m.id}`;
+      if (seen.has(full)) continue;
+      seen.add(full);
+      out.push({ provider: alias, model: m.id, name: m.name });
+    }
+  }
+  return out;
+})();
 
 export const getModelKind = (m, fallback = null) => m?.kind || m?.type || fallback;
 
