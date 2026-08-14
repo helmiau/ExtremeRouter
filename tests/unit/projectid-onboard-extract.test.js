@@ -70,21 +70,18 @@ describe("onboardUser project-id extraction (contract-drift hardening)", () => {
     expect(pid).toBe("proj-real");
   });
 
-  it("logs the raw body ONCE when done:true has no recognizable id, then fails after 5 attempts", async () => {
+  it("fails fast (no retry) when done:true carries no recognizable id — the result is terminal", async () => {
+    // done:true is Google's final LRO result; polling again returns the same
+    // body, so the code must return null after ONE attempt instead of burning
+    // ~2s×4 more on a permanent "no project provisioned" response.
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    stubFetch({}, [
-      { done: true, response: { someOtherField: 1 } },
-      { done: true, response: { someOtherField: 1 } },
-      { done: true, response: { someOtherField: 1 } },
-      { done: true, response: { someOtherField: 1 } },
-      { done: true, response: { someOtherField: 1 } },
-    ]);
+    stubFetch({}, [{ done: true, response: { someOtherField: 1 } }]);
 
     const pid = await getProjectIdForConnection(connId, "token", "antigravity");
 
     expect(pid).toBeNull();
-    // 1 loadCodeAssist + 5 onboardUser attempts
-    expect(globalThis.fetch).toHaveBeenCalledTimes(6);
+    // 1 loadCodeAssist + 1 onboardUser attempt (no retries)
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
 
     const bodyLogs = warnSpy.mock.calls.filter((args) =>
       String(args[0]).includes("without a recognizable project_id")
@@ -95,12 +92,15 @@ describe("onboardUser project-id extraction (contract-drift hardening)", () => {
     const finalLogs = warnSpy.mock.calls.filter((args) =>
       String(args[0]).includes("failed after 5 attempts")
     );
-    expect(finalLogs).toHaveLength(1);
+    expect(finalLogs).toHaveLength(0);
   });
 
-  it("recovers when a later attempt finally returns the id", async () => {
+  it("recovers when a pending (done:false) attempt is later followed by the id", async () => {
+    // done:false = operation still running → polling is legitimate, and a
+    // later attempt may return the id.
     stubFetch({}, [
-      { done: true, response: {} },
+      { done: false },
+      { done: false },
       { done: true, projectId: "proj-late" },
     ]);
 

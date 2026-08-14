@@ -21,6 +21,13 @@ export function getQuotaCooldown(backoffLevel = 0) {
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
 export function checkFallbackError(status, errorText, backoffLevel = 0) {
+  // 499 = the client cancelled the request (stop / disconnect / combo panel
+  // closed before a straggler finished) — not an account-health signal.
+  // Never trigger fallback or cooldown for it.
+  if (status === 499) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";

@@ -80,6 +80,10 @@ export async function convertResponsesStreamToJson(stream) {
       processSSEMessage(buffer, accumulator);
     }
   } catch (error) {
+    // Client cancellation must propagate to the caller (which maps AbortError
+    // → 499), not be swallowed into a generic stream_read_error response —
+    // an abort is expected, not an upstream failure.
+    if (error?.name === "AbortError") throw error;
     readError = error;
   } finally {
     reader.releaseLock();

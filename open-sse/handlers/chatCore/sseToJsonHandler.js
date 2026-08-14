@@ -199,8 +199,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
 
       return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
     } catch (err) {
+      // Client cancellation (stop/disconnect) aborts the upstream stream read.
+      // That is expected, not an upstream failure — mirror the chatCore 499
+      // convention instead of dumping a stack trace + mislabeling it a 502.
+      if (err?.name === "AbortError") {
+        return createErrorResult(499, "Request aborted");
+      }
       console.error("[ChatCore] Responses API SSE→JSON failed:", err);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Failed to convert streaming response to JSON: ${err?.message || err}`);
     }
   }
 
@@ -256,7 +262,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
 
     return { success: true, response: new Response(JSON.stringify(parsed), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {
+    // Client cancellation (stop/disconnect) aborts the upstream stream read.
+    // That is expected, not an upstream failure — mirror the chatCore 499
+    // convention instead of dumping a stack trace + mislabeling it a 502.
+    if (err?.name === "AbortError") {
+      return createErrorResult(499, "Request aborted");
+    }
     console.error("[ChatCore] Chat Completions SSE→JSON failed:", err);
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Failed to convert streaming response to JSON");
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Failed to convert streaming response to JSON: ${err?.message || err}`);
   }
 }

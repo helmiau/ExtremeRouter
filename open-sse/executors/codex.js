@@ -236,6 +236,14 @@ export class CodexExecutor extends BaseExecutor {
 
       const peek = await this._peekSseOverloaded(result.response);
       if (!peek.matched) {
+        // The fallback already stripped max_output_tokens, yet the retry STILL
+        // returned 400 — that means the rejection isn't (only) about the field
+        // being present. Surface the retry's body so the next occurrence is
+        // self-diagnosing instead of looking like the fallback never ran.
+        if (result.response.status === 400 && this._suppressMaxOutputTokens) {
+          const retryBody = await result.response.clone().text().catch(() => "");
+          args.log?.warn?.("RETRY", `CODEX | retry WITHOUT max_output_tokens also 400'd: ${retryBody.slice(0, 300) || "(empty body)"}`);
+        }
         // Replace body with re-assembled stream (prefix bytes already read + rest)
         if (peek.replacementBody) {
           result.response = new Response(peek.replacementBody, {

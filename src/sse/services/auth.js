@@ -302,6 +302,13 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   if (!connectionId || connectionId === "noauth") {
     return { shouldFallback: false, cooldownMs: 0 };
   }
+  // 499 = the client cancelled the request (stop / disconnect / combo closed
+  // the panel before a straggler finished). That says nothing about account
+  // health — never lock the connection, rate-limit vault keys, or fire
+  // alerts for a cancellation.
+  if (status === 499) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
   if (connectionId === "vault") {
     // H3 FIX: Use the explicit credentialKey passed from the caller (the actual
     // keyName that was issued for this request) instead of relying on LAST_ISSUED

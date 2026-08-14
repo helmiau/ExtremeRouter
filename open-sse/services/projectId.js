@@ -273,13 +273,16 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
                     console.log(`[ProjectId] Successfully onboarded, project ID: ${projectId}`);
                     return projectId;
                 }
-                // Log the raw response body ONCE per onboarding (attempt 1) so
-                // contract drift is diagnosable — the same shape repeats on
-                // every attempt, so logging it 5× would only spam the log.
-                if (attempt === 1) {
-                    console.warn(`[ProjectId] onboardUser returned done:true without a recognizable project_id — raw response: ${JSON.stringify(data).slice(0, 4000)}`);
-                }
-                throw new Error("onboardUser done but no project_id in response");
+                // done:true is TERMINAL for Google's LRO — the response body
+                // IS the final result. An empty cloudaicompanionProject means
+                // the backend has decided not to provision one (header
+                // fingerprinting / account state); polling again returns the
+                // identical body, so retrying would burn ~2s×4 per connection
+                // for nothing. Log the raw body once (diagnosable) and fail
+                // fast — the negative cache (10 min) keeps the hot path from
+                // re-attempting.
+                console.warn(`[ProjectId] onboardUser returned done:true without a recognizable project_id — raw response: ${JSON.stringify(data).slice(0, 4000)}`);
+                return null;
             }
 
             // Server not done yet – wait and retry

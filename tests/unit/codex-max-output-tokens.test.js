@@ -174,4 +174,39 @@ describe("CodexExecutor 400 fallback for max_output_tokens", () => {
     // Third request is a fresh execute() — the field must be injected again.
     expect(JSON.parse(sentBodies[2]).max_output_tokens).toBe(128000);
   });
+
+  it("logs a diagnostic when the retry WITHOUT max_output_tokens is ALSO rejected with 400", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const sentBodies = mockCodexFetch([
+      () => new Response(
+        JSON.stringify({ detail: "Unsupported parameter: max_output_tokens" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      ),
+      () => new Response(
+        JSON.stringify({ detail: "Unsupported parameter: max_output_tokens" }),
+        { status: 400, headers: { "content-type": "application/json" } },
+      ),
+    ]);
+
+    const executor = new CodexExecutor();
+    const result = await executor.execute({
+      model: "gpt-5.6-terra",
+      body: makeBody(),
+      stream: true,
+      credentials: { accessToken: "test" },
+      log: { warn: warnSpy, debug: vi.fn() },
+    });
+
+    // Fallback fired once (2 fetches) but the retry also failed → 400 surfaces.
+    expect(result.response.status).toBe(400);
+    expect(sentBodies).toHaveLength(2);
+    expect(JSON.parse(sentBodies[0]).max_output_tokens).toBe(128000);
+    expect(JSON.parse(sentBodies[1]).max_output_tokens).toBeUndefined();
+
+    const diag = warnSpy.mock.calls.filter((args) =>
+      String(args.join(" ")).includes("retry WITHOUT max_output_tokens also 400'd")
+    );
+    expect(diag).toHaveLength(1);
+    expect(String(diag[0].join(" "))).toContain("Unsupported parameter");
+  });
 });
