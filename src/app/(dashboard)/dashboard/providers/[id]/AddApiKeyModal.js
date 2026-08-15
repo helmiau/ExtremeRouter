@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Button, Badge, Input, Modal, Select, FeloCaptureButton, CookieCaptureButton, ProviderInfoBadges } from "@/shared/components";
+import { Button, Badge, Input, Modal, Select, FeloCaptureButton, CookieCaptureButton } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { COOKIE_CAPTURE } from "@/shared/constants/cookieCapture";
 
@@ -284,7 +284,6 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             )}
           </p>
         )}
-        <ProviderInfoBadges providerId={provider} className="mt-0.5" />
         {providerRegions && (
           <Select
             label="Region"

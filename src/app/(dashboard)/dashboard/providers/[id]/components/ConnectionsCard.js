@@ -8,6 +8,7 @@ import {
 import { translate } from "@/i18n/runtime";
 import ConnectionRow from "../ConnectionRow";
 import VaultPoolBadge from "../VaultPoolBadge";
+import ZaiProfile from "../ZaiProfile";
 import FreeBuffProfile from "../FreeBuffProfile";
 import FeloProfile from "../FeloProfile";
 import V0Profile from "../V0Profile";
@@ -113,6 +114,9 @@ export default function ConnectionsCard({
             )}
           </div>
           <VaultPoolBadge providerId={providerId} />
+          {providerId === "zai-web" && connections.length > 0 && (
+            <ZaiProfile connectionId={connections[0].id} />
+          )}
           {providerId === "felo-web" && connections.length > 0 && (
             <FeloProfile connectionId={connections[0].id} />
           )}
