@@ -88,6 +88,8 @@ export function resolveFeloCategory(model) {
  *   - `cfToken=<...>` / `turnstile=<...>` aliases
  *   - `bearer=<6h_...>`  — authorization header value for the stream/profile
  *   - `cookie=<full Cookie header>` — for the stream/profile requests
+ *   - `cookie=felo-user-token=<6h_...>` — the session cookie; its value is
+ *     ALSO used as the `Authorization: Bearer` (mirrors the frontend)
  *   - a bare value (no `=`) is treated as the cf_token itself
  *   - a `cookie: ...` prefix is stripped (full-header paste convenience)
  */
@@ -121,7 +123,15 @@ export function parseFeloCredential(raw) {
       cookieParts.push(part);
     }
   }
-  return { cfToken, bearer, cookie: cookieParts.join("; ") };
+  const cookie = cookieParts.join("; ");
+  // The `felo-user-token` cookie value IS the session bearer (`6h_...`): the
+  // frontend sends `Authorization: Bearer <value>` on every request, so derive
+  // it whenever the cookie was pasted (with or without a `cookie=` wrapper).
+  if (!bearer) {
+    const m = cookie.match(/(?:^|;\s*)felo-user-token=([^;]+)/i);
+    if (m) bearer = m[1].trim();
+  }
+  return { cfToken, bearer, cookie };
 }
 
 export function extractFeloLastUserPrompt(messages) {
@@ -163,7 +173,9 @@ export function buildFeloThreadPayload(model, prompt, cfToken) {
     process_id: searchUuid,
     stream_protocol: "message_center_v1",
     enable_task_state: true,
-    cf_token: cfToken,
+    // cf_token is only sent when provided — the logged-in frontend omits it
+    // entirely and relies on the session (Authorization: Bearer 6h_...).
+    ...(cfToken ? { cf_token: cfToken } : {}),
   };
 }
 

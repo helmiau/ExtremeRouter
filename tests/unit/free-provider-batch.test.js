@@ -146,6 +146,12 @@ describe("FeloWebExecutor", () => {
     expect(parseFeloCredential("turnstile=xyz")).toEqual({ cfToken: "xyz", bearer: "", cookie: "" });
     expect(parseFeloCredential("bare-token")).toEqual({ cfToken: "bare-token", bearer: "", cookie: "" });
     expect(parseFeloCredential("")).toEqual({ cfToken: "", bearer: "", cookie: "" });
+    // felo-user-token cookie value doubles as the session bearer (mirrors the frontend)
+    expect(parseFeloCredential("cookie=felo-user-token=6h_abc; visitor_id=v1")).toEqual({
+      cfToken: "",
+      bearer: "6h_abc",
+      cookie: "felo-user-token=6h_abc; visitor_id=v1",
+    });
   });
 
   it("tolerates the new `stream` event framing", () => {
@@ -190,6 +196,32 @@ describe("FeloWebExecutor", () => {
     const [, threadOpts] = fetchMock.mock.calls[0];
     expect(threadOpts.headers.Authorization).toBe("Bearer 6h_xyz");
     expect(threadOpts.headers.Cookie).toBe("felo-user-token=6h_xyz");
+    // logged-in sessions don't send a cf_token at all (like the frontend)
+    expect(JSON.parse(threadOpts.body).cf_token).toBeUndefined();
+  });
+
+  it("derives the Authorization bearer from a cookie-only paste", async () => {
+    fetchMock.mockReset()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ stream_key: "sk-1" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(
+        'data:{"content":"{}"}\n',
+        { status: 200, headers: { "Content-Type": "text/event-stream" } }
+      ));
+    const exec = new FeloWebExecutor();
+    const out = await exec.execute({
+      model: "felo-chat",
+      body: { messages: [{ role: "user", content: "hi" }] },
+      stream: true,
+      credentials: { apiKey: "cookie=felo-user-token=6h_abc" },
+      log: { error: () => {} },
+    });
+    expect(out.response.status).toBe(200);
+    const [, threadOpts] = fetchMock.mock.calls[0];
+    expect(threadOpts.headers.Authorization).toBe("Bearer 6h_abc");
+    expect(threadOpts.headers.Cookie).toBe("felo-user-token=6h_abc");
+    const [, streamOpts] = fetchMock.mock.calls[1];
+    expect(streamOpts.headers.Authorization).toBe("Bearer 6h_abc");
+    expect(streamOpts.headers.Cookie).toBe("felo-user-token=6h_abc");
   });
 
   it("opens a thread with cf_token and streams the answer", async () => {

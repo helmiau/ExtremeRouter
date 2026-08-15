@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { Button, Badge, Input, Modal, Select, FeloCaptureButton } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
@@ -260,6 +260,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           <p className="text-xs text-text-muted">
             Use a direct xAI API key from console.x.ai. This is separate from Grok Build OAuth.
           </p>
+        )}
+        {provider === "felo-web" && (
+          <FeloCaptureButton onCaptured={(credential) => setFormData((f) => ({ ...f, apiKey: credential }))} />
         )}
         {isCookie && authHint && (
           <p className="text-xs text-text-muted">

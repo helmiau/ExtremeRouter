@@ -35,7 +35,7 @@ export default {
   category: "webCookie",
   authType: "cookie",
   authHint:
-    "Paste your Felo session credentials. Required for chat: cf_token=<turnstile_session_token> — NOTE: this is NOT a cookie, it's under DevTools → Application → Session Storage → felo.ai → turnstile_session_token (or copy the `cf_token` field from the search/threads request payload in Network). For the profile badge: append `; cookie=felo-user-token=<6h_...>` (a real cookie, or paste the full Cookie header from any request). Example: cf_token=abc123; cookie=felo-user-token=6h_...",
+    "Easiest: press 'Capture from Felo' above — it reads your logged-in session straight from the running Brave window (start Brave via brave-extremerouter.cmd once). Manual: paste your session cookie `cookie=felo-user-token=<6h_...>` (DevTools → Application → Cookies → felo.ai — enough for chat AND the profile badge, no Turnstile needed for logged-in accounts). Anonymous fallback: `cf_token=<turnstile_session_token>` (DevTools → Application → Session Storage → felo.ai — NOT a cookie). Example: cookie=felo-user-token=6h_...",
   transport: {
     baseUrl: "https://felo.ai",
     format: "openai",

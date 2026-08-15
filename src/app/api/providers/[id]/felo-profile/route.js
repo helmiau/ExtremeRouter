@@ -38,7 +38,10 @@ export async function GET(_request, { params }) {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
       Accept: "application/json",
     };
-    if (bearer) headers.Authorization = `Bearer ${bearer}`;
+    // /ext/user/info expects the RAW session token (no `Bearer ` prefix —
+    // unlike thread creation which accepts `Bearer <token>`). Sending the
+    // prefixed form returns 401 UNAUTHORIZED.
+    if (bearer) headers.Authorization = bearer;
     if (cookie) headers.Cookie = cookie;
 
     const controller = new AbortController();
