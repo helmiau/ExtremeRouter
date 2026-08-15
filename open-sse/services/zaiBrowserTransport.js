@@ -45,6 +45,7 @@ const CHANNELS = process.env.ER_ZAI_BROWSER_CHANNEL
 let browserPromise = null;
 let sharedBrowser = null;
 const contextPool = new Map(); // tokenKey -> { context, page, busy }
+const contextPromises = new Map(); // tokenKey -> in-flight Promise<entry> (single-flight guard)
 
 // The pooled browser keeps the event loop alive (its child processes). Best-effort
 // close on exit so standalone scripts / server restarts do not leak Chrome.
@@ -59,6 +60,20 @@ export async function shutdownZaiBrowser() {
     /* already closed */
   }
   contextPool.clear();
+  contextPromises.clear();
+}
+
+// Thrown when the chat.z.ai model picker cannot be driven to the requested
+// model. zaiBrowserChat treats these as retryable (a fresh reload usually
+// resolves the transient hydration state) UNLESS `disabled` is set — a model
+// the account cannot use stays disabled after a reload, so retrying only wastes
+// time.
+class ZaiPickerError extends Error {
+  constructor(message, { disabled = false } = {}) {
+    super(message);
+    this.name = "ZaiPickerError";
+    this.disabled = disabled;
+  }
 }
 
 process.once("exit", () => {
@@ -174,66 +189,152 @@ async function getBrowser() {
 
 async function acquireContext(token) {
   const key = tokenPoolKey(token);
-  let entry = contextPool.get(key);
-  if (entry) return entry;
+  const existing = contextPool.get(key);
+  if (existing) return existing;
 
-  const browser = await getBrowser();
-  const context = await browser.newContext({
-    userAgent: ZAI_USER_AGENT,
-    viewport: { width: 1280, height: 800 },
-    locale: "en-US",
-    timezoneId: "UTC",
-  });
-  await context.addInitScript((tok) => {
-    try { localStorage.setItem("token", tok); } catch { /* storage blocked */ }
-  }, token);
+  // Single-flight: concurrent first requests for the same token must share ONE
+  // context instead of each spinning up its own page (which made parallel
+  // model tests interfere with each other on chat.z.ai).
+  let promise = contextPromises.get(key);
+  if (!promise) {
+    promise = (async () => {
+      const browser = await getBrowser();
+      const context = await browser.newContext({
+        userAgent: ZAI_USER_AGENT,
+        viewport: { width: 1280, height: 800 },
+        locale: "en-US",
+        timezoneId: "UTC",
+      });
+      await context.addInitScript((tok) => {
+        try { localStorage.setItem("token", tok); } catch { /* storage blocked */ }
+      }, token);
 
-  // Warm the page once so the session + risk fingerprint (Aliyun CAPTCHA
-  // cookies like acw_tc / cdn_sec_tc) are established for the context.
-  const page = await context.newPage();
-  try {
-    await page.goto(`${ZAI_BASE_URL}/`, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
-    await wait(2500);
-  } catch {
-    /* the per-request navigation retries anyway */
+      // Warm the page once so the session + risk fingerprint (Aliyun CAPTCHA
+      // cookies like acw_tc / cdn_sec_tc) are established for the context.
+      const page = await context.newPage();
+      try {
+        await page.goto(`${ZAI_BASE_URL}/`, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
+        await wait(2500);
+      } catch {
+        /* the per-request navigation retries anyway */
+      }
+
+      return { context, page, key, busy: Promise.resolve() };
+    })();
+    contextPromises.set(key, promise);
   }
 
-  entry = { context, page, key, busy: Promise.resolve() };
-  contextPool.set(key, entry);
-  return entry;
+  try {
+    const entry = await promise;
+    contextPool.set(key, entry);
+    return entry;
+  } finally {
+    contextPromises.delete(key);
+  }
 }
 
 function currentSelectionText(selector) {
   return selector.innerText().then((t) => String(t || "").trim()).catch(() => "");
 }
 
-// Pick the requested model in the dropdown. Throws a clear error when the item
-// is disabled (guest sessions are limited to GLM-4.7) or missing.
+// Does any visible picker menu show a signed-out/guest state (Sign in / Sign up
+// footer buttons)? Used to produce actionable errors for non-guest tokens whose
+// session silently dropped to a limited state.
+async function pickerLooksSignedOut(page) {
+  try {
+    const count = await page
+      .locator('[role="menu"] button:has-text("Sign in"), [role="menu"] button:has-text("Sign up")')
+      .count();
+    return count > 0;
+  } catch {
+    return false;
+  }
+}
+
+// Build a precise picker-failure message: include the reason AND whether the
+// menu indicates a signed-out/guest state (a real-account token whose session
+// was logged out on chat.z.ai shows exactly the same limited picker as a guest).
+async function pickerFailure(page, modelName, detail, hint) {
+  let state = "";
+  if (await pickerLooksSignedOut(page)) {
+    state =
+      " The picker shows a signed-out/guest state (Sign in / Sign up buttons) — the session token may be invalid, logged out, or the model may need a paid plan. Re-capture the token from chat.z.ai Local Storage while signed in.";
+  }
+  return `cannot select model "${modelName}" in the chat.z.ai picker (${detail}).${state} ${hint}`;
+}
+
+// Find the clickable element for a model inside an open picker menu. chat.z.ai
+// renders items as <button>s; fall back to generic menu-item roles in case a
+// future FE version switches markup.
+async function findModelItem(menu, modelName) {
+  const strategies = [
+    menu.locator("button").filter({ hasText: modelName }),
+    menu
+      .locator('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"], [role="option"]')
+      .filter({ hasText: modelName }),
+  ];
+  for (const strategy of strategies) {
+    const count = await strategy.count().catch(() => 0);
+    if (count > 0) return strategy.first();
+  }
+  return null;
+}
+
+async function openModelPicker(page, signal) {
+  const selector = page.locator('[aria-label="Select a model"]').first();
+  await withAbort(selector.waitFor({ state: "visible", timeout: INPUT_TIMEOUT_MS }), signal);
+  // Real pointer click first — the bits/radix dropdown listens to pointer
+  // events; a synthetic el.click() does not always register. Fall back to it
+  // in case the button is covered by a transient overlay.
+  try {
+    await withAbort(selector.click({ timeout: 5000 }), signal);
+  } catch {
+    await withAbort(selector.evaluate((el) => el.click()), signal);
+  }
+  await wait(700, signal);
+}
+
+// Pick the requested model in the dropdown. Returns true when the picker
+// already shows the model. Throws ZaiPickerError with a precise, actionable
+// message when the item is disabled (guests are limited to GLM-4.7), missing,
+// or the selection does not stick.
 async function selectModel(page, modelName, signal, hint) {
   const selector = page.locator('[aria-label="Select a model"]').first();
   await withAbort(selector.waitFor({ state: "visible", timeout: INPUT_TIMEOUT_MS }), signal);
   const current = await currentSelectionText(selector);
-  if (current.toLowerCase().includes(modelName.toLowerCase())) return;
+  if (current.toLowerCase().includes(modelName.toLowerCase())) return true;
 
-  await withAbort(selector.evaluate((el) => el.click()), signal);
-  await wait(900, signal);
+  await openModelPicker(page, signal);
   const menu = page.locator('[role="menu"]').filter({ hasText: modelName }).first();
   await withAbort(menu.waitFor({ state: "visible", timeout: MENU_TIMEOUT_MS }), signal);
-  const item = menu.locator("button").filter({ hasText: modelName }).first();
+
+  const item = await findModelItem(menu, modelName);
+  if (!item) {
+    throw new ZaiPickerError(await pickerFailure(page, modelName, `model "${modelName}" is not listed in the picker menu`, hint));
+  }
+  await item.scrollIntoViewIfNeeded().catch(() => {});
+
+  const enabled = await item.isEnabled().catch(() => true);
+  if (!enabled) {
+    throw new ZaiPickerError(
+      await pickerFailure(page, modelName, `model "${modelName}" is disabled in the picker`, hint),
+      { disabled: true }
+    );
+  }
+
   try {
     await withAbort(item.click({ timeout: MENU_TIMEOUT_MS }), signal);
   } catch (err) {
     const detail = String(err?.message || err).slice(0, 200);
-    throw new Error(
-      `cannot select model "${modelName}" in the chat.z.ai picker (${detail}). ${hint}`
-    );
+    throw new ZaiPickerError(await pickerFailure(page, modelName, detail, hint));
   }
   await page.keyboard.press("Escape").catch(() => {});
   await wait(700, signal);
   const after = await currentSelectionText(selector);
   if (!after.toLowerCase().includes(modelName.toLowerCase())) {
-    throw new Error(`model selection did not stick (picker shows "${after || "unknown"}"). ${hint}`);
+    throw new ZaiPickerError(await pickerFailure(page, modelName, `selection did not stick (picker shows "${after || "unknown"}")`, hint));
   }
+  return true;
 }
 
 // Best-effort UI toggles. Any failure is logged and ignored — the page
@@ -291,6 +392,39 @@ function looksLikeCaptchaOverlay(page) {
     .catch(() => false);
 }
 
+// chat.z.ai periodically shows full-screen onboarding/upgrade wizards ("Model
+// Upgraded — GLM-5.2 Now Available", "New Editing & Template Saving Features
+// Launched") that cover the composer and send button. Without dismissal, the
+// send click times out (element covered) and the Enter fallback just activates
+// the modal — the message is never sent, so captureCompletion's
+// waitForResponse never resolves (observed live: 150s timeout, zero completion
+// requests). Click through the wizard (Next / Got it / ...) until it is gone,
+// with Escape as the fallback for dialogs whose dismissal button we can't
+// match. Best-effort: any failure is logged and ignored.
+async function dismissUpgradeModals(page, signal, log) {
+  for (let i = 0; i < 6; i++) {
+    const dialog = page
+      .locator(
+        '[role="dialog"]:has-text("Now Available"), [role="dialog"]:has-text("Upgraded"), [role="dialog"]:has-text("GLM-5.2"), [role="alertdialog"]'
+      )
+      .first();
+    if (!(await dialog.count().catch(() => 0))) break;
+    try {
+      const next = dialog
+        .locator('button:has-text("Next"), button:has-text("Got it"), button:has-text("Continue"), button:has-text("Confirm"), button:has-text("Skip"), button:has-text("Close"), button[aria-label="Close"]')
+        .first();
+      if (await next.count().catch(() => 0)) {
+        await withAbort(next.click({ timeout: 4000 }), signal);
+      } else {
+        await withAbort(page.keyboard.press("Escape"), signal);
+      }
+    } catch (err) {
+      log?.warn?.(`modal dismissal (step ${i + 1}) skipped: ${err?.message || err}`);
+    }
+    await wait(600, signal);
+  }
+}
+
 async function captureCompletion(page, signal) {
   const responsePromise = page.waitForResponse(
     (r) => r.request().method() === "POST" && r.url().includes("/api/v2/chat/completions"),
@@ -322,48 +456,67 @@ async function captureCompletion(page, signal) {
  * (including non-2xx — the executor classifies them), or `{ ok: false, error }`
  * for transport-level failures. Never throws for HTTP-level outcomes.
  */
-export async function zaiBrowserChat({ token, modelId, prompt, thinking, vlm, signal, log }) {
+// One full turn on the pooled page: navigate fresh, pick the model, best-effort
+// toggles, send, capture. Returns { ok:false, error, retryable } where retryable
+// marks picker failures (a fresh reload usually clears the transient state).
+async function runTurn({ entry, token, modelId, prompt, thinking, vlm, capabilities, signal, log }) {
+  const { page } = entry;
+  try {
+    await withAbort(page.goto(`${ZAI_BASE_URL}/`, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS }), signal);
+    await wait(1800, signal);
+
+    await dismissUpgradeModals(page, signal, log);
+
+    if (await looksLikeCaptchaOverlay(page)) {
+      const headlessHint =
+        process.env.ER_ZAI_BROWSER_HEADED === "1"
+          ? "solve the CAPTCHA in the opened browser window and retry."
+          : "set ER_ZAI_BROWSER_HEADED=1, solve the CAPTCHA in the opened browser window, and retry.";
+      return { ok: false, error: `chat.z.ai is showing a CAPTCHA challenge — ${headlessHint}` };
+    }
+
+    const modelName = browserModelName(modelId);
+    await selectModel(page, modelName, signal, zaiGuestHint(token));
+    await configureToggles(page, { thinking, vlm, capabilities, log }, signal);
+
+    const input = page.locator("#chat-input");
+    await withAbort(input.waitFor({ state: "visible", timeout: INPUT_TIMEOUT_MS }), signal);
+    await withAbort(input.fill(prompt), signal);
+    await wait(700, signal);
+
+    const sendButton = page.locator("#send-message-button");
+    let clicked = false;
+    try {
+      if ((await sendButton.count()) > 0 && (await sendButton.isEnabled().catch(() => false))) {
+        await withAbort(sendButton.click({ timeout: 5000 }), signal);
+        clicked = true;
+      }
+    } catch { /* fall back to Enter */ }
+    if (!clicked) await withAbort(input.press("Enter"), signal);
+
+    log?.info?.("ZAI-WEB", `browser sent (model=${modelName}, thinking=${thinking.enabled})`);
+    return { ok: true, ...(await captureCompletion(page, signal)) };
+  } catch (err) {
+    if (err?.name === "AbortError") return { ok: false, error: "request aborted" };
+    const message = err instanceof Error ? err.message : String(err);
+    // Picker failures are transient (first paint before the composer hydrates);
+    // the caller retries once with a fresh reload — observed live: the second
+    // attempt succeeds.
+    return { ok: false, error: message, retryable: err instanceof ZaiPickerError && !err.disabled };
+  }
+}
+
+export async function zaiBrowserChat({ token, modelId, prompt, thinking, vlm, capabilities, signal, log }) {
   if (!token) return { ok: false, error: "missing session token" };
   const entry = await acquireContext(token);
   const run = entry.busy.then(async () => {
-    const { page } = entry;
-    try {
-      await withAbort(page.goto(`${ZAI_BASE_URL}/`, { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS }), signal);
-      await wait(1800, signal);
-
-      if (await looksLikeCaptchaOverlay(page)) {
-        const headlessHint =
-          process.env.ER_ZAI_BROWSER_HEADED === "1"
-            ? "solve the CAPTCHA in the opened browser window and retry."
-            : "set ER_ZAI_BROWSER_HEADED=1, solve the CAPTCHA in the opened browser window, and retry.";
-        return { ok: false, error: `chat.z.ai is showing a CAPTCHA challenge — ${headlessHint}` };
-      }
-
-      const modelName = browserModelName(modelId);
-      await selectModel(page, modelName, signal, zaiGuestHint(token));
-      await configureToggles(page, { thinking, vlm, modelId, log }, signal);
-
-      const input = page.locator("#chat-input");
-      await withAbort(input.waitFor({ state: "visible", timeout: INPUT_TIMEOUT_MS }), signal);
-      await withAbort(input.fill(prompt), signal);
-      await wait(700, signal);
-
-      const sendButton = page.locator("#send-message-button");
-      let clicked = false;
-      try {
-        if ((await sendButton.count()) > 0 && (await sendButton.isEnabled().catch(() => false))) {
-          await withAbort(sendButton.click({ timeout: 5000 }), signal);
-          clicked = true;
-        }
-      } catch { /* fall back to Enter */ }
-      if (!clicked) await withAbort(input.press("Enter"), signal);
-
-      log?.info?.("ZAI-WEB", `browser sent (model=${modelName}, thinking=${thinking.enabled})`);
-      return { ok: true, ...(await captureCompletion(page, signal)) };
-    } catch (err) {
-      if (err?.name === "AbortError") return { ok: false, error: "request aborted" };
-      return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    const params = { entry, token, modelId, prompt, thinking, vlm, capabilities, signal, log };
+    let result = await runTurn(params);
+    if (!result.ok && result.retryable && !signal?.aborted) {
+      log?.warn?.("ZAI-WEB", `model picker failed on first attempt — reloading and retrying once (${result.error})`);
+      result = await runTurn(params);
     }
+    return result;
   });
   // Keep the chain alive for the next caller; the error is consumed here.
   entry.busy = run.then(
