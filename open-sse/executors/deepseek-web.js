@@ -27,7 +27,7 @@ import { estimateInputTokens, estimateOutputTokens } from "../utils/usageTrackin
 
 const CFG = PROVIDERS["deepseek-web"];
 // NOTE: buildTransport() in providers/index.js flattens `transport` to the top level, so the
-// baseUrl lives at CFG.baseUrl (not CFG.transport.baseUrl). See grok-web / chatglm-cn executors.
+// baseUrl lives at CFG.baseUrl (not CFG.transport.baseUrl). See grok-web / zai-web executors.
 const DEEPSEEK_WEB_BASE = CFG.baseUrl; // https://chat.deepseek.com
 const DEEPSEEK_API_BASE = `${DEEPSEEK_WEB_BASE}/api`;
 const COMPLETION_URL = `${DEEPSEEK_API_BASE}/v0/chat/completion`;

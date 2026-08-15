@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Badge } from "@/shared/components";
-import { cn } from "@/shared/utils/cn";
+import { ProviderInfoBadges } from "@/shared/components";
 
 /**
  * Branded header for the provider detail page — replaces the old plain icon
@@ -125,6 +124,8 @@ export default function ProviderDetailHeader({
               </span>
             ))}
           </div>
+          {/* Caveat badges (anti-bot / browser / guest limits / full-cookie) */}
+          <ProviderInfoBadges providerId={providerId} className="mt-2" />
         </div>
       </div>
 

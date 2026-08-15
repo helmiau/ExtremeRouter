@@ -20,7 +20,7 @@
 // query parameter as a last resort so authenticated sessions still work.
 //
 // Ported from OmniRoute's open-sse/executors/copilot-web.ts (TypeScript), adapted to
-// ExtremeRouter's ESM executor pattern (see grok-web.js / chatglm-cn.js).
+// ExtremeRouter's ESM executor pattern (see grok-web.js / zai-web.js).
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";

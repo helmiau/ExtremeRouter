@@ -2,7 +2,7 @@
 // DeepSeek, Qwen, Mistral, Llama...) through a single OpenAI-compatible endpoint.
 //
 // Puter is a free, user-pays (via free account) AI service — not a scraped web
-// cookie flow like grok-web/chatglm-cn. It authenticates with a Bearer auth token
+// cookie flow like grok-web/zai-web. It authenticates with a Bearer auth token
 // obtained from puter.com/dashboard ("Copy Auth Token"). Auth can also be carried
 // as the `puter_auth_token` cookie, so the PuterExecutor accepts either the bare
 // token or a full cookie string.

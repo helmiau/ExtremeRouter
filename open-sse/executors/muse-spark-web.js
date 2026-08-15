@@ -28,7 +28,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 // Source-of-truth endpoint. We prefer the flat baseUrl the registry loader exposes
 // (PROVIDERS["muse-spark-web"].baseUrl — buildTransport() in providers/index.js flattens
-// `transport` to the top level; see grok-web / chatglm-cn executors), but fall back to the
+// `transport` to the top level; see grok-web / zai-web executors), but fall back to the
 // constant so this module loads even before its registry entry is wired into index.js.
 const META_AI_GRAPHQL_API = PROVIDERS["muse-spark-web"]?.baseUrl || "https://www.meta.ai/api/graphql";
 

@@ -1,11 +1,11 @@
 import { getProviderConnectionById, updateProviderConnection, getSettings } from "@/lib/localDb";
-import { createHash } from "node:crypto";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { parseFeloCredential } from "open-sse/executors/felo-web.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
+import { extractZaiToken } from "open-sse/services/zaiWebCredentials.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -676,37 +676,35 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const valid = res.status !== 401 && res.status !== 403;
         return { valid, error: valid ? null : "Invalid SSO cookie" };
       }
-      case "chatglm-cn": {
-        // Extract refresh token from full cookies or accept a bare token.
-        let refreshToken = connection.apiKey;
-        const m = connection.apiKey.match(/chatglm_refresh_token=([^;]+)/);
-        if (m) refreshToken = m[1].trim();
-        // Sign the refresh probe the way the web client does.
-        const now = String(Date.now());
-        const digits = [...now].map(Number);
-        const checksum = (digits.reduce((a, b) => a + b, 0) - digits[digits.length - 2]) % 10;
-        const timestamp = now.slice(0, -2) + String(checksum) + now.slice(-1);
-        const nonce = crypto.randomUUID().replace(/-/g, "");
-        const sign = createHash("md5").update(`${timestamp}-${nonce}-8a1317a7468aa3ad86e997d08f3f31cb`, "utf8").digest("hex");
-        const res = await fetchWithConnectionProxy("https://chatglm.cn/chatglm/user-api/user/refresh", {
-          method: "POST",
-          headers: {
-            Accept: "application/json, text/plain, */*",
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${refreshToken}`,
-            Origin: "https://chatglm.cn",
-            "X-App-Fr": "default",
-            "X-App-Platform": "pc",
-            "X-Device-Id": crypto.randomUUID().replace(/-/g, ""),
-            "X-Nonce": nonce,
-            "X-Request-Id": crypto.randomUUID().replace(/-/g, ""),
-            "X-Sign": sign,
-            "X-Timestamp": timestamp,
+      case "zai-web": {
+        // Z.ai web sessions validate against the authenticated user-settings
+        // endpoint using the Local Storage "token" as a token-only Bearer
+        // credential — no Cookie header (semantics from PR #10329).
+        const token = extractZaiToken(connection.apiKey || connection.accessToken || "");
+        if (!token) {
+          return { valid: false, error: 'No Z.ai token found — copy the "token" value from chat.z.ai Local Storage.' };
+        }
+        const res = await fetchWithConnectionProxy(
+          "https://chat.z.ai/api/v1/users/user/settings",
+          {
+            method: "GET",
+            headers: {
+              Accept: "application/json, text/plain, */*",
+              Authorization: `Bearer ${token}`,
+              Origin: "https://chat.z.ai",
+              Referer: "https://chat.z.ai/",
+            },
+            signal: AbortSignal.timeout(8000),
           },
-          body: "{}",
-        }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
-        return { valid, error: valid ? null : "Invalid or expired chatglm.cn refresh token — re-copy your cookies." };
+          effectiveProxy
+        );
+        if (res.status === 401) {
+          return { valid: false, error: 'Z.ai token invalid or expired — re-copy the "token" value from chat.z.ai Local Storage.' };
+        }
+        if (res.status === 403) {
+          return { valid: false, error: "Z.ai rejected the token (HTTP 403) — the account may be restricted." };
+        }
+        return { valid: true, error: null };
       }
       case "perplexity-web": {
         let sessionToken = connection.apiKey;

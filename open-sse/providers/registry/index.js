@@ -14,7 +14,7 @@ import p11 from "./brave-search.js";
 import p12 from "./byteplus.js";
 import p13 from "./cartesia.js";
 import p14 from "./cerebras.js";
-import p15 from "./chatglm-cn.js";
+import p15 from "./zai-web.js";
 import p16 from "./chatgpt-web.js";
 import p17 from "./chutes.js";
 import p18 from "./claude-web.js";

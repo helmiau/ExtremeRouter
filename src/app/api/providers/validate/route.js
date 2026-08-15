@@ -6,6 +6,7 @@ import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { resolveQoderCredentials } from "open-sse/services/qoderModels.js";
+import { extractZaiToken } from "open-sse/services/zaiWebCredentials.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
@@ -579,55 +580,38 @@ export async function POST(request) {
           break;
         }
 
-        case "chatglm-cn": {
-          // Extract the refresh token from a full cookie string, or accept a bare token.
-          let refreshToken = apiKey;
-          const refreshMatch = apiKey.match(/chatglm_refresh_token=([^;]+)/);
-          if (refreshMatch) refreshToken = refreshMatch[1].trim();
-          else if (apiKey.includes("=") || apiKey.includes(";")) {
-            // Looks like cookies but no refresh token found.
+        case "zai-web": {
+          // Z.ai web sessions validate against the authenticated user-settings
+          // endpoint (GET /api/v1/users/user/settings) using the Local Storage
+          // "token" as a token-only Bearer credential — no Cookie header. The
+          // exact upstream status is preserved: 401 = invalid/expired session,
+          // 403 = rejected (not labeled expired), 429/5xx = token accepted but
+          // upstream busy (validation semantics audited in PR #10329).
+          const token = extractZaiToken(apiKey);
+          if (!token) {
             isValid = false;
-            error = "No chatglm_refresh_token found in the pasted cookies. Copy the full cookie string from chatglm.cn DevTools.";
+            error = 'No Z.ai token found — copy the "token" value from chat.z.ai Local Storage.';
             break;
           }
-          // Validate by attempting a token refresh. A valid refresh token → access_token.
-          const now = String(Date.now());
-          const digits = [...now].map(Number);
-          const checksum = (digits.reduce((a, b) => a + b, 0) - digits[digits.length - 2]) % 10;
-          const timestamp = now.slice(0, -2) + String(checksum) + now.slice(-1);
-          const nonce = crypto.randomUUID().replace(/-/g, "");
-          const sign = createHash("md5").update(`${timestamp}-${nonce}-8a1317a7468aa3ad86e997d08f3f31cb`, "utf8").digest("hex");
-          const probeRes = await fetch("https://chatglm.cn/chatglm/user-api/user/refresh", {
-            method: "POST",
+          const settingsRes = await fetch("https://chat.z.ai/api/v1/users/user/settings", {
+            method: "GET",
             headers: {
               Accept: "application/json, text/plain, */*",
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${refreshToken}`,
-              Origin: "https://chatglm.cn",
-              "X-App-Fr": "default",
-              "X-App-Platform": "pc",
-              "X-Device-Id": crypto.randomUUID().replace(/-/g, ""),
-              "X-Nonce": nonce,
-              "X-Request-Id": crypto.randomUUID().replace(/-/g, ""),
-              "X-Sign": sign,
-              "X-Timestamp": timestamp,
+              Authorization: `Bearer ${token}`,
+              Origin: "https://chat.z.ai",
+              Referer: "https://chat.z.ai/",
             },
-            body: "{}",
+            signal: AbortSignal.timeout(8000),
           });
-          if (probeRes.status === 401 || probeRes.status === 403) {
+          if (settingsRes.status === 401) {
             isValid = false;
-            error = "Refresh token rejected by chatglm.cn — it may be expired. Re-copy cookies from chatglm.cn.";
-          } else if (probeRes.ok) {
-            try {
-              const payload = await probeRes.json();
-              const accessToken = payload?.result?.access_token;
-              isValid = !!accessToken;
-              if (!isValid) error = "chatglm.cn accepted the token but returned no access_token.";
-            } catch {
-              isValid = true; // Server accepted it; assume valid even if JSON parse fails.
-            }
+            error = 'Z.ai token invalid or expired — copy a fresh "token" value from chat.z.ai Local Storage.';
+          } else if (settingsRes.status === 403) {
+            isValid = false;
+            error = "Z.ai rejected the token (HTTP 403) — the account may be restricted.";
           } else {
-            isValid = true; // 429/5xx etc. mean the token itself was accepted.
+            // 2xx = valid session; 429/5xx = token accepted but upstream busy.
+            isValid = true;
           }
           break;
         }

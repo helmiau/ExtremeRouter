@@ -23,7 +23,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 const CFG = PROVIDERS["qwen-web"];
 // NOTE: buildTransport() in providers/index.js flattens `transport` to the top level, so the
-// baseUrl lives at CFG.baseUrl (not CFG.transport.baseUrl). See grok-web / chatglm-cn executors.
+// baseUrl lives at CFG.baseUrl (not CFG.transport.baseUrl). See grok-web / zai-web executors.
 const BASE_URL = CFG.baseUrl; // https://chat.qwen.ai
 const CHATS_NEW_URL = `${BASE_URL}/api/v2/chats/new`;
 const CHAT_COMPLETIONS_URL = `${BASE_URL}/api/v2/chat/completions`;

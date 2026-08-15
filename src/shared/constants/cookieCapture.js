@@ -111,10 +111,11 @@ export const COOKIE_CAPTURE = {
     authorization: true,
     mode: "bare",
   },
-  "chatglm-cn": {
-    label: "Capture from ChatGLM",
-    domains: ["chatglm.cn"],
-    fullCookieHeader: true,
+  "zai-web": {
+    label: "Capture from Z.ai",
+    domains: ["chat.z.ai"],
+    localStorage: ["token"],
+    mode: "bare",
   },
   "doubao-web": {
     label: "Capture from Doubao",

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Button, Badge, Input, Modal, Select, FeloCaptureButton, CookieCaptureButton } from "@/shared/components";
+import { Button, Badge, Input, Modal, Select, FeloCaptureButton, CookieCaptureButton, ProviderInfoBadges } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { COOKIE_CAPTURE } from "@/shared/constants/cookieCapture";
 
@@ -18,8 +18,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const credentialPlaceholder = isCookie
     ? (provider === "grok-web"
         ? "sso=xxxxx... or just the raw value"
-        : provider === "chatglm-cn"
-          ? "Paste your full chatglm.cn cookies, or just the chatglm_refresh_token value (eyJhbGc...)"
+        : provider === "zai-web"
+          ? 'Paste the "token" value from chat.z.ai Local Storage (DevTools → Application → Local Storage → chat.z.ai)'
           : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : "");
 
@@ -284,6 +284,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             )}
           </p>
         )}
+        <ProviderInfoBadges providerId={provider} className="mt-0.5" />
         {providerRegions && (
           <Select
             label="Region"

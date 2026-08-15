@@ -27,7 +27,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 const CFG = PROVIDERS["api-airforce"];
 // NOTE: buildTransport() in providers/index.js flattens `transport` to the top level, so the
 // baseUrl lives at CFG.baseUrl (not CFG.transport.baseUrl). Same pattern as zenmux-free,
-// chatglm-cn, grok-web.
+// zai-web, grok-web.
 const CHAT_URL = CFG?.baseUrl || "https://api.airforce/v1/chat/completions";
 const ME_URL = "https://api.airforce/api/me";
 

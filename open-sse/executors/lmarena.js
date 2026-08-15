@@ -33,7 +33,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 const CFG = PROVIDERS["lmarena"];
 // NOTE: buildTransport() in providers/index.js flattens `transport` to the top level, so the
-// baseUrl lives at CFG.baseUrl (not CFG.transport.baseUrl). See grok-web / chatglm-cn executors
+// baseUrl lives at CFG.baseUrl (not CFG.transport.baseUrl). See grok-web / zai-web executors
 // for the same pattern.
 const LMARENA_STREAM_URL = CFG.baseUrl; // https://arena.ai/nextjs-api/stream
 const LMARENA_API_BASE = "https://arena.ai";

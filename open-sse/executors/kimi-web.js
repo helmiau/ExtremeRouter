@@ -25,7 +25,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 const CFG = PROVIDERS["kimi-web"];
 // NOTE: buildTransport() in providers/index.js flattens `transport` to the top level, so the
-// baseUrl lives at CFG.baseUrl (not CFG.transport.baseUrl). See grok-web / chatglm-cn executors.
+// baseUrl lives at CFG.baseUrl (not CFG.transport.baseUrl). See grok-web / zai-web executors.
 const BASE_URL = CFG.baseUrl; // https://www.kimi.com
 const CHAT_URL = `${BASE_URL}/apiv2/kimi.gateway.chat.v1.ChatService/Chat`;
 

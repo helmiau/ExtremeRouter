@@ -94,5 +94,9 @@ UI-AUDIT-REPORT.md
 outputs/
 .zcode/
 
+# scratch/temp files (agent temp scripts, logs, etc.)
+.tmp-*
+*.tmp-*
+
 # machine-specific launcher (kept local)
 /brave-extremerouter.cmd

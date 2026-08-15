@@ -16,7 +16,7 @@ import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/
 // When adding a new .svg asset, add its id here too.
 export const SVG_ICON_IDS = new Set([
   "windsurf", "trae", "cody", "kimchi",
-  "chatglm-cn", "blackbox-web", "puter", "adapta-web", "deepseek-web",
+  "zai-web", "blackbox-web", "puter", "adapta-web", "deepseek-web",
   "chatgpt-web", "doubao-web", "gemini-web", "copilot-web", "muse-spark-web",
   "duckduckgo-web", "venice-web", "t3-web", "lmarena", "veoaifree-web",
   "claude-web", "pollinations", "poe-web", "v0-vercel-web", "qwen-web",

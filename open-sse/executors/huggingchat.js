@@ -29,7 +29,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 // NOTE: buildTransport() in providers/index.js flattens `transport` to the top level, so the
 // baseUrl lives at PROVIDERS["huggingchat"].baseUrl (not .transport.baseUrl). See grok-web /
-// chatglm-cn executors for the same pattern.
+// zai-web executors for the same pattern.
 const HUGGINGFACE_BASE = PROVIDERS["huggingchat"].baseUrl; // https://huggingface.co
 const CONVERSATION_URL = `${HUGGINGFACE_BASE}/chat/conversation`;
 const API_CONVERSATIONS_URL = `${HUGGINGFACE_BASE}/chat/api/v2/conversations`;

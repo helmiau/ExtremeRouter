@@ -26,7 +26,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 const CFG = PROVIDERS["puter"];
 // buildTransport() in providers/index.js flattens `transport` to the top level, so the
-// baseUrl lives at CFG.baseUrl (not CFG.transport.baseUrl). See grok-web / chatglm-cn
+// baseUrl lives at CFG.baseUrl (not CFG.transport.baseUrl). See grok-web / zai-web
 // executors for the same pattern.
 const PUTER_CHAT_API = CFG.baseUrl;
 
