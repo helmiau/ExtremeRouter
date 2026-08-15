@@ -8,6 +8,8 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import FeloCaptureButton from "@/shared/components/FeloCaptureButton";
+import CookieCaptureButton from "@/shared/components/CookieCaptureButton";
+import { COOKIE_CAPTURE } from "@/shared/constants/cookieCapture";
 import Select from "@/shared/components/Select";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
@@ -205,9 +207,15 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
 
         {!isOAuth && (
           <>
-            {connection.provider === "felo-web" && (
+            {connection.provider === "felo-web" ? (
               <FeloCaptureButton onCaptured={(credential) => setFormData((f) => ({ ...f, apiKey: credential }))} />
-            )}
+            ) : COOKIE_CAPTURE[connection.provider] ? (
+              <CookieCaptureButton
+                provider={connection.provider}
+                label={COOKIE_CAPTURE[connection.provider].label}
+                onCaptured={(credential) => setFormData((f) => ({ ...f, apiKey: credential }))}
+              />
+            ) : null}
             <div className="flex gap-2">
               <Input
                 label="API Key"

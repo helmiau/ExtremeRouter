@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Button, Badge, Input, Modal, Select, FeloCaptureButton } from "@/shared/components";
+import { Button, Badge, Input, Modal, Select, FeloCaptureButton, CookieCaptureButton } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { COOKIE_CAPTURE } from "@/shared/constants/cookieCapture";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -261,9 +262,15 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             Use a direct xAI API key from console.x.ai. This is separate from Grok Build OAuth.
           </p>
         )}
-        {provider === "felo-web" && (
+        {provider === "felo-web" ? (
           <FeloCaptureButton onCaptured={(credential) => setFormData((f) => ({ ...f, apiKey: credential }))} />
-        )}
+        ) : COOKIE_CAPTURE[provider] ? (
+          <CookieCaptureButton
+            provider={provider}
+            label={COOKIE_CAPTURE[provider].label}
+            onCaptured={(credential) => setFormData((f) => ({ ...f, apiKey: credential }))}
+          />
+        ) : null}
         {isCookie && authHint && (
           <p className="text-xs text-text-muted">
             {authHint}
