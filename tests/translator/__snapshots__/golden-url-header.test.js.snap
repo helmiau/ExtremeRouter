@@ -1048,25 +1048,6 @@ exports[`GOLDEN buildHeaders (default executor providers) > freebuff-web → hea
 }
 `;
 
-exports[`GOLDEN buildHeaders (default executor providers) > freetheai → headers (apiKey / oauth) 1`] = `
-{
-  "apiKey": {
-    "Accept": "text/event-stream",
-    "Authorization": "Bearer <TOK>",
-    "Content-Type": "application/json",
-  },
-  "nonStream": {
-    "Authorization": "Bearer <TOK>",
-    "Content-Type": "application/json",
-  },
-  "oauth": {
-    "Accept": "text/event-stream",
-    "Authorization": "Bearer <TOK>",
-    "Content-Type": "application/json",
-  },
-}
-`;
-
 exports[`GOLDEN buildHeaders (default executor providers) > g4f-gemini → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -2958,13 +2939,6 @@ exports[`GOLDEN buildUrl (default executor providers) > freebuff-web → url (st
 {
   "nonStream": "https://freebuff.com/api/chat/stream",
   "stream": "https://freebuff.com/api/chat/stream",
-}
-`;
-
-exports[`GOLDEN buildUrl (default executor providers) > freetheai → url (stream + non-stream) 1`] = `
-{
-  "nonStream": "https://api.freetheai.xyz/v1/chat/completions",
-  "stream": "https://api.freetheai.xyz/v1/chat/completions",
 }
 `;
 

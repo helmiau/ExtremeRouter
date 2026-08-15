@@ -168,7 +168,6 @@ import p167 from "./bazaarlink.js";
 import p168 from "./dahl.js";
 import p169 from "./dgrid.js";
 import p170 from "./felo-web.js";
-import p171 from "./freetheai.js";
 import p172 from "./g4f-gemini.js";
 import p173 from "./g4f-groq.js";
 import p174 from "./g4f-nvidia.js";
@@ -350,7 +349,6 @@ export default [
   p168,
   p169,
   p170,
-  p171,
   p172,
   p173,
   p174,

@@ -20,7 +20,7 @@ function entry(id) {
 
 describe("free gateway registry (batch port)", () => {
   const gatewayIds = [
-    "bazaarlink", "uncloseai", "dgrid", "llm7", "dahl", "freetheai", "hackclub",
+    "bazaarlink", "uncloseai", "dgrid", "llm7", "dahl", "hackclub",
     "g4f-groq", "g4f-gemini", "g4f-pollinations", "g4f-ollama", "g4f-nvidia",
     "theoldllm", "felo-web", "aihorde", "mimocode",
   ];
@@ -37,7 +37,6 @@ describe("free gateway registry (batch port)", () => {
     expect(entry("bazaarlink").alias).toBe("bzl");
     expect(entry("uncloseai").alias).toBe("unc");
     expect(entry("llm7").alias).toBe("llm7");
-    expect(entry("freetheai").alias).toBe("fta");
     expect(entry("hackclub").alias).toBe("hcb"); // "hc" already taken by hcnsec
     expect(entry("g4f-groq").alias).toBe("g4fgroq");
     expect(entry("theoldllm").alias).toBe("tllm");
