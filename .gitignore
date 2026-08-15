@@ -93,3 +93,6 @@ UI-AUDIT-REPORT.md
 .workbuddy-ai/
 outputs/
 .zcode/
+
+# machine-specific launcher (kept local)
+/brave-extremerouter.cmd

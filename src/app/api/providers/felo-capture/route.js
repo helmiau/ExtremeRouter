@@ -37,7 +37,7 @@ export async function POST() {
         {
           error: "brave_not_reachable",
           message:
-            "Brave is not reachable for capture. Close all Brave windows once, then start it from brave-extremerouter.cmd (enables remote debugging on port 9222). After that, this button opens a tab in your running Brave and reads your Felo session automatically.",
+            "Brave is not reachable for capture. Close all Brave windows once, then restart it with --remote-debugging-port=9222 (on Windows a local brave-extremerouter.cmd launcher does this). After that, this button opens a tab in your running Brave and reads your Felo session automatically.",
         },
         { status: 409 },
       );
