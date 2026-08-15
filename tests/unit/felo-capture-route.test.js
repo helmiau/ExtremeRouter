@@ -59,11 +59,11 @@ afterEach(() => {
 });
 
 describe("POST /api/providers/felo-capture", () => {
-  it("409 with guidance when Brave is not reachable over CDP", async () => {
+  it("409 with guidance when no browser is reachable over CDP", async () => {
     mockFetchSequence({ cdpOk: false });
     const res = await POST();
     expect(res.status).toBe(409);
-    expect(res.body.error).toBe("brave_not_reachable");
+    expect(res.body.error).toBe("browser_not_reachable");
     expect(connectOverCDPMock).not.toHaveBeenCalled();
   });
 
@@ -93,7 +93,7 @@ describe("POST /api/providers/felo-capture", () => {
     expect(infoCall[1].headers.Authorization).toBe("6h_abc123");
   });
 
-  it("401 when Brave is running but no Felo session exists", async () => {
+  it("401 when a browser is running but no Felo session exists", async () => {
     mockFetchSequence();
     makeBrowser({ cookies: [{ name: "visitor_id", value: "vid-1" }] });
 

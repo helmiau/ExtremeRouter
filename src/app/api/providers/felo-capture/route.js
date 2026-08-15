@@ -1,25 +1,24 @@
 import { NextResponse } from "next/server";
+import { CDP_ENDPOINT, CDP_PORT, findInstalledBrowser, isCdpReachable } from "@/lib/browserDebug";
 
-const CDP_ENDPOINT = "http://127.0.0.1:9222";
-const CDP_PROBE_TIMEOUT_MS = 2500;
 const PAGE_LOAD_TIMEOUT_MS = 20000;
 const FELO_HOME = "https://felo.ai";
 
 // POST /api/providers/felo-capture
 //
-// Captures the user's logged-in Felo session from their RUNNING Brave browser
-// (started with --remote-debugging-port=9222 via brave-extremerouter.cmd):
-//   1. Attaches to the existing Brave instance over CDP (connectOverCDP) — no
-//      new browser process, no temp/incognito profile.
-//   2. Opens a NEW tab in the user's real Brave (their profile, login, cookies).
+// Captures the user's logged-in Felo session from their RUNNING Chromium
+// browser (Brave/Chrome/Edge, started with --remote-debugging-port):
+//   1. Attaches to the existing instance over CDP (connectOverCDP) — no new
+//      browser process, no temp/incognito profile.
+//   2. Opens a NEW tab in the user's real browser (their profile, login, cookies).
 //   3. Reads the `felo-user-token` (`6h_...`) + `visitor_id` cookies and calls
-//      /api-proxy/ext/user/info from inside the tab to confirm the session.
-//   4. Closes only that tab — the user's Brave keeps running untouched.
+//      /api-proxy/ext/user/info to confirm the session.
+//   4. Closes only that tab — the user's browser keeps running untouched.
 //
-// Logged-in Felo sessions authenticate via `Authorization: Bearer 6h_...`
-// (same value as the felo-user-token cookie) and do NOT need a Turnstile
-// cf_token — thread creation returns 200 for a valid session. The returned
-// credential is a ready-to-paste string:
+// Logged-in Felo sessions authenticate via the session token (same value as
+// the felo-user-token cookie) and do NOT need a Turnstile cf_token — thread
+// creation returns 200 for a valid session. The returned credential is a
+// ready-to-paste string:
 //
 //   cookie=felo-user-token=<6h_...>; visitor_id=<...>
 //
@@ -28,16 +27,16 @@ export async function POST() {
   let browser = null;
   let page = null;
   try {
-    // 1. Is Brave running with remote debugging?
-    const probe = await fetch(`${CDP_ENDPOINT}/json/version`, {
-      signal: AbortSignal.timeout(CDP_PROBE_TIMEOUT_MS),
-    }).catch(() => null);
-    if (!probe || !probe.ok) {
+    // 1. Is a browser running with remote debugging?
+    const reachable = await isCdpReachable(CDP_PORT);
+    if (!reachable) {
+      const detected = await findInstalledBrowser();
       return NextResponse.json(
         {
-          error: "brave_not_reachable",
-          message:
-            "Brave is not reachable for capture. Close all Brave windows once, then restart it with --remote-debugging-port=9222 (on Windows a local brave-extremerouter.cmd launcher does this). After that, this button opens a tab in your running Brave and reads your Felo session automatically.",
+          error: "browser_not_reachable",
+          message: detected
+            ? `No browser is reachable for capture (port ${CDP_PORT}). Press “Launch browser” below to start ${detected.name} with remote debugging, or run: node scripts/launch-browser-debug.mjs`
+            : `No browser is reachable for capture (port ${CDP_PORT}) and none was detected. Install Brave, Chrome or Edge and press “Launch browser”.`,
         },
         { status: 409 },
       );
@@ -49,7 +48,7 @@ export async function POST() {
     browser = await chromium.connectOverCDP(CDP_ENDPOINT);
     const context = browser.contexts()[0] || (await browser.newContext());
 
-    // 3. Open a new tab in the user's real Brave.
+    // 3. Open a new tab in the user's real browser.
     page = await context.newPage();
     await page.goto(FELO_HOME, { waitUntil: "domcontentloaded", timeout: PAGE_LOAD_TIMEOUT_MS });
     await page.waitForTimeout(2500);
@@ -65,7 +64,7 @@ export async function POST() {
         {
           error: "not_logged_in",
           message:
-            "No Felo session found in Brave. Log in to felo.ai in the Brave window, then press Capture again.",
+            "No Felo session found in the browser. Log in to felo.ai in the opened tab, then press Capture again.",
         },
         { status: 401 },
       );
@@ -107,7 +106,7 @@ export async function POST() {
     return NextResponse.json({ credential, profile, loggedIn: Boolean(profile) });
   } catch (err) {
     if (err?.name === "TimeoutError" || err?.name === "AbortError") {
-      return NextResponse.json({ error: "Capture timed out — is the Brave window responsive?" }, { status: 504 });
+      return NextResponse.json({ error: "Capture timed out — is the browser window responsive?" }, { status: 504 });
     }
     return NextResponse.json(
       { error: "capture_failed", message: err?.message || "Failed to capture Felo session" },

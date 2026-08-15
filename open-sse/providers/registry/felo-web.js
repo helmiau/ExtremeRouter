@@ -35,7 +35,7 @@ export default {
   category: "webCookie",
   authType: "cookie",
   authHint:
-    "Easiest: press 'Capture from Felo' above — it reads your logged-in session straight from the running Brave window (start Brave via brave-extremerouter.cmd once). Manual: paste your session cookie `cookie=felo-user-token=<6h_...>` (DevTools → Application → Cookies → felo.ai — enough for chat AND the profile badge, no Turnstile needed for logged-in accounts). Anonymous fallback: `cf_token=<turnstile_session_token>` (DevTools → Application → Session Storage → felo.ai — NOT a cookie). Example: cookie=felo-user-token=6h_...",
+    "Easiest: press 'Capture from Felo' above — it reads your logged-in session straight from the running browser (Brave/Chrome/Edge; if none is reachable, 'Launch browser' detects your OS and starts one with remote debugging). Manual: paste your session cookie `cookie=felo-user-token=<6h_...>` (DevTools → Application → Cookies → felo.ai — enough for chat AND the profile badge, no Turnstile needed for logged-in accounts). Anonymous fallback: `cf_token=<turnstile_session_token>` (DevTools → Application → Session Storage → felo.ai — NOT a cookie). Example: cookie=felo-user-token=6h_...",
   transport: {
     baseUrl: "https://felo.ai",
     format: "openai",
