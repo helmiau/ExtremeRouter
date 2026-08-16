@@ -6,12 +6,22 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 function buildAuthHeaders(cfg, token) {
   if (!token) return {};
   switch (cfg.authHeader) {
-    case "bearer":     return { "Authorization": `Bearer ${token}` };
-    case "token":      return { "Authorization": `Token ${token}` };
-    case "x-api-key":  return { "x-api-key": token };
-    case "key":        return { "Authorization": `Key ${token}` };
-    default:           return { "Authorization": `Bearer ${token}` };
+    case "bearer":      return { "Authorization": `Bearer ${token}` };
+    case "token":       return { "Authorization": `Token ${token}` };
+    case "x-api-key":   return { "x-api-key": token };
+    case "key":         return { "Authorization": `Key ${token}` };
+    case "x-gladia-key": return { "x-gladia-key": token };
+    default:            return { "Authorization": `Bearer ${token}` };
   }
+}
+
+// Build a multipart body from a File + extra JSON/string fields.
+// fieldMap: { fieldName: string } — file field name defaults to "file".
+async function buildMultipartBody(file, extraFields = {}, fileField = "file") {
+  const fd = new FormData();
+  fd.append(fileField, file, file.name || "audio.wav");
+  for (const [k, v] of Object.entries(extraFields)) fd.append(k, v);
+  return fd;
 }
 
 // Map browser file MIME / ext → audio MIME for binary formats (deepgram/HF)
@@ -82,6 +92,155 @@ async function transcribeAssemblyAI(cfg, file, model, token) {
     if (r.status === "error") return createErrorResult(500, r.error || "AssemblyAI failed");
   }
   return createErrorResult(504, "AssemblyAI timeout after 120s");
+}
+
+// Gladia: upload → submit pre-recorded job → poll result_url (max 120s)
+async function transcribeGladia(cfg, file, model, token) {
+  const auth = buildAuthHeaders(cfg, token);
+  const fd = await buildMultipartBody(file);
+  const up = await fetch("https://api.gladia.io/v2/upload", {
+    method: "POST", headers: { ...auth }, body: fd,
+  });
+  if (!up.ok) return upstreamError(up);
+  const { audio_url } = await up.json();
+
+  const sub = await fetch(cfg.baseUrl, {
+    method: "POST",
+    headers: { ...auth, "Content-Type": "application/json" },
+    body: JSON.stringify({ audio_url, model }),
+  });
+  if (!sub.ok) return upstreamError(sub);
+  const { result_url: resultUrl } = await sub.json();
+  if (!resultUrl) return createErrorResult(502, "Gladia did not return a result_url");
+
+  const start = Date.now();
+  while (Date.now() - start < 120_000) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const poll = await fetch(resultUrl, { headers: auth });
+    if (!poll.ok) continue;
+    const result = await poll.json();
+    if (result.status === "done") {
+      const text = result.result?.transcription?.full_transcript || "";
+      return jsonResponse({ text });
+    }
+    if (result.status === "error") {
+      return createErrorResult(500, result.error_code || result.error || "Gladia transcription failed");
+    }
+  }
+  return createErrorResult(504, "Gladia transcription timed out after 120s");
+}
+
+// Soniox: upload file → create transcription job → poll → fetch transcript
+async function transcribeSoniox(cfg, file, model, token) {
+  const auth = buildAuthHeaders(cfg, token);
+  const fd = await buildMultipartBody(file);
+  const up = await fetch("https://api.soniox.com/v1/files", {
+    method: "POST", headers: { ...auth }, body: fd,
+  });
+  if (!up.ok) return upstreamError(up);
+  const fileId = (await up.json()).id;
+
+  const createRes = await fetch(cfg.baseUrl, {
+    method: "POST",
+    headers: { ...auth, "Content-Type": "application/json" },
+    body: JSON.stringify({ model, file_id: fileId, enable_language_identification: true }),
+  });
+  if (!createRes.ok) return upstreamError(createRes);
+  const { id: transcriptionId } = await createRes.json();
+
+  const statusUrl = `${cfg.baseUrl}/${transcriptionId}`;
+  const start = Date.now();
+  let completed = false;
+  while (Date.now() - start < 120_000) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const poll = await fetch(statusUrl, { headers: auth });
+    if (!poll.ok) continue;
+    const result = await poll.json();
+    if (result.status === "completed") { completed = true; break; }
+    if (result.status === "error") {
+      return createErrorResult(500, result.error_message || result.error || "Soniox transcription failed");
+    }
+  }
+  if (!completed) return createErrorResult(504, "Soniox transcription timed out after 120s");
+
+  const transcriptRes = await fetch(`${statusUrl}/transcript`, { headers: auth });
+  if (!transcriptRes.ok) return upstreamError(transcriptRes);
+  const transcript = await transcriptRes.json();
+  const text =
+    typeof transcript.text === "string" && transcript.text.length > 0
+      ? transcript.text
+      : Array.isArray(transcript.tokens)
+        ? transcript.tokens.map((t) => t.text ?? "").join("")
+        : "";
+  return jsonResponse({ text });
+}
+
+// Rev AI: submit multipart job (media + options) → poll → fetch plain-text transcript
+async function transcribeRevAi(cfg, file, model, token) {
+  const auth = buildAuthHeaders(cfg, token);
+  const baseUrl = cfg.baseUrl.replace(/\/$/, "");
+  const fd = await buildMultipartBody(file, { options: JSON.stringify({ transcriber: model }) }, "media");
+
+  const submitRes = await fetch(`${baseUrl}/jobs`, {
+    method: "POST", headers: { ...auth }, body: fd,
+  });
+  if (!submitRes.ok) return upstreamError(submitRes);
+  const { id: jobId } = await submitRes.json();
+
+  const jobUrl = `${baseUrl}/jobs/${jobId}`;
+  const start = Date.now();
+  while (Date.now() - start < 120_000) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const poll = await fetch(jobUrl, { headers: auth });
+    if (!poll.ok) continue;
+    const result = await poll.json();
+    if (result.status === "transcribed") {
+      const transcriptRes = await fetch(`${jobUrl}/transcript`, { headers: { ...auth, Accept: "text/plain" } });
+      if (!transcriptRes.ok) return upstreamError(transcriptRes);
+      return jsonResponse({ text: (await transcriptRes.text()) || "" });
+    }
+    if (result.status === "failed") {
+      return createErrorResult(500, result.failure_detail || "Rev AI transcription failed");
+    }
+  }
+  return createErrorResult(504, "Rev AI transcription timed out after 120s");
+}
+
+// Speechmatics: submit multipart job (data_file + config) → poll → fetch txt transcript
+async function transcribeSpeechmatics(cfg, file, model, token) {
+  const auth = buildAuthHeaders(cfg, token);
+  const baseUrl = cfg.baseUrl.replace(/\/$/, "");
+  const fd = await buildMultipartBody(
+    file,
+    { config: JSON.stringify({ type: "transcription", transcription_config: { operating_point: model } }) },
+    "data_file"
+  );
+
+  const submitRes = await fetch(baseUrl, { method: "POST", headers: { ...auth }, body: fd });
+  if (!submitRes.ok) return upstreamError(submitRes);
+  const { id: jobId } = await submitRes.json();
+  if (!jobId) return createErrorResult(502, "Speechmatics did not return a job id");
+
+  const jobUrl = `${baseUrl}/${jobId}`;
+  const start = Date.now();
+  while (Date.now() - start < 120_000) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const poll = await fetch(jobUrl, { headers: auth });
+    if (!poll.ok) continue;
+    const result = await poll.json();
+    const status = result?.job?.status;
+    if (status === "done") {
+      const transcriptRes = await fetch(`${jobUrl}/transcript?format=txt`, { headers: { ...auth, Accept: "text/plain" } });
+      if (!transcriptRes.ok) return upstreamError(transcriptRes);
+      return jsonResponse({ text: (await transcriptRes.text()) || "" });
+    }
+    if (status === "rejected") {
+      const errors = result?.job?.errors;
+      const first = Array.isArray(errors) ? errors[0] : null;
+      return createErrorResult(500, first?.message || "Speechmatics transcription failed");
+    }
+  }
+  return createErrorResult(504, "Speechmatics transcription timed out after 120s");
 }
 
 // Nvidia NIM: multipart, normalize response
@@ -185,6 +344,10 @@ export async function handleSttCore({ provider, model, formData, credentials, st
       case "nvidia-asr":      return await transcribeNvidia(cfg, file, model, token);
       case "huggingface-asr": return await transcribeHuggingFace(cfg, file, model, token);
       case "gemini-stt":      return await transcribeGemini(cfg, file, model, token, formData);
+      case "gladia":          return await transcribeGladia(cfg, file, model, token);
+      case "soniox":          return await transcribeSoniox(cfg, file, model, token);
+      case "rev-ai":          return await transcribeRevAi(cfg, file, model, token);
+      case "speechmatics":    return await transcribeSpeechmatics(cfg, file, model, token);
       default:                return await transcribeOpenAICompatible(cfg, file, model, token, formData);
     }
   } catch (err) {

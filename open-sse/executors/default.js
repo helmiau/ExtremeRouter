@@ -18,8 +18,12 @@ const AUTH_DESCRIPTORS = Object.fromEntries(
 );
 
 // Apply a token to a header per scheme (matches legacy: combined always sets, even when undefined).
+// "key" mirrors the media-probe convention (Authorization: Key <token>) used by
+// Maritalk / Clarifai — see src/app/api/providers/validate/route.js.
 function setAuth(headers, spec, token) {
-  headers[spec.header] = spec.scheme === "bearer" ? `Bearer ${token}` : token;
+  headers[spec.header] = spec.scheme === "bearer"
+    ? `Bearer ${token}`
+    : spec.scheme === "key" ? `Key ${token}` : token;
 }
 
 // Resolve auth onto headers from a descriptor.

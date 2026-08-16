@@ -97,6 +97,39 @@ const NO_PUBLIC_RATE = new Map([
   ["inferx/Devstral-2-123B-Instruct-2512-int4-AutoRound", "InferX — unpublished"],
   ["inferx/Ornith-1.0-35B-FP8", "InferX — unpublished"],
   ["novita/meta-llama/llama-3.1-405b-instruct", "Novita — unpublished"],
+  // 2026-08 OmniRoute enterprise + frontier import — no public per-token rate
+  // exists for these (rates live behind auth / regional / credits-based billing).
+  // Do NOT add prices here without a published source — cost falls back to $0.
+  ["meta-llama/Llama-3.3-8B-Instruct", "Meta llama.com — no published per-token rate"],
+  ["oci/cohere.command-r-plus", "Deprecated on OCI — no published OCI rate"],
+  ["pioneer/meta-llama/Llama-3.1-8B-Instruct", "Pioneer per-model rates via authenticated /base-models API"],
+  ["pioneer/meta-llama/Llama-3.2-1B-Instruct", "Pioneer per-model rates via authenticated /base-models API"],
+  ["pioneer/google/gemma-3-4b-pt", "Pioneer per-model rates via authenticated /base-models API"],
+  ["pioneer/HuggingFaceTB/SmolLM3-3B-Base", "Pioneer per-model rates via authenticated /base-models API"],
+  ["snowflake/llama3.1-70b", "Snowflake Cortex bills per credit — no per-token USD rate"],
+  ["snowflake/llama3.3-70b", "Snowflake Cortex bills per credit — no per-token USD rate"],
+  ["watsonx/ibm/granite-3-8b-instruct", "granite-3-8b-instruct no longer pay-per-token on watsonx (deploy-on-demand only)"],
+  // 2026-08 OmniRoute gateways + inference-hosts import — small resellers without
+  // published per-token rates (verified against models.dev / OpenRouter / vendor docs).
+  ["aimlapi/meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo", "AIMLAPI — no published rate for this legacy id"],
+  ["ainative/llama3.1-8b-cerebras", "AiNative — unpublished rate"],
+  ["ainative/nous-coder", "AiNative — unpublished rate"],
+  ["aion/aion-labs/aion-3.0", "Aion Labs — free tier only, no published per-token rate"],
+  ["aion/aion-labs/aion-3.0-mini", "Aion Labs — free tier only, no published per-token rate"],
+  ["aion/aion-labs/aion-2.5", "Aion Labs — free tier only, no published per-token rate"],
+  ["aion/aion-labs/aion-2.0", "Aion Labs — free tier only, no published per-token rate"],
+  ["aion/aion-labs/aion-rp-llama-3.1-8b", "Aion Labs — free tier only, no published per-token rate"],
+  ["crof/mimo-v2.5-pro-precision", "CrofAI — unpublished rate"],
+  ["llm-kiwi/hrLLM", "LLM Kiwi — unpublished rate"],
+  ["nara/tencent-hy3", "NaraRouter — unpublished rate"],
+  ["nara/mistral-large", "NaraRouter — unpublished rate"],
+  ["nara/mistral-medium-3-5", "NaraRouter — unpublished rate"],
+  ["navy/mistral-small-latest", "Navy — unpublished rate"],
+  ["ollama-cloud/gpt-oss:20b", "Ollama Cloud bills via subscription usage tiers — no public per-token rate"],
+  ["ollama-cloud/gpt-oss:120b", "Ollama Cloud bills via subscription usage tiers — no public per-token rate"],
+  ["ollama-cloud/nemotron-3-super", "Ollama Cloud bills via subscription usage tiers — no public per-token rate"],
+  ["regolo/regolo-chat", "Regolo AI — unpublished rate"],
+  ["regolo/regolo-fast", "Regolo AI — unpublished rate"],
 ]);
 
 // provider-model-key (alias||id) → registry entry

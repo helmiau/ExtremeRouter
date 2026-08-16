@@ -9,6 +9,10 @@ import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { getZenmuxModelsForPlan, getZenmuxPlanForCtoken } from "open-sse/services/zenmuxModels.js";
+import { resolveConolCredentials } from "open-sse/services/conolAuth.js";
+import { CONOL_FALLBACK_MODELS, discoverConolModels } from "open-sse/services/conolModels.js";
+import { NOTION_WEB_FALLBACK_MODELS, discoverNotionWebModels } from "open-sse/services/notionWebModels.js";
+import { discoverInnerAiModels } from "open-sse/executors/inner-ai.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -415,6 +419,127 @@ const PROVIDER_MODELS_CONFIG = {
         };
       }
     }
+  },
+  // Web-cookie providers (OmniRoute ports) — live discovery via cookie-auth
+  // internal APIs, with the seed catalog as the offline fallback.
+  "conol-web": {
+    customResolver: async (connection) => {
+      const seedModels = CONOL_FALLBACK_MODELS.map((model) => ({
+        id: model.id,
+        name: model.name,
+        supportsVision: model.supportsVision,
+      }));
+      const { cookie } = resolveConolCredentials(connection);
+      if (!cookie) {
+        return {
+          models: seedModels,
+          warning: "No Conol session cookie — using seed model list",
+        };
+      }
+      try {
+        const discovery = await discoverConolModels({ cookie });
+        if (discovery.models.length) {
+          return {
+            models: discovery.models.map((model) => ({
+              id: model.id,
+              name: model.name,
+              supportsVision: model.supportsVision,
+            })),
+          };
+        }
+        return {
+          models: seedModels,
+          warning: "Conol returned no models; falling back to seed catalog.",
+        };
+      } catch (error) {
+        console.log("Failed to fetch Conol models dynamically, falling back to static:", error.message);
+        return {
+          models: seedModels,
+          warning: "Conol model discovery failed — using seed catalog.",
+        };
+      }
+    }
+  },
+  "notion-web": {
+    customResolver: async (connection) => {
+      const token = connection.apiKey || connection.accessToken;
+      if (!token) {
+        return {
+          models: NOTION_WEB_FALLBACK_MODELS,
+          warning: "No token_v2 cookie — using seed Notion AI model list",
+        };
+      }
+      try {
+        const discovery = await discoverNotionWebModels({ token });
+        if (discovery.models.length) {
+          return {
+            models: discovery.models,
+            ...(discovery.warning ? { warning: discovery.warning } : {}),
+          };
+        }
+        return {
+          models: NOTION_WEB_FALLBACK_MODELS,
+          warning: "Notion returned no models; falling back to seed catalog.",
+        };
+      } catch (error) {
+        console.log("Failed to fetch Notion models dynamically, falling back to static:", error.message);
+        return {
+          models: NOTION_WEB_FALLBACK_MODELS,
+          warning: "Notion getAvailableModels failed — using seed catalog.",
+        };
+      }
+    }
+  },
+  // HyperAgent exposes no public model-catalog API (catalog is static and
+  // validated live by the executor per request) — same as OmniRoute. Keep the
+  // route functional by serving the registry catalog instead of a 400.
+  "hyperagent": {
+    customResolver: async () => ({
+      models: getStaticProviderModels("hyperagent"),
+      warning: "HyperAgent has no live discovery API — using the bundled catalog.",
+    }),
+  },
+  "inner-ai": {
+    customResolver: async (connection) => {
+      const token = connection.apiKey || connection.accessToken;
+      if (!token) {
+        return {
+          models: getStaticProviderModels("inner-ai"),
+          warning: "No Inner.ai token cookie — using seed catalog.",
+        };
+      }
+      try {
+        const discovery = await discoverInnerAiModels({ token });
+        if (discovery.models.length) {
+          return { models: discovery.models };
+        }
+        return {
+          models: getStaticProviderModels("inner-ai"),
+          warning: "Inner.ai returned no models; falling back to seed catalog.",
+        };
+      } catch (error) {
+        console.log("Failed to fetch Inner.ai models dynamically, falling back to static:", error.message);
+        return {
+          models: getStaticProviderModels("inner-ai"),
+          warning: "Inner.ai /ai-models failed — using seed catalog.",
+        };
+      }
+    }
+  },
+  // These two expose no public model-catalog API upstream (single chat endpoint
+  // with a hardcoded model map in the executor) — serve the registry catalog
+  // instead of a 400, mirroring the hyperagent pattern.
+  "hailuo-web": {
+    customResolver: async () => ({
+      models: getStaticProviderModels("hailuo-web"),
+      warning: "Hailuo Web has no live discovery API — using the bundled catalog.",
+    }),
+  },
+  "gemini-business": {
+    customResolver: async () => ({
+      models: getStaticProviderModels("gemini-business"),
+      warning: "Gemini Business has no live discovery API — using the bundled catalog.",
+    }),
   }
 };
 

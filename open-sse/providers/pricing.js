@@ -471,6 +471,263 @@ export const PROVIDER_PRICING = {
     "muse-spark-1.2-contributor": { input: 0.10, output: 0.20, cached: 0.15, reasoning: 0.20 },
     "muse-spark-1.1":             { input: 1.25, output: 4.25, cached: 0.15, reasoning: 4.25 },
   },
+  // ── 2026-08 OmniRoute enterprise + frontier import (rates $/1M tokens) ──────
+  // Sources per model inline; unlisted models stay in NO_PUBLIC_RATE (gate test).
+  ai21: {
+    // OpenRouter / ArtificialAnalysis / FlexAI — AI21 Studio rates.
+    "jamba-large-1.7": { input: 2.00, output: 8.00 },
+    // Jamba Mini family rate (pricepertoken / cloudprice; jamba-mini-2 → jamba-mini-2-2026-01).
+    "jamba-mini-2":    { input: 0.20, output: 0.40 },
+  },
+  "arcee-ai": {
+    // OpenRouter: trinity-mini 0.05/0.15; trinity-large-thinking 0.22/0.85.
+    // trinity-large-preview: no published rate — Large-class rate as proxy.
+    "trinity-mini":           { input: 0.05,  output: 0.15 },
+    "trinity-large-thinking": { input: 0.22,  output: 0.85 },
+    "trinity-large-preview":  { input: 0.22,  output: 0.85 },
+  },
+  inception: {
+    // OpenRouter (Inception official endpoint).
+    "mercury-2": { input: 0.25, output: 0.75 },
+  },
+  liquid: {
+    // Liquid's models are free below $10M revenue (official); hosted API ~$0.00–0.03/M
+    // (pricepertoken). Top of that range as both directions.
+    "liquid-lfm-40b": { input: 0.03, output: 0.03 },
+  },
+  maritalk: {
+    // maritaca.ai/en/pricing (BRL → USD at their own published rate US$1 ≈ R$5.14).
+    "sabia-4":        { input: 0.97, output: 3.89 },
+    "sabia-4-thinking": { input: 0.97, output: 7.78 },
+    "sabiazinho-4":   { input: 0.19, output: 0.78 },
+  },
+  "meta-llama": {
+    // Market rates for the exact models (OpenRouter live listings); Meta's own
+    // llama.com compat surface does not publish a static per-token table.
+    "Llama-4-Maverick-17B-128E-Instruct-FP8": { input: 0.20, output: 0.80 },
+    "Llama-4-Scout-17B-16E-Instruct-FP8":    { input: 0.10, output: 0.30 },
+    "Llama-3.3-70B-Instruct":                { input: 0.10, output: 0.32 },
+  },
+  morph: {
+    // morphllm.com (GLM-5.2 $1.10/$4.10, Qwen 3.5 $0.50/$3.50, MiniMax M3 $0.60/$2.40,
+    // DeepSeek V4 Flash $0.139/$0.278) + OpenRouter (morph-v3-large/fast).
+    "morph-v3-large":    { input: 0.90,   output: 1.90 },
+    "morph-v3-fast":     { input: 0.80,   output: 1.20 },
+    "morph-glm52-744b":  { input: 1.10,   output: 4.10 },
+    "morph-qwen35-397b": { input: 0.50,   output: 3.50 },
+    "morph-qwen36-27b":  { input: 0.289,  output: 0.90 },
+    "morph-minimax3-428b": { input: 0.60, output: 2.40 },
+    "morph-dsv4flash":   { input: 0.139,  output: 0.278 },
+  },
+  "nous-research": {
+    // OpenRouter (Nous Portal heavily-discounted rates).
+    "Hermes-4-405B": { input: 1.00, output: 3.00 },
+    "Hermes-4-70B":  { input: 0.13, output: 0.40 },
+  },
+  oci: {
+    // getmaxim.ai/bifrost OCI rate (llama-3.3-70b symmetric $0.72/M).
+    "meta.llama-3.3-70b-instruct": { input: 0.72, output: 0.72 },
+  },
+  ovhcloud: {
+    // models.dev / mastra (OVH AI Endpoints catalog).
+    "Meta-Llama-3_3-70B-Instruct":          { input: 0.74, output: 0.74 },
+    "Mistral-Small-3.2-24B-Instruct-2506":  { input: 0.10, output: 0.31 },
+  },
+  reka: {
+    // docs.reka.ai/pricing (official).
+    "reka-flash-3":   { input: 0.10, output: 0.20 },
+    "reka-flash":     { input: 0.80, output: 2.00 },
+    "reka-edge-2603": { input: 0.10, output: 0.10 },
+  },
+  scaleway: {
+    // models.dev Scaleway serverless catalog (current live models).
+    "qwen3-235b-a22b-instruct-2507":   { input: 0.75, output: 2.25 },
+    "qwen3.5-397b-a17b":              { input: 0.60, output: 3.60 },
+    "llama-3.3-70b-instruct":         { input: 0.90, output: 0.90 },
+    "mistral-small-3.2-24b-instruct-2506": { input: 0.15, output: 0.35 },
+    "gpt-oss-120b":                  { input: 0.15, output: 0.60 },
+    "glm-5.2":                       { input: 1.80, output: 5.50 },
+  },
+  upstage: {
+    // Upstage first-party (ArtificialAnalysis): Solar Pro 3 $0.15/$0.60 (cache $0.02),
+    // Solar Mini $0.15/$0.15.
+    "solar-pro3": { input: 0.15, output: 0.60, cached: 0.02 },
+    "solar-mini": { input: 0.15, output: 0.15 },
+  },
+  watsonx: {
+    // IBM watsonx pay-per-token (ibm.com/docs — supported foundation models):
+    // llama-3-3-70b $0.0007526/1K = $0.7526/M, symmetric.
+    "meta-llama/llama-3-3-70b-instruct": { input: 0.7526, output: 0.7526 },
+  },
+  writer: {
+    // dev.writer.com / writer.com official: Palmyra X5 $0.60/$6.00, X4 $2.50/$10.00.
+    "palmyra-x5": { input: 0.60, output: 6.00 },
+    "palmyra-x4": { input: 2.50, output: 10.00 },
+  },
+  // ── 2026-08 OmniRoute gateways + inference-hosts import (models.dev rates, $/1M) ──
+  "requesty": {
+    "claude-sonnet-4-5@eu": { input: 3.3, output: 16.5, cached: 0.3, cache_creation: 4.125 },
+    "claude-opus-4-7": { input: 5, output: 25, cached: 0.5, cache_creation: 6.25 },
+    "gpt-5.1@eu": { input: 1.375, output: 11, cached: 0.1375 },
+    "gpt-4.1-nano@eu": { input: 0.11, output: 0.44, cached: 0.0275 },
+    "gemini-2.5-flash@eu": { input: 0.3, output: 2.5, cached: 0.075, cache_creation: 0.55 },
+    "kimi-k3": { input: 2.25, output: 11.25, cached: 0.225 },
+  },
+  "fastrouter": {
+    "z-ai/glm-5": { input: 0.95, output: 3.15 },
+    "z-ai/glm-5.1": { input: 1.05, output: 3.5 },
+    "deepseek/deepseek-v4-pro": { input: 1.74, output: 3.48 },
+    "google/gemini-3-pro-image-preview": { input: 2, output: 12 },
+    "google/gemini-3.1-pro-preview": { input: 2, output: 12 },
+    "google/gemma-4-31b-it": { input: 0.13, output: 0.38 },
+  },
+  "meganova-ai": {
+    "XiaomiMiMo/MiMo-V2-Flash": { input: 0.1, output: 0.3 },
+    "MiniMaxAI/MiniMax-M2.1": { input: 0.28, output: 1.2 },
+    "MiniMaxAI/MiniMax-M2.5": { input: 0.3, output: 1.2 },
+    "moonshotai/Kimi-K2.5": { input: 0.45, output: 2.8 },
+    "moonshotai/Kimi-K2-Thinking": { input: 0.6, output: 2.6 },
+    "deepseek-ai/DeepSeek-V3.2": { input: 0.26, output: 0.38 },
+  },
+  "mixlayer": {
+    "qwen/qwen3.5-35b-a3b": { input: 0.25, output: 1.3 },
+    "qwen/qwen3.5-397b-a17b": { input: 0.6, output: 3.6 },
+    "qwen/qwen3.5-9b": { input: 0.1, output: 0.4 },
+    "qwen/qwen3.5-27b": { input: 0.3, output: 2.4 },
+    "qwen/qwen3.5-122b-a10b": { input: 0.4, output: 3.2 },
+  },
+  "auriko": {
+    "minimax-m2-7": { input: 0.3, output: 1.2, cache_creation: 0.375 },
+    "claude-opus-4-7": { input: 5, output: 25, cached: 0.5, cache_creation: 6.25 },
+    "deepseek-v4-flash": { input: 0.14, output: 0.28, cached: 0.0028 },
+    "gemini-3.1-pro-preview": { input: 2, output: 12, cached: 0.2 },
+    "deepseek-v4-pro": { input: 0.435, output: 0.87, cached: 0.003625 },
+    "claude-sonnet-4-6": { input: 3, output: 15, cached: 0.3, cache_creation: 3.75 },
+  },
+  "qiniu": {
+    "mimo-v2-flash": { input: 0.1, output: 0.3, cached: 0.01 },
+    "xiaomi/mimo-v2-flash": { input: 0.1, output: 0.3, cached: 0.01 },
+  },
+  "orcarouter": {
+    "orcarouter/auto": { input: 0, output: 0 },
+    "openai/gpt-5.5": { input: 5, output: 30, cached: 0.5 },
+    "grok/grok-4.3": { input: 1.25, output: 2.5, cached: 0.2 },
+    "deepseek/deepseek-v4-pro": { input: 0.56, output: 1.12, cached: 0.003625 },
+    "minimax/minimax-m2.7": { input: 0.3, output: 1.2, cached: 0.06, cache_creation: 0.375 },
+  },
+  "crof": {
+    "deepseek-v4-pro": { input: 0.35, output: 0.8, cached: 0.003 },
+    "deepseek-v4-pro-lightning": { input: 0.8, output: 1.6, cached: 0.02 },
+    "deepseek-v4-flash": { input: 0.12, output: 0.21, cached: 0.003 },
+    "deepseek-v4-flash-0731": { input: 0.12, output: 0.21, cached: 0.003 },
+    "deepseek-v3.2": { input: 0.18, output: 0.35, cached: 0.04 },
+    "kimi-k2.6": { input: 0.5, output: 1.99, cached: 0.05 },
+    "kimi-k2.7-code": { input: 0.55, output: 2.25, cached: 0.05 },
+    "kimi-k3": { input: 2, output: 8, cached: 0.25 },
+    "kimi-k3-eco": { input: 1, output: 4, cached: 0.1 },
+    "kimi-k2.5-lightning": { input: 1, output: 3, cached: 0.2 },
+    "kimi-k2.5": { input: 0.35, output: 1.7, cached: 0.07 },
+    "glm-5.1": { input: 0.45, output: 2.15, cached: 0.08, cache_creation: 0 },
+    "glm-5.2": { input: 0.5, output: 2.2, cached: 0.08 },
+    "glm-4.7": { input: 0.25, output: 1.1, cached: 0.05, cache_creation: 0 },
+    "glm-4.7-flash": { input: 0.04, output: 0.3, cached: 0.008, cache_creation: 0 },
+    "mimo-v2.5-pro": { input: 0.4, output: 0.8, cached: 0.003 },
+    "gemma-4-31b-it": { input: 0.1, output: 0.3, cached: 0.02 },
+    "minimax-m2.5": { input: 0.11, output: 0.95, cached: 0.02, cache_creation: 0.375 },
+    "qwen3.6-27b": { input: 0.2, output: 1.5, cached: 0.04 },
+    "qwen3.5-397b-a17b": { input: 0.35, output: 1.75, cached: 0.07 },
+    "qwen3.5-9b": { input: 0.04, output: 0.15, cached: 0.008 },
+  },
+  "synthetic": {
+    "hf:openai/gpt-oss-120b": { input: 0.1, output: 0.1, cached: 0.1 },
+    "hf:zai-org/GLM-5.2": { input: 1.4, output: 4.4, cached: 1.4 },
+    "hf:moonshotai/Kimi-K2.7-Code": { input: 0.95, output: 4, cached: 0.95 },
+    "hf:Qwen/Qwen3.6-27B": { input: 0.45, output: 3.6, cached: 0.45 },
+    "hf:MiniMaxAI/MiniMax-M3": { input: 0.6, output: 1.2, cached: 0.6 },
+    "hf:zai-org/GLM-4.7-Flash": { input: 0.1, output: 0.5, cached: 0.1 },
+    "hf:nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4": { input: 0.3, output: 1, cached: 0.3 },
+  },
+  "kilo-gateway": {
+    "kilo-auto/frontier": { input: 5, output: 25, cached: 0.5, cache_creation: 6.25 },
+    "kilo-auto/balanced": { input: 0.325, output: 1.95, cached: 0.0325, cache_creation: 0.40625 },
+    "kilo-auto/free": { input: 0, output: 0, cached: 0, cache_creation: 0 },
+    "nvidia/nemotron-3-super-120b-a12b:free": { input: 0, output: 0 },
+    "arcee-ai/trinity-large-preview:free": { input: 0, output: 0 },
+  },
+  "wafer": {
+    "GLM-5.1": { input: 1, output: 3.2, cached: 0.1, cache_creation: 0 },
+  },
+  "opencode-zen": {
+    "gemini-3-pro": { input: 2, output: 12, cached: 0.2 },
+    "claude-opus-4-7": { input: 5, output: 25, cached: 0.5, cache_creation: 6.25 },
+    "glm-4.6": { input: 0.6, output: 2.2, cached: 0.1 },
+    "ling-3.0-flash-free": { input: 0, output: 0, cached: 0 },
+    "laguna-s-2.1-free": { input: 0, output: 0, cached: 0 },
+    "nemotron-3.5-lightning-free": { input: 0, output: 0, cached: 0 },
+  },
+  "kenari": {
+    "claude-opus-4-7": { input: 0, output: 0 },
+    "nemotron-3-super-120b-a12b:free": { input: 0, output: 0 },
+    "glm-4-7-flash:free": { input: 0, output: 0 },
+    "nemotron-3-nano-30b-a3b": { input: 0, output: 0 },
+    "kimi-k3": { input: 0, output: 0 },
+    "gpt-5-6-luna": { input: 0, output: 0 },
+  },
+  "poolside": {
+    "poolside/laguna-xs-2.1": { input: 0, output: 0, cached: 0, cache_creation: 0 },
+    "poolside/laguna-s-2.1": { input: 0, output: 0, cached: 0, cache_creation: 0 },
+  },
+  "baseten": {
+    "MiniMaxAI/MiniMax-M2.5": { input: 0.3, output: 1.2 },
+    "nvidia/Nemotron-120B-A12B": { input: 0.3, output: 0.75, cached: 0.06 },
+    "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B": { input: 0.6, output: 2.4, cached: 0.12 },
+    "moonshotai/Kimi-K2.5": { input: 0.6, output: 3, cached: 0.12 },
+    "moonshotai/Kimi-K2.7-Code": { input: 0.95, output: 4, cached: 0.16 },
+    "moonshotai/Kimi-K3": { input: 3, output: 15 },
+  },
+  "friendliai": {
+    "MiniMaxAI/MiniMax-M2.5": { input: 0.3, output: 1.2, cached: 0.06 },
+    "google/gemma-4-31B-it": { input: 0.14, output: 0.4 },
+    "deepseek-ai/DeepSeek-V3.2": { input: 0.5, output: 1.5, cached: 0.25 },
+    "zai-org/GLM-5.1": { input: 1.4, output: 4.4, cached: 0.26 },
+    "zai-org/GLM-5.2": { input: 1.4, output: 4.4, cached: 0.26 },
+  },
+  "wandb": {
+    "MiniMaxAI/MiniMax-M3": { input: 0.23, output: 0.96, cached: 0.05 },
+    "MiniMaxAI/MiniMax-M2.5": { input: 0.3, output: 1.2, cached: 0.3 },
+    "nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B": { input: 0.75, output: 2.75, cached: 0.15 },
+    "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8": { input: 0.2, output: 0.8, cached: 0.2 },
+    "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B": { input: 0.1, output: 0.25, cached: 0.05 },
+    "google/gemma-4-31B-it": { input: 0.1, output: 0.34, cached: 0.1 },
+  },
+  "modelscope": {
+    "ZhipuAI/GLM-4.5": { input: 0, output: 0 },
+    "ZhipuAI/GLM-4.6": { input: 0, output: 0 },
+    "Qwen/Qwen3-235B-A22B-Instruct-2507": { input: 0, output: 0 },
+    "Qwen/Qwen3-Coder-30B-A3B-Instruct": { input: 0, output: 0 },
+    "Qwen/Qwen3-30B-A3B-Thinking-2507": { input: 0, output: 0 },
+    "Qwen/Qwen3-30B-A3B-Instruct-2507": { input: 0, output: 0 },
+  },
+  "digitalocean": {
+    "openai-gpt-5.2-pro": { input: 21, output: 168 },
+    "openai-gpt-5.6-luna": { input: 0.2, output: 1.2, cached: 0.02 },
+    "gte-large-en-v1.5": { input: 0.09, output: 0 },
+    "anthropic-claude-4.6-sonnet": { input: 3, output: 15, cached: 0.3, cache_creation: 3.75 },
+    "openai-o3": { input: 2, output: 8, cached: 0.5 },
+    "anthropic-claude-opus-5": { input: 5, output: 25, cached: 0.5, cache_creation: 6.25 },
+  },
+  // Routeway free tier — `:free` suffix models are free (rate-limited) by design.
+  "routeway": {
+    "llama-3.3-70b-instruct:free": { input: 0, output: 0 },
+    "nemotron-3-nano-30b-a3b:free": { input: 0, output: 0 },
+    "nemotron-nano-9b-v2:free": { input: 0, output: 0 },
+    "step-3.7-flash:free": { input: 0, output: 0 },
+    "step-3.5-flash:free": { input: 0, output: 0 },
+    "laguna-m.1:free": { input: 0, output: 0 },
+    "laguna-xs.2:free": { input: 0, output: 0 },
+    "llama-3.2-3b-instruct:free": { input: 0, output: 0 },
+  },
+
 };
 
 /**

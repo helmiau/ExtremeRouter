@@ -153,6 +153,26 @@ async function openaiCompat({ baseUrl, apiKey, text, modelId, voiceId }) {
   return responseToBase64(res, "mp3");
 }
 
+// Fish Audio: JSON body with model as HTTP header, returns binary audio.
+// Docs: https://fish.audio — reference_id is the voice/cloned-voice id.
+async function fishaudio({ baseUrl, apiKey, text, modelId, voiceId }) {
+  const res = await fetch(baseUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+      model: modelId || "s1",
+    },
+    body: JSON.stringify({
+      text,
+      format: "mp3",
+      ...(voiceId ? { reference_id: voiceId } : {}),
+    }),
+  });
+  if (!res.ok) await throwUpstreamError(res);
+  return responseToBase64(res, "mp3");
+}
+
 // format → handler dispatcher
 export const FORMAT_HANDLERS = {
   hyperbolic,
@@ -166,4 +186,5 @@ export const FORMAT_HANDLERS = {
   tortoise,
   openai: openaiCompat,
   "minimax-tts": minimaxTts,
+  fishaudio,
 };

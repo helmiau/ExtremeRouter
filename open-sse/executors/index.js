@@ -52,6 +52,12 @@ import { VeoAIFreeWebExecutor } from "./veoaifree-web.js";
 import { ClaudeWebExecutor } from "./claude-web.js";
 import { ChatGptWebExecutor } from "./chatgpt-web.js";
 import { GeminiWebExecutor } from "./gemini-web.js";
+import { GeminiBusinessExecutor } from "./gemini-business.js";
+import { HailuoWebExecutor } from "./hailuo-web.js";
+import { InnerAiExecutor } from "./inner-ai.js";
+import { ConolWebExecutor } from "./conol-web.js";
+import { NotionWebExecutor } from "./notion-web.js";
+import { HyperAgentExecutor } from "./hyperagent.js";
 // Web-cookie providers (ported from OmniRoute — batch 2)
 import { HuggingChatExecutor } from "./huggingchat.js";
 import { LMArenaExecutor } from "./lmarena.js";
@@ -116,6 +122,17 @@ const executors = {
   "claude-web": new ClaudeWebExecutor(),
   "chatgpt-web": new ChatGptWebExecutor(),
   "gemini-web": new GeminiWebExecutor(),
+  "gemini-business": new GeminiBusinessExecutor(),
+  gembiz: new GeminiBusinessExecutor(), // Alias for gemini-business
+  "hailuo-web": new HailuoWebExecutor(),
+  "inner-ai": new InnerAiExecutor(),
+  "in-ai": new InnerAiExecutor(), // Alias for inner-ai
+  "conol-web": new ConolWebExecutor(),
+  cnl: new ConolWebExecutor(), // Alias for conol-web
+  "notion-web": new NotionWebExecutor(),
+  nw: new NotionWebExecutor(), // Alias for notion-web
+  hyperagent: new HyperAgentExecutor(),
+  ha: new HyperAgentExecutor(), // Alias for hyperagent
   // Web-cookie providers (ported from OmniRoute — batch 2)
   huggingchat: new HuggingChatExecutor(),
   "zenmux-free": new ZenmuxFreeExecutor(),
@@ -201,6 +218,12 @@ export { VeoAIFreeWebExecutor } from "./veoaifree-web.js";
 export { ClaudeWebExecutor } from "./claude-web.js";
 export { ChatGptWebExecutor } from "./chatgpt-web.js";
 export { GeminiWebExecutor } from "./gemini-web.js";
+export { GeminiBusinessExecutor } from "./gemini-business.js";
+export { HailuoWebExecutor } from "./hailuo-web.js";
+export { InnerAiExecutor } from "./inner-ai.js";
+export { ConolWebExecutor } from "./conol-web.js";
+export { NotionWebExecutor } from "./notion-web.js";
+export { HyperAgentExecutor } from "./hyperagent.js";
 // Web-cookie providers (ported from OmniRoute — batch 2)
 export { HuggingChatExecutor } from "./huggingchat.js";
 export { ZenmuxFreeExecutor } from "./zenmux-free.js";

@@ -31,6 +31,32 @@ export const SVG_ICON_IDS = new Set([
   "tokenharbor",
   "felo-web",
   "bazaarlink", "meta-ai", "freebuff", "g4f-pollinations", "fireworks",
+  // 2026-08 OmniRoute enterprise + frontier import
+  "reka", "pioneer", "meta-llama", "morph", "ai21", "upstage", "maritalk",
+  "nous-research", "arcee-ai", "liquid", "inception", "writer",
+  "modal", "scaleway", "ovhcloud", "heroku", "clarifai", "azure-ai",
+  "watsonx", "oci", "sap", "datarobot", "snowflake",
+  // 2026-08 OmniRoute gateways + inference-hosts import
+  "aimlapi", "ainative", "aion", "anyapi", "auriko", "bai", "baseten",
+  "bluesminds", "bytez", "charm-hyper", "chat-oripe", "chatanywhere",
+  "cheaperinference", "chenzk", "cloudcode-one", "crof", "digitalocean", "dit",
+  "dxnt", "electronhub", "empower", "factory", "fastrouter", "free-ai",
+  "freeaiapikey", "freeinference", "freemodel-dev", "freetheai", "friendliai",
+  "getgoapi", "gitlawb-gmi", "gitlawb", "helixmind", "inference-net", "kenari",
+  "kilo-gateway", "lambda-ai", "laozhang", "literouter", "llamagate", "llm-kiwi",
+  "llmgateway", "meganova-ai", "mixlayer", "mnn-ai", "modelscope", "naga-ac",
+  "naga-ai", "nanogpt", "nara", "navy", "nscale", "nube", "ofoxai",
+  "ollama-cloud", "openadapter", "opencode-zen", "openference-api", "orcarouter",
+  "piapi", "poixe-ai", "poolside", "predibase", "publicai", "qiniu", "regolo",
+  "requesty", "routeway", "sambanova", "speka", "sumopod", "synthetic",
+  "thebai", "tokenreply", "unorouter", "void-ai", "wafer", "wandb", "x5lab",
+  "yolo-auto", "zerolimitai", "zylo-api",
+  // 2026-08 OmniRoute local + audio import
+  "lm-studio", "vllm", "lemonade", "llamafile", "llama-cpp", "triton",
+  "docker-model-runner", "xinference", "oobabooga",
+  "soniox", "gladia", "fishaudio", "rev-ai", "speechmatics",
+  // 2026-08 OmniRoute web-cookie executor ports
+  "hailuo-web", "gemini-business", "inner-ai", "conol-web", "notion-web", "hyperagent",
 ]);
 
 /**

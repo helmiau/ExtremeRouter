@@ -63,13 +63,14 @@ async function probeMediaProvider(provider, apiKey) {
   const headers = { "Content-Type": "application/json", ...(cfg.extraHeaders || {}) };
 
   switch (cfg.authHeader) {
-    case "bearer":     headers["Authorization"] = `Bearer ${apiKey}`; break;
-    case "key":        headers["Authorization"] = `Key ${apiKey}`; break;
-    case "x-api-key":  headers["x-api-key"] = apiKey; break;
-    case "x-key":      headers["x-key"] = apiKey; break;
-    case "xi-api-key": headers["xi-api-key"] = apiKey; break;
-    case "token":      headers["Authorization"] = `Token ${apiKey}`; break;
-    case "basic":      headers["Authorization"] = `Basic ${apiKey}`; break;
+    case "bearer":      headers["Authorization"] = `Bearer ${apiKey}`; break;
+    case "key":         headers["Authorization"] = `Key ${apiKey}`; break;
+    case "x-api-key":   headers["x-api-key"] = apiKey; break;
+    case "x-key":       headers["x-key"] = apiKey; break;
+    case "xi-api-key":  headers["xi-api-key"] = apiKey; break;
+    case "token":       headers["Authorization"] = `Token ${apiKey}`; break;
+    case "basic":       headers["Authorization"] = `Basic ${apiKey}`; break;
+    case "x-gladia-key": headers["x-gladia-key"] = apiKey; break;
     default: return null;
   }
 
