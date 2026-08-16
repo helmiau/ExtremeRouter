@@ -11,6 +11,14 @@ import { validateComboRoles } from "./providerCapabilities.js";
 import { resolveProviderAlias } from "./model.js";
 import { createAbortableTask } from "./abortableTask.js";
 import { appendDirective, buildCoordinatorBody, inferConversationFormat, clampText } from "./comboConversation.js";
+import { buildSmartRoutingOrder, buildIntentResolver, lastUserMessageText } from "./smartRouting.js";
+import {
+  createSmartRoutingRun,
+  updateRoutingDecision,
+  markServedModel,
+  markRunError,
+  markRunComplete,
+} from "./smartRoutingTelemetry.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -338,7 +346,7 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {Object} [options.breakerSettings] - Settings (reads circuitBreaker config) for proactive breaker pre-filter
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, breakerSettings = null, signal, runBudget }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, breakerSettings = null, signal, runBudget, onModelServed }) {
   // Fusion/swarm/cascade are chat-only strategies — chat.js dispatches them to
   // their own handlers before reaching here. The media/fetch/search handlers
   // (image, tts, stt, search, fetch) also route through handleComboChat, so a
@@ -391,6 +399,9 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       const result = await handleSingleModel(body, modelStr, { role: "worker" });
       if (result.ok) {
         log.info("COMBO", `Model ${modelStr} succeeded`);
+        // Combo observability: notify the strategy wrapper which member actually
+        // served the request (used by smart-routing telemetry).
+        if (typeof onModelServed === "function") onModelServed(modelStr);
         return result;
       }
 
@@ -613,6 +624,145 @@ export function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeo
         });
     });
   });
+}
+
+/**
+ * Handle a smart-routing combo: order the member pool per-request based on the
+ * two routing signals (tool-calling need + research intent), then run a plain
+ * fallback chain over the ordered pool via handleComboChat (which adds the
+ * breaker pre-filter, capability auto-switch and per-model failover).
+ *
+ * Cookie providers are ordered FIRST for research intents and EXCLUDED for
+ * tool-calling requests. Runtime failures (cookie 403 / Cloudflare block) fall
+ * through the chain automatically — a dead cookie provider can never kill a
+ * research request because the normal pool follows it in the same chain.
+ *
+ * @param {Object} options
+ * @param {Object} options.body - request body
+ * @param {string[]} options.models - combo member refs
+ * @param {Function} options.handleSingleModel - (body, model, opts) => Promise<Response>
+ * @param {Object} options.log - logger
+ * @param {string} options.comboName - combo name (logging)
+ * @param {Object} [options.config] - normalized smartRouting config
+ * @param {AbortSignal} [options.signal] - run-level abort signal
+ * @param {Object} [options.runBudget] - combo budget
+ * @param {Object} [options.breakerSettings] - settings (breaker pre-filter)
+ * @returns {Promise<Response>}
+ */
+export async function handleSmartRoutingChat({ body, models, handleSingleModel, log, comboName, config, signal, runBudget, breakerSettings, telemetry = true }) {
+  const members = Array.isArray(models) ? models.filter(Boolean) : [];
+  if (members.length === 0) {
+    return new Response(
+      JSON.stringify({ error: { message: "Smart Routing combo has no models" } }),
+      { status: 400, headers: { "Content-Type": "application/json" } },
+    );
+  }
+
+  // ── Telemetry: register the run so the routing decision is observable ────
+  // per request (reason + selected pool + excluded cookies) on the dashboard.
+  const runId = telemetry ? createSmartRoutingRun({ comboName, promptPreview: lastUserMessageText(body) }).runId : null;
+  const telemetryRun = (fn, ...args) => { if (runId) fn(runId, ...args); };
+
+  // The intent resolver reports HOW it decided (heuristic signal/confidence or
+  // classifier model); buffered here so the routing snapshot below can carry it.
+  let intentDetail = null;
+  const resolveIntent = buildIntentResolver({
+    config,
+    handleSingleModel,
+    log,
+    onIntent: (detail) => { intentDetail = detail; },
+  });
+
+  let routing;
+  try {
+    routing = await buildSmartRoutingOrder({ body, members, config, resolveIntent });
+  } catch (error) {
+    // Ordering must never kill the request — degrade to the plain member order.
+    log.warn("SMART", `Combo "${comboName}" routing failed (${error?.message || error}) — using default order`);
+    routing = { order: members, reason: "general", details: {} };
+    telemetryRun(markRunError, `routing failed: ${error?.message || error}`);
+  }
+
+  const { order, reason, details } = routing;
+  log.info("SMART", `Combo "${comboName}" routing=${reason} → [${order.join(", ")}]`);
+  if (details?.excludedCookies?.length) {
+    log.info("SMART", `Combo "${comboName}" tool_calling: excluded cookie models [${details.excludedCookies.join(", ")}]`);
+  }
+
+  // Publish the decision (reason + selected pool + excluded cookies / pool
+  // split + intent detail).
+  telemetryRun(updateRoutingDecision, { reason, order, ...details, intent: intentDetail });
+
+  try {
+    const res = await handleComboChat({
+      body,
+      models: order,
+      handleSingleModel,
+      log,
+      comboName,
+      comboStrategy: "fallback",
+      breakerSettings,
+      signal,
+      runBudget,
+      onModelServed: (model) => telemetryRun(markServedModel, model),
+    });
+
+    // No telemetry — return the response untouched.
+    if (!runId) return res;
+
+    // All members failed / non-retryable client error → surface the failure.
+    if (!res.ok) {
+      let errorText = res.statusText || "all models failed";
+      try {
+        const errorBody = await res.clone().json();
+        errorText = errorBody?.error?.message || errorText;
+      } catch {
+        // ignore JSON parse errors
+      }
+      markRunError(runId, errorText || "all models failed");
+      return res;
+    }
+
+    // Success: mark complete when the response BODY actually finishes (a
+    // streaming Response may still be sending tokens), mirroring the swarm
+    // synthesis wrap. Non-streaming bodies complete immediately.
+    if (res.body) {
+      const originalBody = res.body;
+      const trackStream = new ReadableStream({
+        start(controller) {
+          const reader = originalBody.getReader();
+          const pump = () =>
+            reader.read().then(({ done, value }) => {
+              if (done) {
+                controller.close();
+                markRunComplete(runId);
+                return;
+              }
+              controller.enqueue(value);
+              return pump();
+            }).catch(() => {
+              try { controller.close(); } catch { /* already closed */ }
+              markRunComplete(runId);
+            });
+          pump();
+        },
+        cancel() {
+          // Client disconnected — mark complete to avoid stuck telemetry.
+          markRunComplete(runId);
+        },
+      });
+      return new Response(trackStream, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: res.headers,
+      });
+    }
+    markRunComplete(runId);
+    return res;
+  } catch (error) {
+    if (runId) markRunError(runId, error?.message || error);
+    throw error;
+  }
 }
 
 /**

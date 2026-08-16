@@ -6,6 +6,7 @@ import ModelRow from "../ModelRow";
 import CompatibleModelsSection from "../CompatibleModelsSection";
 import { getModelKind } from "@/shared/constants/models";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { AI_PROVIDERS } from "@/shared/constants/providers";
 
 /**
  * Models card — extracted from page.js lines 1652-1712 (toolbar + card) +
@@ -152,6 +153,18 @@ export default function ModelsCard({
 
       {/* ── Body ── */}
       <div className="px-4 py-3">
+        {/* Cookie providers cannot execute tool calls — visible so users know
+            these models are excluded from Smart Routing tool-calling pools. */}
+        {AI_PROVIDERS[providerId]?.capabilities?.toolUse === false && (
+          <div className="mb-3 flex items-start gap-2 rounded-lg border border-warning/20 bg-warning/[0.04] px-3 py-2">
+            <span className="material-symbols-outlined text-[14px] text-warning">info</span>
+            <p className="text-[11px] leading-relaxed text-text-muted">
+              Cookie-based provider — these models run through a browser chat endpoint and{" "}
+              <span className="font-medium text-text-main">cannot execute tool/function calls</span>.
+              {" "}Smart Routing combos will exclude them from tool-calling pools and use them only for research intents.
+            </p>
+          </div>
+        )}
         {!!modelsTestError && (
           <p className="mb-3 break-words text-xs text-danger">{modelsTestError}</p>
         )}

@@ -17,7 +17,7 @@ import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getPxpipeDir } from "@/lib/pxpipe/manager.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
-import { handleComboChat, handleFusionChat, handleSwarmChat, handleCascadeChat, detectRequiredCapabilities, applyCapabilityAdapter, DEFAULT_CAPABILITY_FALLBACK_MODEL } from "open-sse/services/combo.js";
+import { handleComboChat, handleFusionChat, handleSwarmChat, handleCascadeChat, handleSmartRoutingChat, detectRequiredCapabilities, applyCapabilityAdapter, DEFAULT_CAPABILITY_FALLBACK_MODEL } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
@@ -339,6 +339,22 @@ async function dispatchResolvedCombo({ body, graph, clientRawRequest, request, a
       runBudget: budget,
       principalId,
       autoScale: config.autoScale,
+    });
+  }
+
+  if (strategy === "smart-routing") {
+    log.info("CHAT", `Combo "${comboName}" with ${members.length} models (strategy: smart-routing)`);
+    return handleSmartRoutingChat({
+      body,
+      models: members,
+      handleSingleModel,
+      log,
+      comboName,
+      config: config.smartRouting,
+      signal,
+      runBudget: budget,
+      breakerSettings: settings,
+      telemetry: config.enableTelemetry,
     });
   }
 

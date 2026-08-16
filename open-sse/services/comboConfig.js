@@ -1,4 +1,4 @@
-const STRATEGIES = new Set(["fallback", "round-robin", "fusion", "swarm", "cascade"]);
+const STRATEGIES = new Set(["fallback", "round-robin", "fusion", "swarm", "cascade", "smart-routing"]);
 const KINDS = new Set(["llm", "image", "tts", "stt", "embedding", "imageToText", "webSearch", "webFetch"]);
 
 export const COMBO_LIMITS = Object.freeze({
@@ -54,6 +54,21 @@ function normalizeCascadeConfig(raw) {
 const THINKING_TYPES = new Set(["auto", "off", "extended", "effort"]);
 const THINKING_EFFORTS = new Set(["low", "medium", "high", "max"]);
 
+// Default research-intent keywords for smart-routing (lowercased). Users can
+// override per-combo via strategyConfig.smartRouting.intentDetection.keywords.
+// Mirrored from smartRouting.js (kept here so normalizeComboStrategyConfig stays
+// self-contained — the engine imports the same list).
+const DEFAULT_SMART_ROUTING_KEYWORDS = [
+  "riset", "research", "cari sumber", "sumber terpercaya", "terbaru",
+  "compare", "bandingkan", "cite", "summarize article", "rangkum artikel",
+  "berita", "trend", "studi", "jurnal", "menurut data", "investigate",
+  "look up", "search the web", "find information", "web search",
+];
+
+const DEFAULT_CLASSIFIER_MODEL = "kr/claude-haiku-4.5";
+const DEFAULT_CLASSIFIER_PROMPT =
+  "Classify the following user task as one of: research, coding, general. Respond with a single word.\n\nTask: {{userPrompt}}";
+
 // Normalize a combo-level thinking config (and optional per-role overrides).
 // Returns { type: "auto" } (which the runtime treats as "no override") when
 // the input is missing/invalid so the rest of the pipeline always gets a well
@@ -97,6 +112,15 @@ export function normalizeComboStrategyConfig(raw = {}) {
   const budgetsSource = source.budgets && typeof source.budgets === "object" ? source.budgets : {};
   const cascadeSource = source.cascade && typeof source.cascade === "object" ? source.cascade : {};
   const adapterSource = source.capabilityAdapter && typeof source.capabilityAdapter === "object" ? source.capabilityAdapter : {};
+  const smartRoutingSource = source.smartRouting && typeof source.smartRouting === "object" && !Array.isArray(source.smartRouting)
+    ? source.smartRouting
+    : {};
+  const idSource = smartRoutingSource.intentDetection && typeof smartRoutingSource.intentDetection === "object" && !Array.isArray(smartRoutingSource.intentDetection)
+    ? smartRoutingSource.intentDetection
+    : {};
+  const classifierSource = idSource.llmClassifierFallback && typeof idSource.llmClassifierFallback === "object" && !Array.isArray(idSource.llmClassifierFallback)
+    ? idSource.llmClassifierFallback
+    : {};
 
   return {
     fallbackStrategy,
@@ -108,6 +132,32 @@ export function normalizeComboStrategyConfig(raw = {}) {
     enableTelemetry: source.enableTelemetry !== false,
     thinking: normalizeThinking(source.thinking),
     cascade: normalizeCascadeConfig(cascadeSource),
+    smartRouting: {
+      // Whether research intents may route to the webCookie (browser) pool
+      // first. Off = research behaves like the default chain. Per-combo toggle
+      // exposed in the edit modal.
+      cookiePoolEnabled: smartRoutingSource.cookiePoolEnabled !== false,
+      intentDetection: {
+        // 0..1 confidence at/above which the heuristic answer is trusted
+        // without consulting the LLM classifier.
+        confidenceThreshold: asNumber(idSource.confidenceThreshold, 0.6, 0, 1),
+        // Lowercased keyword list; an empty array = "no keywords" (URL boost
+        // still applies). Absent = the curated defaults.
+        keywords: Array.isArray(idSource.keywords)
+          ? idSource.keywords.filter((k) => typeof k === "string" && k.trim()).map((k) => k.trim().toLowerCase())
+          : [...DEFAULT_SMART_ROUTING_KEYWORDS],
+        urlPatternBoost: idSource.urlPatternBoost !== false,
+        llmClassifierFallback: {
+          enabled: classifierSource.enabled === true,
+          model: typeof classifierSource.model === "string" && classifierSource.model.trim()
+            ? classifierSource.model.trim()
+            : DEFAULT_CLASSIFIER_MODEL,
+          promptTemplate: typeof classifierSource.promptTemplate === "string" && classifierSource.promptTemplate.trim()
+            ? classifierSource.promptTemplate.trim()
+            : DEFAULT_CLASSIFIER_PROMPT,
+        },
+      },
+    },
     capabilityAdapter: {
       // Tri-state: null = inherit the global setting (comboCapabilityAdapterEnabled),
       // so per-combo config can opt out (`false`) or force on (`true`) without
@@ -183,6 +233,8 @@ export function validateComboDefinition(data, { allowPartial = false } = {}) {
 // and cascade can stop at stage 1; see estimateCallsRange for {min, max}.
 // Per-strategy worst case:
 //   fallback / round-robin → every member tried until one succeeds = memberCount
+//   smart-routing → same worst case as fallback (ordered chain over the whole
+//                   pool — cookie members + normal members = memberCount)
 //   fusion  → all panel members + judge = members + 1
 //   swarm   → gatekeeper(1) + manager strategy(1) + workers(N) +
 //             staff audit(1) + manager synthesis(1) = workers + 4

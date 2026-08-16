@@ -161,6 +161,7 @@ export default function CombosPageInner() {
         fusion: ["judgeModel", "fusionTuning"],
         swarm: ["managerModel", "staffModel", "auditModel", "workerCount", "swarmTuning", "enableTelemetry"],
         cascade: ["cascade"],
+        "smart-routing": ["smartRouting"],
         fallback: [],
         "round-robin": [],
       };

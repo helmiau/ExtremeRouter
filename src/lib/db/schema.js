@@ -154,6 +154,31 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
   },
+  // Smart Routing telemetry — persists per-request routing decisions (reason,
+  // selected pool, excluded cookies) so history survives server restarts.
+  // `routing` holds the full decision object as JSON; scalar columns enable
+  // cheap filtering without loading every record.
+  smartRoutingRuns: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      comboName: "TEXT",
+      promptPreview: "TEXT",
+      routing: "TEXT",
+      reason: "TEXT",
+      servedModel: "TEXT",
+      status: "TEXT",
+      error: "TEXT",
+      startedAt: "TEXT NOT NULL",
+      completedAt: "TEXT",
+      totalDurationMs: "INTEGER",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_srr_started ON smartRoutingRuns(startedAt DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_srr_status ON smartRoutingRuns(status)",
+      "CREATE INDEX IF NOT EXISTS idx_srr_combo ON smartRoutingRuns(comboName)",
+      "CREATE INDEX IF NOT EXISTS idx_srr_reason ON smartRoutingRuns(reason)",
+    ],
+  },
 };
 
 export function buildCreateTableSql(name, def) {

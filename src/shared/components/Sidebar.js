@@ -34,6 +34,7 @@ const navGroups = [
       { href: "/dashboard/health", label: "Health", icon: "monitor_heart" },
       { href: "/dashboard/quota", label: "Quota", icon: "data_usage" },
       { href: "/dashboard/swarm", label: "Swarm", icon: "hub" },
+      { href: "/dashboard/smart-routing", label: "Smart Routing", icon: "alt_route" },
       { href: "/dashboard/console-log", label: "Console", icon: "terminal" },
     ],
   },

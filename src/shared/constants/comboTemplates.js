@@ -118,6 +118,76 @@ export const COMBO_TEMPLATES = [
     },
   },
   {
+    id: "ai-researcher",
+    name: "AI Researcher",
+    description:
+      "Smart Routing research combo. Web (cookie) providers answer research tasks first; tool-capable API models handle anything that needs function calling. Auto-falls back if a web provider is blocked.",
+    icon: "travel_explore",
+    category: "research",
+    strategy: "smart-routing",
+    models: [
+      "deepseek-v4-flash",   // cookie primary (felo-web)
+      "gpt-5-6-terra",       // cookie primary (felo-web)
+      "gemini-3.6-flash",    // cookie primary (felo-web)
+      "claude-sonnet-4.5",   // tool-calling fallback (kiro)
+      "gpt-5.4",             // tool-calling fallback (codex)
+      "glm-5.2",             // tool-calling fallback (cline/tokenharbor)
+    ],
+    preferredProviders: {
+      "deepseek-v4-flash": "felo",
+      "gpt-5-6-terra": "felo",
+      "gemini-3.6-flash": "felo",
+      "claude-sonnet-4.5": "kr",
+      "gpt-5.4": "cx",
+      "glm-5.2": "cl",
+    },
+    strategyConfig: {
+      fallbackStrategy: "smart-routing",
+      smartRouting: {
+        cookiePoolEnabled: true,
+        intentDetection: {
+          confidenceThreshold: 0.6,
+          llmClassifierFallback: { enabled: true, model: "kr/claude-haiku-4.5" },
+        },
+      },
+    },
+  },
+  {
+    id: "deep-research-web",
+    name: "Deep Research Web",
+    description:
+      "Research-heavy smart routing. Maximizes the web (cookie) pool for deep research, with tool-capable models as fallback for verification and citations.",
+    icon: "manage_search",
+    category: "research",
+    strategy: "smart-routing",
+    models: [
+      "gpt-5-6-luna",        // cookie primary (felo-web)
+      "claude-5-0-sonnet",   // cookie primary (felo-web)
+      "kimi-k2-thinking",    // cookie primary (felo-web)
+      "grok-4.6",            // cookie primary (felo-web)
+      "claude-haiku-4.5",    // tool-calling fallback (kiro)
+      "glm-5.2",             // tool-calling fallback (cline/tokenharbor)
+    ],
+    preferredProviders: {
+      "gpt-5-6-luna": "felo",
+      "claude-5-0-sonnet": "felo",
+      "kimi-k2-thinking": "felo",
+      "grok-4.6": "felo",
+      "claude-haiku-4.5": "kr",
+      "glm-5.2": "cl",
+    },
+    strategyConfig: {
+      fallbackStrategy: "smart-routing",
+      smartRouting: {
+        cookiePoolEnabled: true,
+        intentDetection: {
+          confidenceThreshold: 0.6,
+          llmClassifierFallback: { enabled: true, model: "kr/claude-haiku-4.5" },
+        },
+      },
+    },
+  },
+  {
     id: "bug-hunter",
     name: "Bug Hunter",
     description:

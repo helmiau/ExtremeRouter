@@ -30,6 +30,13 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
     c?.strategyConfig?.fallbackStrategy ||
     "fallback";
 
+  // Effective smart-routing config mirrors the same settings-over-record merge
+  // (comboStrategies wins over the record's strategyConfig).
+  const effectiveSmartRouting = (c) =>
+    (c && comboStrategies?.[c.name]?.smartRouting) ||
+    c?.strategyConfig?.smartRouting ||
+    {};
+
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
   const [strategy, setStrategy] = useState(effectiveFallbackStrategy(combo));
@@ -37,6 +44,14 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+
+  // ── Smart Routing config draft ──
+  const [srCookiePool, setSrCookiePool] = useState(true);
+  const [srUrlBoost, setSrUrlBoost] = useState(true);
+  const [srThreshold, setSrThreshold] = useState(60);
+  const [srKeywordText, setSrKeywordText] = useState("");
+  const [srClassifierEnabled, setSrClassifierEnabled] = useState(false);
+  const [srClassifierModel, setSrClassifierModel] = useState("");
 
   // H3 FIX: reset local draft whenever the modal is (re)opened. The parent
   // mounts the create modal once with a static key, so useState initializers
@@ -51,6 +66,13 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
       setStrategy(effectiveFallbackStrategy(combo));
       setNameError("");
       setShowModelSelect(false);
+      const sr = effectiveSmartRouting(combo);
+      setSrCookiePool(sr.cookiePoolEnabled !== false);
+      setSrUrlBoost(sr.intentDetection?.urlPatternBoost !== false);
+      setSrThreshold(Math.round((sr.intentDetection?.confidenceThreshold ?? 0.6) * 100));
+      setSrKeywordText((sr.intentDetection?.keywords || []).join(", "));
+      setSrClassifierEnabled(sr.intentDetection?.llmClassifierFallback?.enabled === true);
+      setSrClassifierModel(sr.intentDetection?.llmClassifierFallback?.model || "");
     }
     setWasOpen(isOpen);
   }, [isOpen, wasOpen, combo]);
@@ -140,6 +162,22 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
     // models / thinking / autoScale survive an edit — sending only
     // { fallbackStrategy } previously wiped the rest of the record config.
     const mergedStrategyConfig = { ...(combo?.strategyConfig || {}), fallbackStrategy: strategy };
+    if (strategy === "smart-routing") {
+      mergedStrategyConfig.smartRouting = {
+        cookiePoolEnabled: srCookiePool,
+        intentDetection: {
+          confidenceThreshold: srThreshold / 100,
+          urlPatternBoost: srUrlBoost,
+          ...(srKeywordText.trim()
+            ? { keywords: srKeywordText.split(",").map((k) => k.trim()).filter(Boolean) }
+            : {}),
+          llmClassifierFallback: {
+            enabled: srClassifierEnabled,
+            ...(srClassifierModel.trim() ? { model: srClassifierModel.trim() } : {}),
+          },
+        },
+      };
+    }
     await onSave({ name: name.trim(), models, strategyConfig: mergedStrategyConfig });
     setSaving(false);
   };
@@ -236,7 +274,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
               <label className="text-sm font-medium text-text-main">Strategy</label>
               <span className="text-[10px] text-text-muted">How the combo dispatches requests</span>
             </div>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-6">
               {STRATEGY_OPTIONS.map((opt) => {
                 const active = strategy === opt.value;
                 const meta = getStrategyMeta(opt.value);
@@ -259,6 +297,84 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
               })}
             </div>
           </div>
+
+          {/* Smart Routing config — only when the strategy is selected */}
+          {strategy === "smart-routing" && (
+            <div className="flex flex-col gap-2.5 rounded-lg border border-primary/20 bg-primary/[0.04] px-3 py-2.5">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[16px]" style={{ color: "#EC4899" }}>alt_route</span>
+                <span className="text-xs font-medium text-text-main">Smart Routing</span>
+                <span className="text-[10px] text-text-muted">Routes each request by tool-calling need &amp; research intent</span>
+              </div>
+
+              <label className="flex cursor-pointer items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  checked={srCookiePool}
+                  onChange={(e) => setSrCookiePool(e.target.checked)}
+                  className="rounded border-border accent-primary"
+                />
+                <span className="text-[11px] text-text-muted">Route research intents to web (cookie) providers first</span>
+              </label>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-text-muted">
+                  Research keywords (comma-separated — leave empty for defaults)
+                </label>
+                <textarea
+                  value={srKeywordText}
+                  onChange={(e) => setSrKeywordText(e.target.value)}
+                  rows={2}
+                  placeholder="research, compare, bandingkan, cari sumber, jurnal, ..."
+                  className="resize-none rounded border border-border bg-background px-2 py-1.5 font-mono text-[11px] focus:border-primary focus:outline-none"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={srUrlBoost}
+                    onChange={(e) => setSrUrlBoost(e.target.checked)}
+                    className="rounded border-border accent-primary"
+                  />
+                  <span className="text-[11px] text-text-muted">Treat prompts containing a URL as research</span>
+                </label>
+                <label className="flex cursor-pointer items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={srClassifierEnabled}
+                    onChange={(e) => setSrClassifierEnabled(e.target.checked)}
+                    className="rounded border-border accent-primary"
+                  />
+                  <span className="text-[11px] text-text-muted">LLM classifier fallback for ambiguous prompts</span>
+                </label>
+                {srClassifierEnabled && (
+                  <input
+                    value={srClassifierModel}
+                    onChange={(e) => setSrClassifierModel(e.target.value)}
+                    placeholder="kr/claude-haiku-4.5"
+                    className="rounded border border-border bg-background px-2 py-1 font-mono text-[11px] focus:border-primary focus:outline-none"
+                  />
+                )}
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] text-text-muted">Heuristic confidence threshold</label>
+                  <span className="font-mono text-[10px] text-primary">{srThreshold}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={srThreshold}
+                  onChange={(e) => setSrThreshold(Number(e.target.value))}
+                  className="w-full accent-primary"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Combo Simulator — live preview of calls/cost/capability/latency/budget */}
           {models.length > 0 && (
