@@ -1,3 +1,36 @@
+# v0.8.6 (2026-08-17)
+
+## Features
+- **Registry expanded to 304 providers** — completed the OmniRoute import: frontier API-key providers, API-key gateways/inference, 9 local runtimes (lm-studio, vllm, lemonade, llamafile, llama-cpp, triton, docker-model-runner, xinference, oobabooga), and 5 audio providers (soniox, gladia, rev-ai, speechmatics, fishaudio) with real per-token pricing.
+- **6 new web-cookie executor ports** — hailuo-web (MiniMax signed chat), gemini-business (enterprise StreamGenerate), inner-ai (gateway catalog), conol-web (agent-session chat), notion-web (Notion AI transcripts via TLS fetch), hyperagent (thread-based agent chat) — each with services and full unit suites.
+- **Live model discovery wiring** — `/api/providers/[id]/models` now refreshes catalogs for the ported cookie providers: inner-ai (live `/ai_models`), conol-web + notion-web (live discovery with seed fallback), hailuo-web / gemini-business / hyperagent (bundled catalog + warning since no discovery API exists upstream).
+- **Smart Routing combo strategy** — task-aware routing (tool-calling vs research) with persisted telemetry (reason, selected pool, excluded cookies), history page with pagination + filters, and A/B Lab comparing predicted vs actual results.
+- **Combo Lab** — what-if strategy comparison using historical request data.
+- **Combo Simulator** — pre-save preview of calls/cost/capability/latency/budget before saving a combo.
+- **Unified capability catalog** — `deriveComboCapabilities`, combo caps surfaced in `/api/models`, aggregate capability badge.
+- **Provider Health Heatmap** — per-provider success/latency, breaker state, and connection cooldown in one dashboard view.
+- **Glass Mode** — third UI theme (dark-based frosted), alongside light and dark.
+- **New Providers** — Freebuff (authToken browser_token flow + FreeBuffExecutor), Fireworks AI (reasoning, vision, pricing), Z.ai (browser-backed replacement for chatglm-cn), Tencent AI Studio (aistudio.tencent.ai), Bynara (model caps + pay-as-you-go pricing), plus a batch of free gateways (theoldllm, aihorde, mimocode, g4f*, bazaarlink, dahl, dgrid, hackclub, llm7, uncloseai) and GLM-5.3 effort tiers + CodeBuddy CN hy3 swap.
+- **Generic cookie auto-capture** — one-click session capture for all webCookie providers; felo-web converted to cookie provider with dual-auth + CDP launch from a running Brave.
+- **Combo context in request details** — observability now records which combo/strategy served each request.
+- **Perf** — server-side key-gated `/v1/models` cache, virtualized ModelSelectModal (1352 models), compact client caps payload via `toClientCaps`, shared `listWindow` helpers.
+- **Docs** — README rewritten in three languages (EN/ID/ZH) with accurate feature inventory; npm CLI README likewise translated.
+
+## Fixes
+- **Client aborts** — AbortError/499 now treated as cancellations, not upstream failures; skipped in health samples and mapped to 499 in TTS/embedding/image/STT cores.
+- **Swarm telemetry** — repaired live SSE pipeline and preserved worker slot data.
+- **Smart-routing history API** — errors surfaced as JSON instead of empty bodies.
+- **Combos** — edit modal shows effective strategy; template apply validates strategy roles server-side; simulator budget risk matches runtime leaf sum; hydration fix in ComboCard models header.
+- **Headroom** — proxy log fd closed exactly once (EBADF crash on proxy exit); status probe via `/livez`.
+- **Provider alias collisions** — resolved trae/mimo/ix/venice lookups.
+- **Antigravity** — ported PR #3208 request-size optimizations, kept canary endpoint.
+- **Perplexity-web** — extract answers from workflow_block; **zai-web** dismisses chat.z.ai upgrade modals; **projectid** recognizes alternative onboardUser response shapes.
+- **Playground** — fixed compare-mode duplicates, per-model thinking levels, compare session persistence; aligned combo thinking classification with runtime.
+- **Models** — dedupe AI_MODELS by provider/model (gemini LLM+STT refs), normalize alias→id lookups, correct capabilities/pricing per models.dev, wire GLM-5.2 `reasoning_effort`, add CI consistency gate.
+
+## Tests
+- 7 new suites: hailuo-web, gemini-business, inner-ai, conol-web, notion-web, hyperagent executors, STT async-batch + fishaudio TTS, provider-models web-cookie discovery wiring (~4,300 lines). Full suite 2597 passing (1 pre-existing live network test excluded).
+
 # v0.8.5 (2026-08-13)
 
 ## Features
