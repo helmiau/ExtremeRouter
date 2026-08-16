@@ -16,7 +16,16 @@ const useThemeStore = create(
 
       toggleTheme: () => {
         const currentTheme = get().theme;
-        const newTheme = currentTheme === "dark" ? "light" : "dark";
+        // Glass is dark-based: toggling from glass lands on light (and vice
+        // versa) so the binary toggle always flips the effective brightness.
+        const systemDark =
+          typeof window !== "undefined" &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches;
+        const isDarkLike =
+          currentTheme === "dark" ||
+          currentTheme === "glass" ||
+          (currentTheme === "system" && systemDark);
+        const newTheme = isDarkLike ? "light" : "dark";
         set({ theme: newTheme });
         applyTheme(newTheme);
       },
@@ -43,10 +52,13 @@ function applyTheme(theme) {
 
   const effectiveTheme = theme === "system" ? systemTheme : theme;
 
+  root.classList.remove("dark", "glass");
   if (effectiveTheme === "dark") {
     root.classList.add("dark");
-  } else {
-    root.classList.remove("dark");
+  } else if (effectiveTheme === "glass") {
+    // Glass is dark-based: keep every `.dark` rule alive and layer the
+    // frosted tokens on top (.glass overrides in globals.css).
+    root.classList.add("dark", "glass");
   }
 }
 

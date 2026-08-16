@@ -116,6 +116,102 @@
 }
 
 /* ============================================================
+   Glass Mode — dark-based frosted theme (.dark.glass on <html>)
+   Panels turn translucent + backdrop-blur over a fixed gradient
+   mesh (body::before). Blur is applied to the token utility
+   classes themselves, so the whole dashboard becomes glass with
+   zero component changes. Alpha floors keep WCAG-AA text contrast
+   even when bright blobs pass behind a panel.
+   ============================================================ */
+.glass {
+  --color-bg: #0a0a14;
+  --color-bg-alt: #0d0d18;
+  --color-surface: rgba(26, 26, 41, 0.66);
+  --color-surface-2: rgba(38, 38, 58, 0.55);
+  --color-surface-3: rgba(255, 255, 255, 0.07);
+  --color-sidebar: rgba(14, 14, 26, 0.7);
+  --color-panel: rgba(22, 22, 38, 0.72);
+  --color-panel-elev: rgba(30, 30, 48, 0.78);
+
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-border-subtle: rgba(255, 255, 255, 0.06);
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-warm: 0 0 0 1px rgba(139, 92, 246, 0.22), 0 18px 60px -28px rgba(139, 92, 246, 0.6);
+  --shadow-elevated: 0 24px 70px -32px rgba(0, 0, 0, 0.85);
+  --shadow-elev:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.5),
+    0 24px 70px -30px rgba(0, 0, 0, 0.85);
+
+  color-scheme: dark;
+}
+
+/* Frosted treatment per surface tier — panels blur the mesh layer
+   behind them; saturate makes brand hues bleed through the glass. */
+.glass .bg-surface,
+.glass .bg-panel {
+  -webkit-backdrop-filter: blur(16px) saturate(150%);
+  backdrop-filter: blur(16px) saturate(150%);
+}
+.glass .bg-surface-2 {
+  -webkit-backdrop-filter: blur(12px) saturate(140%);
+  backdrop-filter: blur(12px) saturate(140%);
+}
+.glass .bg-panel {
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+}
+.glass .bg-sidebar {
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  backdrop-filter: blur(24px) saturate(150%);
+}
+
+/* Fixed gradient mesh behind everything — the layer panels blur.
+   Brand hues (violet / cyan / rose), static: no animation loop. */
+.glass body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(600px 400px at 15% 10%, rgba(139, 92, 246, 0.16), transparent 60%),
+    radial-gradient(500px 380px at 85% 20%, rgba(34, 211, 238, 0.1), transparent 60%),
+    radial-gradient(700px 500px at 50% 95%, rgba(251, 113, 133, 0.08), transparent 60%),
+    #0a0a14;
+}
+
+/* Fallback: no backdrop-filter support → nearly opaque surfaces,
+   same hues, readability unaffected. */
+@supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))) {
+  .glass {
+    --color-surface: #16162a;
+    --color-surface-2: #1e1d33;
+    --color-sidebar: #0e0e1a;
+    --color-panel: #141424;
+    --color-panel-elev: #1a1a2c;
+  }
+}
+
+/* Fallback: user asked for reduced transparency → drop the blur
+   and raise alpha to near-opaque. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass .bg-surface,
+  .glass .bg-surface-2,
+  .glass .bg-panel,
+  .glass .bg-sidebar {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .glass {
+    --color-surface: rgba(26, 26, 41, 0.96);
+    --color-surface-2: rgba(38, 38, 58, 0.95);
+    --color-sidebar: rgba(14, 14, 26, 0.97);
+    --color-panel: rgba(22, 22, 38, 0.97);
+  }
+}
+
+/* ============================================================
    Fix native select dropdowns in dark mode
    ============================================================ */
 select {

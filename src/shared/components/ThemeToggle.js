@@ -3,8 +3,15 @@
 import { useTheme } from "@/shared/hooks/useTheme";
 import { cn } from "@/shared/utils/cn";
 
+// light → dark → glass → light. "system" resolves to its effective theme
+// first so the cycle always starts from what the user currently sees.
+const CYCLE = ["light", "dark", "glass"];
+const ICONS = { light: "light_mode", dark: "dark_mode", glass: "blur_on" };
+
 export default function ThemeToggle({ className, variant = "default" }) {
-  const { isDark, toggleTheme } = useTheme();
+  const { effectiveTheme, setTheme } = useTheme();
+
+  const nextTheme = CYCLE[(CYCLE.indexOf(effectiveTheme) + 1) % CYCLE.length];
 
   const variants = {
     default: cn(
@@ -24,10 +31,10 @@ export default function ThemeToggle({ className, variant = "default" }) {
 
   return (
     <button
-      onClick={toggleTheme}
+      onClick={() => setTheme(nextTheme)}
       className={cn(variants[variant], className)}
-      aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
-      title={`Switch to ${isDark ? "light" : "dark"} mode`}
+      aria-label={`Switch to ${nextTheme} mode`}
+      title={`Switch to ${nextTheme} mode`}
     >
       <span
         className={cn(
@@ -35,7 +42,7 @@ export default function ThemeToggle({ className, variant = "default" }) {
           variant === "card" && "transition-transform duration-300 group-hover:rotate-12"
         )}
       >
-        {isDark ? "light_mode" : "dark_mode"}
+        {ICONS[effectiveTheme] || "dark_mode"}
       </span>
     </button>
   );

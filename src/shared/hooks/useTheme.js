@@ -47,14 +47,19 @@ export function useTheme() {
     return () => mediaQuery.removeEventListener("change", handleChange);
   }, [theme, initTheme]);
 
-  // Compute isDark from current state (no effect needed)
-  const isDark = theme === "dark" || (theme === "system" && systemPrefersDark);
+  // Compute isDark from current state (no effect needed). Glass is dark-based,
+  // so every existing isDark consumer (contrast logic, icons) keeps working.
+  const isGlass = theme === "glass";
+  const isDark = theme === "dark" || isGlass || (theme === "system" && systemPrefersDark);
+  const effectiveTheme = theme === "system" ? (systemPrefersDark ? "dark" : "light") : theme;
 
   return {
     theme,
     setTheme,
     toggleTheme,
     isDark,
+    isGlass,
+    effectiveTheme,
   };
 }
 
