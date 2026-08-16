@@ -12,7 +12,7 @@
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/constants/providers";
 
 // Providers whose brand icon is a vector SVG (not PNG).
-// MUST stay in sync with public/providers/*.svg (currently 72 files).
+// MUST stay in sync with public/providers/*.svg (currently 73 files).
 // When adding a new .svg asset, add its id here too.
 export const SVG_ICON_IDS = new Set([
   "windsurf", "trae", "cody", "kimchi",
@@ -30,7 +30,7 @@ export const SVG_ICON_IDS = new Set([
   "kimi-desktop", "novita", "inferx",
   "tokenharbor",
   "felo-web",
-  "bazaarlink", "meta-ai", "freebuff", "g4f-pollinations",
+  "bazaarlink", "meta-ai", "freebuff", "g4f-pollinations", "fireworks",
 ]);
 
 /**

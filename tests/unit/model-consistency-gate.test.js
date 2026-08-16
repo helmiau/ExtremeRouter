@@ -76,7 +76,6 @@ const NO_PUBLIC_RATE = new Map([
   ["xiaomi-tokenplan/mimo-v2.5-pro-claude", "Xiaomi token plan — unpublished"],
   ["kimchi/nemotron-3-ultra-fp4", "Kimchi — unpublished rate"],
   // Small hosts / resellers not covered by models.dev
-  ["fireworks/accounts/fireworks/models/llama-v3p3-70b-instruct", "Fireworks — unpublished"],
   ["groq/meta-llama/llama-4-maverick-17b-128e-instruct", "Groq — unpublished for this id"],
   ["siliconflow/inclusionAI/Ling-flash-2.0", "SiliconFlow — unpublished"],
   ["volcengine-ark/Doubao-Seed-2.0-Code", "Volcengine — unpublished rate"],

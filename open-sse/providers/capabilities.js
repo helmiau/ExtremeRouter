@@ -135,6 +135,20 @@ export const PROVIDER_CAPABILITIES = {
     "gpt-5.6-luna":        CODEX_GPT_56_DEFAULT_CAPS,
     "gpt-5.6-luna-review": CODEX_GPT_56_DEFAULT_CAPS,
   },
+  // Fireworks AI — OpenAI-compatible host. transport.thinkingFormat:"openai" makes
+  // reasoning models speak OpenAI reasoning_effort. These per-model pins correct
+  // generic family patterns that mis-flag Fireworks models:
+  //   *kimi*k2*     → vision + kimi thinking format (k2-instruct-0905 is text-only)
+  //   *glm-5*       → zai thinking format + 200k ctx (glm-5p2 is 1M ctx)
+  //   *deepseek*    → reasoning (deepseek-v3p1 is a plain chat model)
+  //   *qwen*235b*   → qwen thinking format (OpenAI-style effort here)
+  fireworks: {
+    "accounts/fireworks/models/glm-5p2":            { reasoning: true, thinkingFormat: "openai", contextWindow: 1048575, maxOutput: 131072 },
+    "accounts/fireworks/models/kimi-k2p6":          { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 262000, maxOutput: 262000 },
+    "accounts/fireworks/models/kimi-k2-instruct-0905": { vision: false, reasoning: false, contextWindow: 262144, maxOutput: 262144 },
+    "accounts/fireworks/models/deepseek-v3p1":      { vision: false, reasoning: false, contextWindow: 128000, maxOutput: 16384 },
+    "accounts/fireworks/models/qwen3-235b-a22b":    { reasoning: true, thinkingFormat: "openai", contextWindow: 128000, maxOutput: 32768 },
+  },
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {

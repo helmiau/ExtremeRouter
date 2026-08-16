@@ -252,6 +252,17 @@ export const PROVIDER_PRICING = {
   github: {
     "gpt-5.3-codex": { input: 1.75, output: 14.00, cached: 0.175, reasoning: 14.00, cache_creation: 1.75 },
   },
+  // Fireworks AI (fireworks) — serverless rates, $/1M tokens (docs.fireworks.ai/serverless/pricing).
+  // Keys carry the full accounts/fireworks/models/... id as served by Fireworks.
+  // Cached-input rates from the pricing page; reasoning = output (codebase convention).
+  fireworks: {
+    "accounts/fireworks/models/deepseek-v3p1":         { input: 0.56, output: 1.68 },
+    "accounts/fireworks/models/glm-5p2":               { input: 1.40, cached: 0.14, output: 4.40, reasoning: 4.40 },
+    "accounts/fireworks/models/kimi-k2p6":             { input: 0.95, cached: 0.16, output: 4.00, reasoning: 4.00 },
+    "accounts/fireworks/models/kimi-k2-instruct-0905": { input: 0.60, output: 2.50 },
+    "accounts/fireworks/models/llama-v3p3-70b-instruct": { input: 0.90, output: 0.90 },
+    "accounts/fireworks/models/qwen3-235b-a22b":       { input: 0.22, output: 0.88 },
+  },
   // Forge Workspace (forge) — tier-based pricing via /v1/models-rates
   forge: {
     "gpt-5.6-sol": { input: 5.00, output: 30.00 },
