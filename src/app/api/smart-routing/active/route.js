@@ -8,6 +8,14 @@ export const dynamic = "force-dynamic";
  * history from the DB first so runs survive server restarts.
  */
 export async function GET() {
-  await hydrateSmartRunsFromDb({ limit: 50 });
-  return Response.json({ runs: getRecentSmartRuns(20) });
+  try {
+    await hydrateSmartRunsFromDb({ limit: 50 });
+    return Response.json({ runs: getRecentSmartRuns(20) });
+  } catch (error) {
+    console.error("smart-routing active snapshot failed:", error?.message || error);
+    return Response.json(
+      { error: "Failed to load active smart-routing runs" },
+      { status: 500 },
+    );
+  }
 }

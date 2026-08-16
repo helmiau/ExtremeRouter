@@ -6,6 +6,7 @@ import Button from "@/shared/components/Button";
 import Pagination from "@/shared/components/Pagination";
 import Badge from "@/shared/components/Badge";
 import { cn } from "@/shared/utils/cn";
+import { parseJsonResponse } from "@/shared/utils/parseJsonResponse";
 import {
   REASON_META,
   SmartRoutingRunDetail,
@@ -44,13 +45,13 @@ export default function SmartRoutingHistory({ onCompare }) {
       if (filters.endDate) params.append("endDate", filters.endDate);
 
       const res = await fetch(`/api/smart-routing/history?${params}`);
-      const data = await res.json();
+      const data = await parseJsonResponse(res);
       setRuns(data.runs || []);
       setCombos(data.combos || []);
       setPagination((prev) => ({ ...prev, ...data.pagination }));
     } catch (err) {
       console.error("Failed to fetch smart-routing history:", err);
-      setError("Failed to load history");
+      setError(err?.message || "Failed to load history");
     } finally {
       setLoading(false);
     }

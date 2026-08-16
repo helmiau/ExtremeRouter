@@ -5,6 +5,7 @@ import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { cn } from "@/shared/utils/cn";
+import { parseJsonResponse } from "@/shared/utils/parseJsonResponse";
 import {
   REASON_META,
   ModelChip,
@@ -89,7 +90,7 @@ export default function SmartRoutingLab({ compareRun, onRunConsumed }) {
   useEffect(() => {
     let cancelled = false;
     fetch("/api/smart-routing/history?pageSize=50")
-      .then((res) => res.json())
+      .then(parseJsonResponse)
       .then((data) => {
         if (!cancelled) setRuns(data.runs || []);
       })
@@ -143,16 +144,11 @@ export default function SmartRoutingLab({ compareRun, onRunConsumed }) {
           inputTokens,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Lab comparison failed");
-        setResult(null);
-      } else {
-        setResult(data);
-      }
+      const data = await parseJsonResponse(res);
+      setResult(data);
     } catch (err) {
       console.error("Lab comparison failed:", err);
-      setError("Lab comparison failed — server unreachable");
+      setError(err?.message || "Lab comparison failed — server unreachable");
       setResult(null);
     } finally {
       setLoading(false);
