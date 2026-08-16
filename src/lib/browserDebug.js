@@ -9,6 +9,13 @@
 //
 // Only Node builtins here (no `@/` aliases) so it can be imported from both
 // the Next.js API routes and plain Node CLI scripts.
+//
+// SECURITY NOTE: while a browser runs with --remote-debugging-port, ANY local
+// process on the machine can connect to 127.0.0.1:9222 and read cookies for
+// every site — not just the provider being captured. This is inherent to CDP.
+// The UI tells users to close (or restart without the debug port) the browser
+// after capturing, and isCdpReachable() tracks first-seen time so the UI can
+// nag when a debug browser has been left running for a long time.
 
 import fs from "node:fs";
 import os from "node:os";
@@ -17,6 +24,11 @@ import { spawn, execSync } from "node:child_process";
 
 export const CDP_PORT = 9222;
 export const CDP_ENDPOINT = `http://127.0.0.1:${CDP_PORT}`;
+
+// First time this server process saw the CDP endpoint answer. Used by the
+// capture UI to warn about a long-running debug browser (accepted-risk doc:
+// server restart resets it, so treat it as "at least this old").
+let cdpFirstSeenAt = null;
 
 export function detectPlatform() {
   return process.platform; // "win32" | "darwin" | "linux" | ...
@@ -142,21 +154,69 @@ export function resolveBrowserPath(candidate) {
 }
 
 /**
+ * Does a `--version` output look like a real Chromium-family browser?
+ * Requires a product name followed by a version number, so shell errors that
+ * merely echo the command name ("command not found: brave") are rejected.
+ * Standalone helper so it is unit-testable without spawning anything.
+ */
+export function isChromiumVersionOutput(text) {
+  const s = String(text || "");
+  return /\b(chrome|chromium|brave\s+browser|microsoft\s+edge|edge|headlessshell)\b[\s:/]*\d/i.test(s);
+}
+
+/**
+ * Verify a PATH-resolved executable is really a Chromium-family browser by
+ * running `<path> --version` and checking the output. A hijacked PATH entry
+ * (e.g. a script named `brave` earlier in PATH) won't print a browser
+ * version banner and is skipped. Fixed install paths are trusted as-is and
+ * never exec'd for verification.
+ */
+export async function verifyChromiumBinary(binaryPath, { timeoutMs = 5000 } = {}) {
+  return await new Promise((resolve) => {
+    let out = "";
+    let settled = false;
+    const done = (ok) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(ok && isChromiumVersionOutput(out));
+    };
+    const timer = setTimeout(() => done(false), timeoutMs);
+    try {
+      const child = spawn(binaryPath, ["--version"], { stdio: ["ignore", "pipe", "ignore"] });
+      child.stdout?.on("data", (d) => { out += String(d); });
+      child.stderr?.on("data", (d) => { out += String(d); });
+      child.on("error", () => done(false));
+      child.on("close", () => done(true));
+    } catch {
+      done(false);
+    }
+  });
+}
+
+function isFixedInstallPath(p, candidate) {
+  return (candidate.paths || []).some((fixed) => fixed === p);
+}
+
+/**
  * Find the best installed browser. Ordered Brave → Chrome → Edge → Chromium;
  * override with `ER_CAPTURE_BROWSER=brave|chrome|edge|chromium`.
+ *
+ * Binaries resolved from fixed install locations are trusted directly; ones
+ * resolved from PATH are verified with `--version` (see verifyChromiumBinary)
+ * before being returned, so a PATH-hijacked executable is never launched
+ * with the debug port.
  */
 export async function findInstalledBrowser(preferredId = process.env.ER_CAPTURE_BROWSER || null) {
   const candidates = getBrowserCandidates();
-  if (preferredId) {
-    const pref = candidates.find((c) => c.id === preferredId);
-    if (pref) {
-      const p = resolveBrowserPath(pref);
-      if (p) return { ...pref, path: p };
-    }
-  }
-  for (const c of candidates) {
+  const ordered = preferredId
+    ? [candidates.find((c) => c.id === preferredId), ...candidates.filter((c) => c.id !== preferredId)].filter(Boolean)
+    : candidates;
+  for (const c of ordered) {
     const p = resolveBrowserPath(c);
-    if (p) return { ...c, path: p };
+    if (!p) continue;
+    if (isFixedInstallPath(p, c)) return { ...c, path: p };
+    if (await verifyChromiumBinary(p)) return { ...c, path: p, verifiedFromPath: true };
   }
   return null;
 }
@@ -167,10 +227,21 @@ export async function isCdpReachable(port = CDP_PORT, timeoutMs = 2500) {
     const res = await fetch(`http://127.0.0.1:${port}/json/version`, {
       signal: AbortSignal.timeout(timeoutMs),
     });
+    if (res.ok && !cdpFirstSeenAt) cdpFirstSeenAt = Date.now();
     return res.ok;
   } catch {
     return false;
   }
+}
+
+/** When this server first saw the debug browser (epoch ms), or null. */
+export function getCdpUpSince() {
+  return cdpFirstSeenAt;
+}
+
+/** Test-only: reset the first-seen tracking. */
+export function __resetCdpTrackingForTests() {
+  cdpFirstSeenAt = null;
 }
 
 function processNameOf(browserPath) {

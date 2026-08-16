@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import Button from "@/shared/components/Button";
+import { buildCdpWarning } from "@/shared/utils/cdpWarning";
 
 // One-click capture of the logged-in Felo session from the user's running
 // Chromium browser (Brave/Chrome/Edge, started with --remote-debugging-port).
@@ -17,10 +18,12 @@ export default function FeloCaptureButton({ onCaptured }) {
   const [capturing, setCapturing] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [status, setStatus] = useState(null); // { ok, message, profile, canLaunch }
+  const [cdpWarn, setCdpWarn] = useState(null);
 
   const handleCapture = async () => {
     setCapturing(true);
     setStatus(null);
+    setCdpWarn(null);
     try {
       const res = await fetch("/api/providers/felo-capture", { method: "POST" });
       const data = await res.json();
@@ -30,6 +33,7 @@ export default function FeloCaptureButton({ onCaptured }) {
           message: data.profile ? "Captured — session valid" : "Captured — session cookie found",
           profile: data.profile,
         });
+        setCdpWarn(buildCdpWarning(data.cdpUpSinceMs));
         onCaptured?.(data.credential, data.profile);
       } else {
         setStatus({
@@ -98,6 +102,12 @@ export default function FeloCaptureButton({ onCaptured }) {
             </div>
           )}
           {status.message}
+        </div>
+      )}
+      {cdpWarn && (
+        <div className="flex items-start gap-1.5 text-xs text-yellow-400 break-words">
+          <span className="material-symbols-outlined text-[14px] mt-px">warning</span>
+          <span>{cdpWarn.text}</span>
         </div>
       )}
     </div>

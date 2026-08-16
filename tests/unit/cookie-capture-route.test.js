@@ -15,6 +15,7 @@ const browserDebug = {
   CDP_ENDPOINT: "http://127.0.0.1:9222",
   findInstalledBrowser: vi.fn(),
   isCdpReachable: vi.fn(),
+  getCdpUpSince: vi.fn(),
 };
 vi.mock("../../src/lib/browserDebug.js", () => browserDebug);
 
@@ -137,5 +138,31 @@ describe("POST /api/providers/capture", () => {
     const res = await post("claude-web");
     expect(res.status).toBe(401);
     expect(res.body.missing).toContain("sessionKey");
+  });
+
+  it("authorization capture only accepts same-origin requests", async () => {
+    const { page } = makeContext({ cookies: [] });
+    // waitForTimeout runs after the request handler is registered and before
+    // the credential is assembled — fire the events at that point.
+    page.waitForTimeout.mockImplementation(async () => {
+      const handler = page.on.mock.calls.find((c) => c[0] === "request")?.[1];
+      expect(handler).toBeTypeOf("function");
+      // Third-party request fires first with its own token — must be ignored.
+      handler({ url: () => "https://analytics.example.net/collect", headers: () => ({ authorization: "Bearer evil-token" }) });
+      // Then the same-origin API call — this one counts.
+      handler({ url: () => "https://app.1min.ai/api/v1/me", headers: () => ({ authorization: "Bearer good-token" }) });
+    });
+    const res = await post("1min");
+    expect(res.status).toBe(200);
+    expect(res.body.credential).toBe("good-token");
+  });
+
+  it("returns cdpUpSinceMs so the UI can warn about stale debug browsers", async () => {
+    makeContext({ cookies: [{ name: "__Secure-next-auth.session-token", value: "tok-abc" }] });
+    const since = Date.now() - 15 * 60_000;
+    browserDebug.getCdpUpSince.mockReturnValue(since);
+    const res = await post("chatgpt-web");
+    expect(res.status).toBe(200);
+    expect(res.body.cdpUpSinceMs).toBe(since);
   });
 });

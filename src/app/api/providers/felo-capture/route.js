@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { CDP_ENDPOINT, CDP_PORT, findInstalledBrowser, isCdpReachable } from "@/lib/browserDebug";
+import { CDP_ENDPOINT, CDP_PORT, findInstalledBrowser, getCdpUpSince, isCdpReachable } from "@/lib/browserDebug";
 
 const PAGE_LOAD_TIMEOUT_MS = 20000;
 const FELO_HOME = "https://felo.ai";
@@ -103,7 +103,7 @@ export async function POST() {
 
     const credential = `cookie=felo-user-token=${sessionToken}${visitorId ? `; visitor_id=${visitorId}` : ""}`;
 
-    return NextResponse.json({ credential, profile, loggedIn: Boolean(profile) });
+    return NextResponse.json({ credential, profile, loggedIn: Boolean(profile), cdpUpSinceMs: getCdpUpSince() });
   } catch (err) {
     if (err?.name === "TimeoutError" || err?.name === "AbortError") {
       return NextResponse.json({ error: "Capture timed out — is the browser window responsive?" }, { status: 504 });

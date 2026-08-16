@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { CDP_ENDPOINT, CDP_PORT, findInstalledBrowser, isCdpReachable } from "@/lib/browserDebug";
+import { CDP_ENDPOINT, CDP_PORT, findInstalledBrowser, getCdpUpSince, isCdpReachable } from "@/lib/browserDebug";
 import { getCookieCaptureConfig } from "@/shared/constants/cookieCapture";
 
 const PAGE_LOAD_TIMEOUT_MS = 20000;
@@ -58,9 +58,14 @@ export async function POST(request) {
     page = await context.newPage();
 
     // 3. Capture an Authorization header if the provider needs a Bearer JWT.
+    // Same-origin only: third-party requests the page fires (analytics,
+    // iframes) must not donate their tokens to the credential.
     if (config.authorization) {
       page.on("request", (r) => {
         if (authHeader) return;
+        let url = "";
+        try { url = r.url(); } catch { return; }
+        if (!url.startsWith(origin)) return;
         const h = r.headers();
         const auth = h["authorization"] || h["Authorization"];
         if (auth && !authHeader) authHeader = auth;
@@ -180,7 +185,7 @@ export async function POST(request) {
       );
     }
 
-    return NextResponse.json({ credential, captured, missing, provider });
+    return NextResponse.json({ credential, captured, missing, provider, cdpUpSinceMs: getCdpUpSince() });
   } catch (err) {
     if (err?.name === "TimeoutError" || err?.name === "AbortError") {
       return NextResponse.json({ error: "Capture timed out — is the browser window responsive?" }, { status: 504 });

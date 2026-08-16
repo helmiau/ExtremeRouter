@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import Button from "@/shared/components/Button";
+import { buildCdpWarning } from "@/shared/utils/cdpWarning";
 
 // Auto-capture a provider's logged-in session from the user's running
 // Chromium browser (Brave/Chrome/Edge, started with --remote-debugging-port).
@@ -10,15 +11,18 @@ import Button from "@/shared/components/Button";
 // ready-to-paste credential string to onCaptured so the modal can fill its
 // API key field. If no browser is reachable, offers a "Launch browser" action
 // that detects the OS, picks an installed browser and starts it with the
-// debug port.
+// debug port. After a successful capture it also warns that the debug
+// browser exposes its cookies to any local process until closed.
 export default function CookieCaptureButton({ provider, label = "Capture", onCaptured }) {
   const [capturing, setCapturing] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [status, setStatus] = useState(null); // { ok, message, canLaunch }
+  const [cdpWarn, setCdpWarn] = useState(null);
 
   const handleCapture = async () => {
     setCapturing(true);
     setStatus(null);
+    setCdpWarn(null);
     try {
       const res = await fetch("/api/providers/capture", {
         method: "POST",
@@ -31,6 +35,7 @@ export default function CookieCaptureButton({ provider, label = "Capture", onCap
           ok: true,
           message: data.captured?.length ? `Captured — ${data.captured.join(", ")}` : "Captured — session found",
         });
+        setCdpWarn(buildCdpWarning(data.cdpUpSinceMs));
         onCaptured?.(data.credential, data);
       } else {
         setStatus({
@@ -88,6 +93,12 @@ export default function CookieCaptureButton({ provider, label = "Capture", onCap
       </div>
       {status && (
         <div className={status.ok ? "text-xs text-green-400" : "text-xs text-yellow-400 break-words"}>{status.message}</div>
+      )}
+      {cdpWarn && (
+        <div className="flex items-start gap-1.5 text-xs text-yellow-400 break-words">
+          <span className="material-symbols-outlined text-[14px] mt-px">warning</span>
+          <span>{cdpWarn.text}</span>
+        </div>
       )}
     </div>
   );
