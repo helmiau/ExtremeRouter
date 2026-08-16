@@ -89,21 +89,25 @@ export function intentDescription(intent) {
   return `${signal}${conf != null ? ` (${conf}% confidence)` : ""} → ${intent.intent}`;
 }
 
-export function ModelChip({ model, index, blocked = false, muted = false }) {
+export function ModelChip({ model, index, blocked = false, muted = false, risk = false }) {
   return (
     <div
+      title={risk ? `${model} fails frequently in production (30d)` : undefined}
       className={cn(
         "flex items-center gap-2 rounded-md border px-2.5 py-1.5 font-mono text-xs",
         blocked
           ? "border-danger/30 bg-danger/5 text-text-muted line-through decoration-danger/60"
           : muted
             ? "border-border-subtle bg-surface-2 text-text-subtle"
-            : "border-border-subtle bg-surface-2 text-text-muted",
+            : risk
+              ? "border-danger/30 bg-danger/5 text-danger"
+              : "border-border-subtle bg-surface-2 text-text-muted",
       )}
     >
       {index != null && <span className="text-[10px] text-text-subtle">#{index}</span>}
       <span className="truncate max-w-[200px]">{model}</span>
       {blocked && <span className="material-symbols-outlined text-[13px] text-danger">block</span>}
+      {risk && <span className="material-symbols-outlined text-[13px] text-danger">warning</span>}
     </div>
   );
 }

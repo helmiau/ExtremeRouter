@@ -163,6 +163,7 @@ export const TABLES = {
       id: "TEXT PRIMARY KEY",
       comboName: "TEXT",
       promptPreview: "TEXT",
+      lastUserMessage: "TEXT",
       routing: "TEXT",
       reason: "TEXT",
       servedModel: "TEXT",

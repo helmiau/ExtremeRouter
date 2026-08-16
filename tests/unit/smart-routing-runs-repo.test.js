@@ -23,6 +23,7 @@ const SAMPLE_RUN = {
   runId: "r1",
   comboName: "ai-researcher",
   promptPreview: "research the latest AI trends",
+  lastUserMessage: "research the latest AI trends and cite sources from reputable publications",
   routing: {
     reason: "research_cookie_primary",
     order: ["felo-web/deepseek-v4-flash", "kr/claude-opus-4-7"],
@@ -49,9 +50,11 @@ describe("smartRoutingRunsRepo", () => {
     await persistRuns([SAMPLE_RUN]);
     const insertCall = runMock.mock.calls.find((c) => c[0].startsWith("INSERT INTO smartRoutingRuns"));
     expect(insertCall).toBeTruthy();
-    const [id, comboName, promptPreview, routingJson, reasonCol, servedModel, status, error, startedAt, completedAt, totalDurationMs] = insertCall[1];
+    const [id, comboName, promptPreview, lastUserMessage, routingJson, reasonCol, servedModel, status, error, startedAt, completedAt, totalDurationMs] = insertCall[1];
     expect(id).toBe("r1");
     expect(comboName).toBe("ai-researcher");
+    expect(promptPreview).toBe("research the latest AI trends");
+    expect(lastUserMessage).toContain("cite sources");
     expect(status).toBe("done");
     expect(reasonCol).toBe("research_cookie_primary");
     expect(startedAt).toBe("1000");
@@ -90,6 +93,7 @@ describe("smartRoutingRunsRepo", () => {
         id: "r1",
         comboName: "ai-researcher",
         promptPreview: "research the latest AI trends",
+        lastUserMessage: "research the latest AI trends and cite sources from reputable publications",
         routing: JSON.stringify(SAMPLE_RUN.routing),
         servedModel: "felo-web/deepseek-v4-flash",
         status: "done",
@@ -103,9 +107,32 @@ describe("smartRoutingRunsRepo", () => {
     expect(runs).toHaveLength(1);
     expect(runs[0].runId).toBe("r1");
     expect(runs[0].routing.reason).toBe("research_cookie_primary");
+    expect(runs[0].lastUserMessage).toContain("cite sources");
     expect(runs[0].startedAt).toBe(1000);
     expect(runs[0].completedAt).toBe(5000);
     expect(runs[0].totalDurationMs).toBe(4000);
+  });
+
+  it("fetches a single run by id (A/B Lab run picker)", async () => {
+    getMock.mockReturnValueOnce({
+      id: "r1",
+      comboName: "ai-researcher",
+      promptPreview: "p",
+      lastUserMessage: "full prompt text",
+      routing: JSON.stringify({ reason: "tool_calling", order: ["kr/claude-opus-4-7"], excludedCookies: ["felo-web/deepseek-v4-flash"], cookiePool: [], normalPool: [] }),
+      servedModel: "kr/claude-opus-4-7",
+      status: "done",
+      startedAt: "1000",
+    });
+    const { getSmartRunById } = await import("../../src/lib/db/repos/smartRoutingRunsRepo.js");
+    const run = await getSmartRunById("r1");
+    expect(run.runId).toBe("r1");
+    expect(run.lastUserMessage).toBe("full prompt text");
+    expect(run.routing.reason).toBe("tool_calling");
+    // Unknown id → null, never throws.
+    getMock.mockReturnValueOnce(undefined);
+    expect(await getSmartRunById("missing")).toBeNull();
+    expect(await getSmartRunById(null)).toBeNull();
   });
 
   it("skips rows with malformed routing JSON instead of crashing the load", async () => {

@@ -82,3 +82,51 @@ export function aggregateModelLatency(history) {
   }
   return out;
 }
+
+// Statuses recorded in usageHistory that count as a provider SUCCESS. Everything
+// else (429/404/503/0/"error"/"failed"/…) is a failure for the reliability axis.
+// 499 (client abort) is excluded entirely — it is a cancellation, not a provider
+// outcome (same convention as the health samples).
+export const USAGE_SUCCESS_STATUS = new Set(["ok", "success", "200", ""]);
+
+/**
+ * Per-model outcome counts from usage-history rows: ok vs total. A row is a
+ * failure unless its status is a known success value; 499 (client abort) rows
+ * are dropped from both counts. Keyed by fullModel "provider/model" as recorded
+ * (providers are already canonical in usage rows).
+ *
+ * @param {Array<object>} history  getUsageHistory output
+ * @returns {Object<string, {ok: number, total: number, successRate: number|null}>}
+ */
+export function computeModelOutcomes(history) {
+  const counts = {};
+  for (const row of history || []) {
+    if (!row?.provider || !row?.model) continue;
+    const status = String(row.status || "ok").toLowerCase();
+    if (status === "499") continue; // client abort — not a provider outcome
+    const key = `${row.provider}/${row.model}`;
+    if (!counts[key]) counts[key] = { ok: 0, total: 0 };
+    counts[key].total++;
+    if (USAGE_SUCCESS_STATUS.has(status)) counts[key].ok++;
+  }
+  const out = {};
+  for (const [key, c] of Object.entries(counts)) {
+    out[key] = { ...c, successRate: c.total > 0 ? c.ok / c.total : null };
+  }
+  return out;
+}
+
+/**
+ * Per-model success rate 0..1 keyed by fullModel. Requires ≥ 2 samples before
+ * emitting a rate (a single sample would report 100%/0% on noise).
+ *
+ * @param {Array<object>} history  getUsageHistory output
+ * @returns {Object<string, number>} fullModel → success rate
+ */
+export function computeModelReliability(history) {
+  const out = {};
+  for (const [key, c] of Object.entries(computeModelOutcomes(history))) {
+    if (c.total >= 2) out[key] = c.successRate;
+  }
+  return out;
+}

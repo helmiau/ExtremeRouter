@@ -132,13 +132,16 @@ export function scheduleSmartRoutingEvent(event, payload, delayMs = 120) {
  * The routing decision is filled in later by updateRoutingDecision once the
  * intent resolver + pool builder return.
  */
-export function createSmartRoutingRun({ comboName, promptPreview }) {
+export function createSmartRoutingRun({ comboName, promptPreview, lastUserMessage }) {
   const runId = randomUUID();
   const now = Date.now();
   const run = {
     runId,
     comboName,
     promptPreview: (promptPreview || "").slice(0, 200),
+    // Full last user message — persisted so the A/B Lab can re-run the routing
+    // decision on the exact original prompt (not the 200-char preview).
+    lastUserMessage: (lastUserMessage || "").slice(0, 4000),
     routing: null,
     servedModel: null,
     status: "running",

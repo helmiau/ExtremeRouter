@@ -20,7 +20,7 @@ const PAGE_SIZES = [10, 20, 50, 100];
 
 const EMPTY_FILTERS = { reason: "", comboName: "", status: "", startDate: "", endDate: "" };
 
-export default function SmartRoutingHistory() {
+export default function SmartRoutingHistory({ onCompare }) {
   const [runs, setRuns] = useState([]);
   const [combos, setCombos] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, pageSize: 20, totalItems: 0, totalPages: 0 });
@@ -170,12 +170,13 @@ export default function SmartRoutingHistory() {
                   <th className="p-4 text-left text-sm font-semibold text-text-main">Served</th>
                   <th className="p-4 text-left text-sm font-semibold text-text-main">Status</th>
                   <th className="p-4 text-right text-sm font-semibold text-text-main">Duration</th>
+                  <th className="p-4 text-right text-sm font-semibold text-text-main">Compare</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="7" className="p-8 text-center text-text-muted">
+                    <td colSpan="8" className="p-8 text-center text-text-muted">
                       <div className="flex items-center justify-center gap-2">
                         <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
                         Loading…
@@ -184,7 +185,7 @@ export default function SmartRoutingHistory() {
                   </tr>
                 ) : runs.length === 0 ? (
                   <tr>
-                    <td colSpan="7" className="p-8 text-center text-text-muted">
+                    <td colSpan="8" className="p-8 text-center text-text-muted">
                       No smart-routing history found
                       {hasFilters && " for the selected filters"}
                     </td>
@@ -200,6 +201,7 @@ export default function SmartRoutingHistory() {
                         meta={meta}
                         expanded={expanded}
                         onToggle={() => setExpandedRunId(expanded ? null : run.runId)}
+                        onCompare={onCompare}
                       />
                     );
                   })
@@ -225,7 +227,7 @@ export default function SmartRoutingHistory() {
   );
 }
 
-function HistoryRow({ run, meta, expanded, onToggle }) {
+function HistoryRow({ run, meta, expanded, onToggle, onCompare }) {
   const poolPreview = (run.routing?.order || []).slice(0, 3).join(", ");
   const poolExtra = (run.routing?.order?.length || 0) - 3;
 
@@ -258,10 +260,25 @@ function HistoryRow({ run, meta, expanded, onToggle }) {
         <td className="whitespace-nowrap p-4 text-right font-mono text-sm text-text-muted">
           {formatDuration(run.totalDurationMs)}
         </td>
+        <td className="whitespace-nowrap p-4 text-right">
+          {typeof onCompare === "function" && (
+            <button
+              type="button"
+              title="A/B compare strategies on this request"
+              onClick={(e) => {
+                e.stopPropagation();
+                onCompare(run);
+              }}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-surface-2 text-text-muted transition-colors hover:border-primary/40 hover:text-primary"
+            >
+              <span className="material-symbols-outlined text-[16px]">science</span>
+            </button>
+          )}
+        </td>
       </tr>
       {expanded && (
         <tr className="border-b border-border-subtle bg-surface-2/40 last:border-b-0">
-          <td colSpan="7" className="p-0">
+          <td colSpan="8" className="p-0">
             <div className="flex flex-col">
               {run.promptPreview && (
                 <div className="border-b border-border-subtle px-4 py-2">

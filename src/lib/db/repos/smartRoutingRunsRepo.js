@@ -23,11 +23,12 @@ export async function persistRuns(runs) {
       if (!run || !run.runId) continue;
       const startedAt = run.startedAt != null ? String(run.startedAt) : new Date().toISOString();
       db.run(
-        `INSERT INTO smartRoutingRuns(id, comboName, promptPreview, routing, reason, servedModel, status, error, startedAt, completedAt, totalDurationMs)
-         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO smartRoutingRuns(id, comboName, promptPreview, lastUserMessage, routing, reason, servedModel, status, error, startedAt, completedAt, totalDurationMs)
+         VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            comboName = excluded.comboName,
            promptPreview = excluded.promptPreview,
+           lastUserMessage = excluded.lastUserMessage,
            routing = excluded.routing,
            reason = excluded.reason,
            servedModel = excluded.servedModel,
@@ -40,6 +41,7 @@ export async function persistRuns(runs) {
           run.runId,
           run.comboName || null,
           run.promptPreview || null,
+          run.lastUserMessage || null,
           run.routing ? stringifyJson(run.routing) : null,
           run.routing?.reason || null,
           run.servedModel || null,
@@ -71,6 +73,7 @@ function rowToRun(row) {
     runId: row.id,
     comboName: row.comboName,
     promptPreview: row.promptPreview,
+    lastUserMessage: row.lastUserMessage || null,
     routing: row.routing ? parseJson(row.routing, null) : null,
     servedModel: row.servedModel,
     status: row.status,
@@ -144,6 +147,16 @@ export async function queryHistory({
       hasPrev: pageN > 1,
     },
   };
+}
+
+/**
+ * Fetch a single run by id (A/B Lab picker + run-detail views).
+ * @returns {Promise<object|null>} run shape or null when not found
+ */
+export async function getSmartRunById(id) {
+  if (!id) return null;
+  const db = await getAdapter();
+  return rowToRun(db.get(`SELECT * FROM smartRoutingRuns WHERE id = ?`, [id]));
 }
 
 /**

@@ -40,10 +40,17 @@ describe("smart-routing persistence e2e", () => {
     resetLiveState();
 
     // 1. Run a real smart-routing request (research intent → cookie pool first).
+    // The prompt is longer than the 200-char preview cap so we can prove the
+    // FULL message is persisted for the A/B Lab (preview alone would truncate).
+    const longPrompt = "cari sumber terbaru tentang AI terbaik 2026 dan bandingkan 5 model teratas menurut data benchmark resmi, "
+      + "dengan sumber dari jurnal, berita terpercaya, dan situs resmi masing-masing vendor. "
+      + "Sertakan juga tren penggunaan API gateway di industri, analisis biaya per juta token, "
+      + "dan rekomendasi konkret untuk tim engineering yang sedang mengevaluasi solusi routing LLM.";
+    expect(longPrompt.length).toBeGreaterThan(200);
     const res = await combo.handleSmartRoutingChat({
       body: {
         model: "ai-researcher",
-        messages: [{ role: "user", content: "cari sumber terbaru tentang AI terbaik 2026" }],
+        messages: [{ role: "user", content: longPrompt }],
         stream: false,
       },
       models: ["kr/claude-opus-4-7", "felo-web/deepseek-v4-flash", "glm/glm-5.1"],
@@ -92,5 +99,29 @@ describe("smart-routing persistence e2e", () => {
 
     const combos = await repo.getDistinctCombos();
     expect(combos).toEqual(["ai-researcher"]);
+
+    // 6. A/B Lab path: the lab route fetches the run by id, then compares
+    // strategies on the exact stored prompt (full message, not the preview).
+    const storedRun = await repo.getSmartRunById(run.runId);
+    // Full prompt persisted: the 200-char preview is truncated, the full text is not.
+    expect(storedRun.lastUserMessage).toBe(longPrompt);
+    expect(storedRun.promptPreview.length).toBeLessThan(longPrompt.length);
+    expect(storedRun.lastUserMessage.length).toBeGreaterThan(storedRun.promptPreview.length);
+
+    const lab = await import("open-sse/services/smartRoutingLab.js");
+    const comparison = await lab.buildLabComparison({
+      comboName: storedRun.comboName,
+      members: ["kr/claude-opus-4-7", "felo-web/deepseek-v4-flash", "glm/glm-5.1"],
+      strategyConfig: { smartRouting: { cookiePoolEnabled: true } },
+      body: { messages: [{ role: "user", content: storedRun.lastUserMessage }] },
+    });
+    expect(comparison.strategies.map((s) => s.strategy)).toEqual(["fallback", "smart-routing", "swarm"]);
+    const sr = comparison.strategies.find((s) => s.strategy === "smart-routing");
+    const fb = comparison.strategies.find((s) => s.strategy === "fallback");
+    expect(sr.reason).toBe("research_cookie_primary");
+    expect(sr.primaryModel).toBe("felo-web/deepseek-v4-flash"); // cookie first for research
+    expect(fb.primaryModel).toBe("kr/claude-opus-4-7"); // fallback answers with member 1
+    // The whole point of the lab: the two strategies pick DIFFERENT models.
+    expect(sr.primaryModel).not.toBe(fb.primaryModel);
   });
 });

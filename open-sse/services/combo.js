@@ -660,7 +660,10 @@ export async function handleSmartRoutingChat({ body, models, handleSingleModel, 
 
   // ── Telemetry: register the run so the routing decision is observable ────
   // per request (reason + selected pool + excluded cookies) on the dashboard.
-  const runId = telemetry ? createSmartRoutingRun({ comboName, promptPreview: lastUserMessageText(body) }).runId : null;
+  // The full last user message is persisted alongside the preview so the
+  // A/B Lab can re-run the routing decision on the exact original prompt.
+  const promptText = lastUserMessageText(body);
+  const runId = telemetry ? createSmartRoutingRun({ comboName, promptPreview: promptText, lastUserMessage: promptText }).runId : null;
   const telemetryRun = (fn, ...args) => { if (runId) fn(runId, ...args); };
 
   // The intent resolver reports HOW it decided (heuristic signal/confidence or

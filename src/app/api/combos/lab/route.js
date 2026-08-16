@@ -2,18 +2,12 @@ import { NextResponse } from "next/server";
 import { getModelInfo } from "@/sse/services/model";
 import { compareStrategies } from "open-sse/services/comboLab.js";
 import { getUsageHistory } from "@/lib/usageDb";
-import { aggregateModelLatency } from "@/lib/usageStats";
+import { aggregateModelLatency, computeModelReliability } from "@/lib/usageStats";
 import { getBreakerStates } from "open-sse/services/circuitBreaker.js";
 import { buildHealthOverview } from "open-sse/services/healthOverview.js";
 import { getProviderConnections } from "@/lib/localDb";
 
 export const dynamic = "force-dynamic";
-
-// Statuses recorded in usageHistory that count as a provider SUCCESS. Everything
-// else (429/404/503/0/"error"/"failed"/…) is a failure for the reliability axis.
-// 499 (client abort) is excluded entirely — it is a cancellation, not a provider
-// outcome (same convention as the health samples).
-const SUCCESS_STATUS = new Set(["ok", "success", "200", ""]);
 
 /**
  * POST /api/combos/lab
@@ -103,36 +97,9 @@ export async function POST(request) {
       dataCoverage: result.dataCoverage,
       atRiskProviders: result.atRiskProviders,
       unresolved: refs.filter((r) => !resolved.some((m) => m.ref === r)),
-    });
-  } catch (error) {
+    });    } catch (error) {
     console.error("[API] Combo Lab failed:", error);
     return NextResponse.json({ error: "Combo Lab analysis failed" }, { status: 500 });
   }
 }
 
-/**
- * Per-model success rate from usage history rows. A row is a failure unless its
- * status is a known success value. 499 (client abort) rows are dropped from
- * both counts. Requires ≥ 2 samples before emitting a rate (a single sample
- * would report 100%/0% on noise).
- *
- * @param {Array<object>} history  getUsageHistory output
- * @returns {Object<string, number>} fullModel → success rate 0..1
- */
-export function computeModelReliability(history) {
-  const counts = {};
-  for (const row of history || []) {
-    if (!row?.provider || !row?.model) continue;
-    const status = String(row.status || "ok").toLowerCase();
-    if (status === "499") continue; // client abort — not a provider outcome
-    const key = `${row.provider}/${row.model}`;
-    if (!counts[key]) counts[key] = { ok: 0, total: 0 };
-    counts[key].total++;
-    if (SUCCESS_STATUS.has(status)) counts[key].ok++;
-  }
-  const out = {};
-  for (const [key, c] of Object.entries(counts)) {
-    if (c.total >= 2) out[key] = c.ok / c.total;
-  }
-  return out;
-}

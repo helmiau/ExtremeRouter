@@ -1,10 +1,16 @@
+"use client";
+
+import { useState } from "react";
 import PageHeader from "@/shared/components/PageHeader";
 import SmartRoutingTelemetryMonitor from "@/shared/components/SmartRoutingTelemetryMonitor";
+import SmartRoutingLab from "@/shared/components/SmartRoutingLab";
 import SmartRoutingHistory from "@/shared/components/SmartRoutingHistory";
 
 export const dynamic = "force-dynamic";
 
 export default function SmartRoutingPage() {
+  const [compareRun, setCompareRun] = useState(null);
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -15,12 +21,19 @@ export default function SmartRoutingPage() {
       <SmartRoutingTelemetryMonitor />
 
       <div className="mt-2 border-t border-border-subtle pt-6">
+        <SmartRoutingLab
+          compareRun={compareRun}
+          onRunConsumed={() => setCompareRun(null)}
+        />
+      </div>
+
+      <div className="mt-2 border-t border-border-subtle pt-6">
         <div className="mb-4 flex items-center gap-2">
           <span className="material-symbols-outlined text-[18px] text-text-muted">database</span>
           <h2 className="text-base font-semibold text-text-main">History</h2>
-          <span className="text-xs text-text-muted">Persisted across restarts — filter & paginate</span>
+          <span className="text-xs text-text-muted">Persisted across restarts — filter, paginate & A/B compare</span>
         </div>
-        <SmartRoutingHistory />
+        <SmartRoutingHistory onCompare={setCompareRun} />
       </div>
     </div>
   );
