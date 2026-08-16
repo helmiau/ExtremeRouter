@@ -1,1157 +1,189 @@
 <div align="center">
-  <img width="1920" height="980" alt="Image" src="./images/{125AA317-2FD3-42E5-8473-2216D843C015}.png"/>
-  <img width="1920" height="980" alt="Image" src="https://github.com/user-attachments/assets/35d8d13e-bcfa-437e-9b39-f9ad6bd6ce9d" />
-  <img width="1919" height="980" alt="Image" src="https://github.com/user-attachments/assets/b0b55acd-2f12-4856-9d35-f12bccf31490" />
-  <img width="1915" height="980" alt="Image" src="https://github.com/user-attachments/assets/7cf83585-8719-43b4-8eb7-0aed57a50f0a" />
-  <img width="1920" height="979" alt="Image" src="https://github.com/user-attachments/assets/ac925671-670c-4566-8c1a-7265d1e343b9" />
-  
-  # ExtremeRouter — AI Gateway Control Plane
 
-  **A premium, developer-first local gateway that routes traffic from your AI coding tools to 40+ providers with format translation, smart fallback, quota tracking, and 20–40% token savings.**
+# ExtremeRouter — AI Gateway Control Plane
 
-  **Connect Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw and any OpenAI/Anthropic-compatible client to 100+ models through one endpoint.**
+**A self-hosted AI gateway that routes traffic from your AI coding tools to 304+ providers with format translation, smart fallback, quota tracking, and 20–40% token savings.**
 
-  [![npm](https://img.shields.io/npm/v/@rsalmn/extremerouter.svg)](https://www.npmjs.com/package/@rsalmn/extremerouter)
-  [![Downloads](https://img.shields.io/npm/dm/@rsalmn/extremerouter.svg)](https://www.npmjs.com/package/@rsalmn/extremerouter)
-  [![Docker Pulls](https://img.shields.io/docker/pulls/rsalmn/extremerouter.svg?logo=docker&label=Docker%20pulls)](https://hub.docker.com/r/rsalmn/extremerouter)
-  [![GHCR](https://img.shields.io/badge/GHCR-rsalmn%2Fextremerouter-blue?logo=github)](https://github.com/rsalmn/extremerouter/pkgs/container/extremerouter)
-  [![License](https://img.shields.io/npm/l/@rsalmn/extremerouter.svg)](https://github.com/rsalmn/extremerouter/blob/main/LICENSE)
+Connect Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw, and any OpenAI/Anthropic-compatible client to one unified endpoint.
 
-  [🚀 Quick Start](#-quick-start) • [💡 Features](#-key-features) • [📖 Setup Guide](#-setup-guide) • [🌐 Repository](https://github.com/rsalmn/extremerouter)
+**Language:** [English](README.md) · [Bahasa Indonesia](README.id.md) · [简体中文](README.zh-CN.md)
+
+[![npm](https://img.shields.io/npm/v/@rsalmn/extremerouter.svg)](https://www.npmjs.com/package/@rsalmn/extremerouter)
+[![Downloads](https://img.shields.io/npm/dm/@rsalmn/extremerouter.svg)](https://www.npmjs.com/package/@rsalmn/extremerouter)
+[![Docker Pulls](https://img.shields.io/docker/pulls/rsalmn/extremerouter.svg?logo=docker&label=Docker%20pulls)](https://hub.docker.com/r/rsalmn/extremerouter)
+[![GHCR](https://img.shields.io/badge/GHCR-rsalmn%2Fextremerouter-blue?logo=github)](https://github.com/rsalmn/extremerouter/pkgs/container/extremerouter)
+[![License](https://img.shields.io/npm/l/@rsalmn/extremerouter.svg)](https://github.com/rsalmn/extremerouter/blob/main/LICENSE)
+
 </div>
 
 ---
 
-## 🤔 Why ExtremeRouter?
+## Table of Contents
 
-**Stop wasting money, tokens and hitting limits:**
-
-- ❌ Subscription quota expires unused every month
-- ❌ Rate limits stop you mid-coding
-- ❌ Tool outputs (git diff, grep, ls...) burn tokens fast
-- ❌ Expensive APIs ($20-50/month per provider)
-- ❌ Manual switching between providers
-
-**ExtremeRouter solves this:**
-
-- ✅ **RTK Token Saver** - Auto-compress tool_result content, save 20-40% tokens per request
-- ✅ **Maximize subscriptions** - Track quota, use every bit before reset
-- ✅ **Auto fallback** - Subscription → Cheap → Free, zero downtime
-- ✅ **Multi-account** - Round-robin between accounts per provider
-- ✅ **Universal** - Works with Claude Code, Codex, Cursor, Cline, any CLI tool
+- [Highlight Features](#highlight-features)
+- [Comparison: 9Router vs OmniRoute vs ExtremeRouter](#comparison)
+- [How It Works](#how-it-works)
+- [How It Looks](#how-it-looks)
+- [Quick Start](#quick-start)
+- [Supported CLI Tools](#supported-cli-tools)
+- [Supported Providers](#supported-providers)
+- [Key Features in Detail](#key-features-in-detail)
+- [Frequently Asked Questions](#frequently-asked-questions)
+- [API Reference](#api-reference)
+- [Contributors](#contributors)
+- [Support](#support)
+- [Star Chart & Forks](#star-chart--forks)
+- [Acknowledgments & References](#acknowledgments--references)
+- [License](#license)
 
 ---
 
-## 📊 Comparison: 9Router vs OmniRoute vs ExtremeRouter
+<a name="highlight-features"></a>
 
-All three are AI gateway projects in the same family. ExtremeRouter is a fully independent evolution — it keeps the proven 9Router core, borrows the best ideas from OmniRoute, and adds its own architecture, UI, and reliability layer.
+## Highlight Features
+
+| Feature | What It Does | Why It Matters |
+|---------|--------------|----------------|
+| **304+ providers, one endpoint** | API-key, OAuth, free-tier, and 39 web-cookie providers behind a single `/v1` surface | No more juggling base URLs, keys, and dashboards |
+| **Format translation** | OpenAI ↔ Claude ↔ Gemini ↔ Responses ↔ Antigravity ↔ Kiro ↔ Cursor | Any CLI tool talks to any provider |
+| **6 combo strategies** | fallback, round-robin, fusion, swarm, cascade, smart-routing | Pick the routing brain that fits the task |
+| **Hierarchical Swarm engine** | Gatekeeper → Manager → Workers → Audit → Synthesis with live SSE telemetry | Parallel multi-agent execution for complex tasks |
+| **Smart Routing** | Task-aware routing: tool-calling tasks go to tool-capable models, research goes to cookie/free providers | Automatic model selection per task type |
+| **Cascade strategy** | Cheap → capable escalation with self-reported confidence gating | Pay for power only when simple models fail |
+| **RTK Token Saver** | Compresses `tool_result` content (git diff, grep, ls, tree...) before sending | Saves 20–40% input tokens on every request |
+| **Ponytail & Caveman** | YAGNI-first and terse-response prompt injectors | Up to 65% fewer output tokens |
+| **Smart 3-tier fallback** | Subscription → cheap → free, automatic | Never stop coding, zero downtime |
+| **Real-time quota tracking** | Live token counts and reset countdowns per provider | Maximize every subscription |
+| **Multi-account round-robin** | Multiple accounts per provider, auto-failover | Load balancing + redundancy |
+| **Auto token refresh** | OAuth tokens refresh before expiry, 401/403 retry path | No manual re-login |
+| **Per-key model ACL** | Each API key can carry an `allowedModels` allow-list (403 outside it) | Hand out scoped keys safely |
+| **Health monitor + circuit breaker** | Per-provider sliding-window health, CLOSED/OPEN/HALF_OPEN state machine | Auto-skip dead providers, auto-recover |
+| **Combo budget & admission control** | Per-combo cost ceilings, per-key concurrency caps | Stay inside spending limits |
+| **A/B Lab** | Replay historical requests and compare strategies (fallback vs swarm vs smart-routing) | Pick the cheapest strategy that still answers |
+| **Usage analytics** | Tokens, cost estimates, trends, request logs | Understand and optimize spend |
+| **Deploy anywhere** | Localhost, VPS, Docker, Cloudflare Workers, tunnels (Cloudflare + Tailscale) | Same setup everywhere |
+
+---
+
+<a name="comparison"></a>
+
+## Comparison: 9Router vs OmniRoute vs ExtremeRouter
+
+All three projects share the same family tree. ExtremeRouter is a fully independent evolution — it keeps the proven 9Router core, borrows the best ideas from OmniRoute, and adds its own architecture, UI, and reliability layer.
 
 | Feature | 9Router | OmniRoute | **ExtremeRouter** |
 |---------|---------|-----------|-------------------|
-| **Combo strategies** | 4 (fallback / round-robin / fusion / capacity) | 17 | **5** (fallback / round-robin / fusion / swarm / **cascade**) |
-| **Hierarchical Swarm** | ❌ | ❌ | ✅ Gatekeeper → Manager → Workers → Audit → Synthesis + live telemetry |
-| **Cascade (progressive escalation)** | ❌ | ❌ | ✅ Cheap → capable with self-reported confidence gating |
-| **Thinking per-combo** | ❌ | ❌ | ✅ Role-level overrides (manager=max, worker=medium) |
-| **AutoScale swarm workers** | ❌ | ❌ | ✅ Dynamic worker count from subtask complexity |
-| **Combo templates** | ❌ | ❌ | ✅ Model-first resolution across connected providers |
-| **Combo budget + admission control** | ❌ | ❌ | ✅ call/cost/output ceilings + per-key concurrency caps |
-| **Proxy-aware circuit breaker** | ❌ | ✅ DB-backed | ✅ per-`provider:proxyKey` (one dead proxy never blocks others) |
-| **TPS cache (settings + connections)** | ❌ (sync DB per request) | ❌ | ✅ 5s/2s TTL + promise memoization + selective invalidation |
-| **Per-provider selection mutex** | ❌ (global mutex) | ❌ | ✅ parallel selection across providers |
-| **Health monitoring** | ❌ | ❌ | ✅ cached aggregates + `health:degraded` SSE + auto-alerts |
-| **Structured Output + JSON fence** | ❌ | ✅ | ✅ `response_format` translation + ```` ```json ```` unwrapping |
-| **Provider capabilities layer** | ❌ | ❌ | ✅ control-role gating for web-cookie providers |
-| **Kimchi quota auto-reactivation** | ❌ | ❌ | ✅ daily reset sweep — no manual re-login |
-| **MITM intercept (5 CLI tools)** | ✅ | ✅ | ✅ SNI + HTTP/2 ALPN + binary EventStream + model alias mapping |
-| **Tunnel (Cloudflare + Tailscale)** | ✅ | ✅ | ✅ |
-| **Format translation** | ✅ OpenAI↔Claude↔Gemini | ✅ | ✅ OpenAI↔Claude↔Gemini↔Responses↔Antigravity |
-| **Token savers (RTK/Headroom/Caveman/Ponytail)** | ✅ | ✅ | ✅ |
-| **Provider count** | 40+ | 231+ | **154** (incl. 49 web-cookie free providers) |
+| **Combo strategies** | 4 | 17 | **6** (fallback / round-robin / fusion / swarm / cascade / **smart-routing**) |
+| **Smart Routing (task-aware)** | – | – | **Yes** — tool-calling vs research routing per task |
+| **Hierarchical Swarm** | – | – | **Yes** — Gatekeeper → Manager → Workers → Audit → Synthesis + live telemetry |
+| **Cascade (progressive escalation)** | – | – | **Yes** — cheap → capable with confidence gating |
+| **Per-combo thinking overrides** | – | – | **Yes** — role-level (manager=max, worker=medium) |
+| **AutoScale swarm workers** | – | – | **Yes** — dynamic worker count from subtask complexity |
+| **Combo templates (model-first)** | – | – | **Yes** — resolve across connected providers |
+| **Combo budget + admission control** | – | – | **Yes** — call/cost/output ceilings + per-key caps |
+| **A/B Lab (strategy simulation)** | – | – | **Yes** — predicted vs reality comparison |
+| **Proxy-aware circuit breaker** | – | DB-backed | **Yes** — per `provider:proxyKey` |
+| **Health monitoring** | – | – | **Yes** — cached aggregates + `health:degraded` SSE |
+| **Structured Output + JSON fence** | – | Yes | **Yes** — `response_format` translation + ```` ```json ```` unwrap |
+| **Provider capabilities layer** | – | – | **Yes** — control-role gating for web-cookie providers |
+| **Kimchi quota auto-reactivation** | – | – | **Yes** — daily reset sweep |
+| **MITM intercept (CLI tools)** | Yes | Yes | **Yes** — SNI + HTTP/2 ALPN + binary EventStream + model alias mapping |
+| **Tunnel (Cloudflare + Tailscale)** | Yes | Yes | **Yes** |
+| **Format translation** | OpenAI↔Claude↔Gemini | Yes | **Yes** — OpenAI↔Claude↔Gemini↔Responses↔Antigravity |
+| **Token savers (RTK/Headroom/Caveman/Ponytail)** | Yes | Yes | **Yes** |
+| **Provider count** | 40+ | 231+ | **304** (incl. 39 web-cookie free providers) |
 
 **What ExtremeRouter has that the others don't:**
+
+- Smart Routing — automatically picks the right model pool per task type (tool-calling vs research)
 - Hierarchical Swarm engine with live telemetry (gatekeeper verdicts, per-worker lifecycle)
-- Cascade strategy — escalate only when confidence is low, saving cost on simple requests
-- Per-combo thinking + auto-scale, making multi-agent strategies production-ready
-- Proxy-aware resilience + TPS optimizations (from the VansRouter learnings)
-- 49 web-cookie providers for zero-cost access (Qwen Web, Claude Web, Gemini Web, ...)
+- A/B Lab — replay real request history and simulate strategies before switching
+- Cascade strategy — escalate only when confidence is low
+- Proxy-aware resilience + TPS optimizations
+- 39 web-cookie providers for zero-cost access (Qwen Web, Claude Web, Gemini Web, Conol, Notion AI, HyperAgent, ...)
 - Model-first combo templates that resolve to any connected provider
 
 ---
 
-## 🔄 How It Works
+<a name="how-it-works"></a>
+
+## How It Works
 
 ```
 ┌─────────────┐
-│  Your CLI   │  (Claude Code, Codex, OpenClaw, Cursor, Cline...)
+│  Your CLI   │  (Claude Code, Codex, OpenClaw, Cursor, Cline, ...)
 │   Tool      │
 └──────┬──────┘
        │ http://localhost:20128/v1
        ↓
-┌─────────────────────────────────────────────┐
-│           ExtremeRouter (Smart Router)            │
-│  • RTK Token Saver (cut tool_result tokens) │
-│  • Format translation (OpenAI ↔ Claude)     │
-│  • Quota tracking                           │
-│  • Auto token refresh                       │
-└──────┬──────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│             ExtremeRouter                    │
+│  • RTK Token Saver (compress tool_result)    │
+│  • Format translation (OpenAI ↔ Claude)      │
+│  • Quota tracking + auto token refresh       │
+│  • Combo strategies + smart routing          │
+└──────┬───────────────────────────────────────┘
        │
        ├─→ [Tier 1: SUBSCRIPTION] Claude Code, Codex, GitHub Copilot
        │   ↓ quota exhausted
-       ├─→ [Tier 2: CHEAP] GLM ($0.6/1M), MiniMax ($0.2/1M)
+       ├─→ [Tier 2: CHEAP] GLM, MiniMax
        │   ↓ budget limit
        └─→ [Tier 3: FREE] Kiro, OpenCode Free, Vertex ($300 credits)
 
-Result: Never stop coding, minimal cost + 20-40% token savings via RTK
+Result: never stop coding, minimal cost, 20–40% token savings via RTK
 ```
+
+Every request goes through the same pipeline:
+
+1. **Parse** — the incoming model string is resolved to a single model or a combo.
+2. **Translate** — the request body is converted from the client format to the provider's native format.
+3. **Execute** — the provider executor calls the upstream API (SSE or JSON), refreshing OAuth tokens on 401/403.
+4. **Fallback** — on quota-exhaustion, rate limits, or errors, the next account or next combo member is tried.
+5. **Stream & translate back** — the upstream stream is normalized to the client's expected format.
+6. **Track** — usage (tokens, cost, latency) is persisted for the dashboard.
 
 ---
 
-## ⚡ Quick Start
+<a name="how-it-looks"></a>
 
-**1. Install globally:**
+## How It Looks
+
+A preview of the ExtremeRouter dashboard:
+
+<p align="center">
+  <img src="./images/extremerouter.png" width="720" alt="ExtremeRouter Dashboard"/>
+  <img src="./images/dashboard-home.png" width="720" alt="Dashboard Home"/>
+  <img src="./images/dashboard-usage.png" width="720" alt="Usage Analytics"/>
+  <img src="./images/providers-page.png" width="420" alt="Providers Page"/>
+  <img src="./images/fusion-combo-ui.png" width="720" alt="Fusion Combo UI"/>
+</p>
+
+---
+
+<a name="quick-start"></a>
+
+## Quick Start
+
+**Option 1 — install globally (npm):**
 
 ```bash
 npm install -g @rsalmn/extremerouter
 extremerouter
 ```
 
-🎉 Dashboard opens at `http://localhost:20128`
+The dashboard opens at `http://localhost:20128` (default first-login password: `123456` — change it).
 
-**2. Connect a FREE provider (no signup needed):**
-
-Dashboard → Providers → Connect **Kiro AI** (free Claude unlimited) or **OpenCode Free** (no auth) → Done!
-
-**3. Use in your CLI tool:**
-
-```
-Claude Code/Codex/OpenClaw/Cursor/Cline Settings:
-  Endpoint: http://localhost:20128/v1
-  API Key: [copy from dashboard]
-  Model: kr/claude-sonnet-4.5
-```
-
-**That's it!** Start coding with FREE AI models.
-
-**Alternative: run from source (this repository):**
-
-This repository package is private (`@rsalmn/extremerouter-app`), so source/Docker execution is the expected local development path.
+**Option 2 — run from source:**
 
 ```bash
-cp .env.example .env
-npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
-```
-
-Production mode:
-
-```bash
-npm run build
-PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
-```
-
-Default URLs:
-- Dashboard: `http://localhost:20128/dashboard`
-- OpenAI-compatible API: `http://localhost:20128/v1`
-
----
-
-## 🛠️ Supported CLI Tools
-
-ExtremeRouter works seamlessly with all major AI coding tools:
-
-<div align="center">
-  <table>
-    <tr>
-      <td align="center" width="120">
-        <img src="./public/providers/claude.png" width="60" alt="Claude Code"/><br/>
-        <b>Claude-Code</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/openclaw.png" width="60" alt="OpenClaw"/><br/>
-        <b>OpenClaw</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/codex.png" width="60" alt="Codex"/><br/>
-        <b>Codex</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/opencode.png" width="60" alt="OpenCode"/><br/>
-        <b>OpenCode</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/cursor.png" width="60" alt="Cursor"/><br/>
-        <b>Cursor</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
-        <b>Antigravity</b>
-      </td>
-    </tr>
-    <tr>
-      <td align="center" width="120">
-        <img src="./public/providers/cline.png" width="60" alt="Cline"/><br/>
-        <b>Cline</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/continue.png" width="60" alt="Continue"/><br/>
-        <b>Continue</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/droid.png" width="60" alt="Droid"/><br/>
-        <b>Droid</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/roo.png" width="60" alt="Roo"/><br/>
-        <b>Roo</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/copilot.png" width="60" alt="Copilot"/><br/>
-        <b>Copilot</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/kilocode.png" width="60" alt="Kilo Code"/><br/>
-        <b>Kilo Code</b>
-      </td>
-    </tr>
-  </table>
-</div>
-
----
-
-## 🌐 Supported Providers
-
-### 🔐 OAuth Providers
-
-<div align="center">
-  <table>
-    <tr>
-      <td align="center" width="120">
-        <img src="./public/providers/claude.png" width="60" alt="Claude Code"/><br/>
-        <b>Claude-Code</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/antigravity.png" width="60" alt="Antigravity"/><br/>
-        <b>Antigravity</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/codex.png" width="60" alt="Codex"/><br/>
-        <b>Codex</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/github.png" width="60" alt="GitHub"/><br/>
-        <b>GitHub</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/cursor.png" width="60" alt="Cursor"/><br/>
-        <b>Cursor</b>
-      </td>
-      <td align="center" width="120">
-        <img src="./public/providers/kimchi.png" width="60" alt="Kimchi"/><br/>
-        <b>Kimchi</b>
-      </td>
-    </tr>
-  </table>
-</div>
-
-### 🆓 Free Providers
-
-<div align="center">
-  <table>
-    <tr>
-      <td align="center" width="150">
-        <img src="./public/providers/kiro.png" width="70" alt="Kiro"/><br/>
-        <b>Kiro AI</b><br/>
-        <sub>Claude 4.5 + GLM-5 + MiniMax<br/>Unlimited FREE</sub>
-      </td>
-      <td align="center" width="150">
-        <img src="./public/providers/opencode.png" width="70" alt="OpenCode Free"/><br/>
-        <b>OpenCode Free</b><br/>
-        <sub>No auth • Auto-fetch models<br/>Unlimited FREE</sub>
-      </td>
-      <td align="center" width="150">
-        <img src="./public/providers/gemini.png" width="70" alt="Vertex AI"/><br/>
-        <b>Vertex AI</b><br/>
-        <sub>Gemini 3 Pro + GLM-5 + DeepSeek<br/>$300 credits free</sub>
-      </td>
-    </tr>
-  </table>
-</div>
-
-> **Note:** iFlow, Qwen and Gemini CLI free tiers were discontinued in 2026. Use Kiro / OpenCode Free / Vertex instead.
-
-### 🔑 API Key Providers (40+)
-
-<div align="center">
-  <table>
-    <tr>
-      <td align="center" width="100">
-        <img src="./public/providers/openrouter.png" width="50" alt="OpenRouter"/><br/>
-        <sub>OpenRouter</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/glm.png" width="50" alt="GLM"/><br/>
-        <sub>GLM</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/kimi.png" width="50" alt="Kimi"/><br/>
-        <sub>Kimi</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/minimax.png" width="50" alt="MiniMax"/><br/>
-        <sub>MiniMax</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/openai.png" width="50" alt="OpenAI"/><br/>
-        <sub>OpenAI</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/anthropic.png" width="50" alt="Anthropic"/><br/>
-        <sub>Anthropic</sub>
-      </td>
-    </tr>
-    <tr>
-      <td align="center" width="100">
-        <img src="./public/providers/gemini.png" width="50" alt="Gemini"/><br/>
-        <sub>Gemini</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/deepseek.png" width="50" alt="DeepSeek"/><br/>
-        <sub>DeepSeek</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/groq.png" width="50" alt="Groq"/><br/>
-        <sub>Groq</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/xai.png" width="50" alt="xAI"/><br/>
-        <sub>xAI</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/mistral.png" width="50" alt="Mistral"/><br/>
-        <sub>Mistral</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/perplexity.png" width="50" alt="Perplexity"/><br/>
-        <sub>Perplexity</sub>
-      </td>
-    </tr>
-    <tr>
-      <td align="center" width="100">
-        <img src="./public/providers/together.png" width="50" alt="Together"/><br/>
-        <sub>Together AI</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/fireworks.png" width="50" alt="Fireworks"/><br/>
-        <sub>Fireworks</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/cerebras.png" width="50" alt="Cerebras"/><br/>
-        <sub>Cerebras</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/cohere.png" width="50" alt="Cohere"/><br/>
-        <sub>Cohere</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/nvidia.png" width="50" alt="NVIDIA"/><br/>
-        <sub>NVIDIA</sub>
-      </td>
-      <td align="center" width="100">
-        <img src="./public/providers/siliconflow.png" width="50" alt="SiliconFlow"/><br/>
-        <sub>SiliconFlow</sub>
-      </td>
-    </tr>
-  </table>
-  <p><i>...and 20+ more providers including Nebius, Chutes, Hyperbolic, and custom OpenAI/Anthropic compatible endpoints</i></p>
-</div>
-
----
-
-## 💡 Key Features
-
-| Feature | What It Does | Why It Matters |
-|---------|--------------|----------------|
-| 🚀 **RTK Token Saver** ([RTK](https://github.com/rtk-ai/rtk) ⭐40K) | Compress tool outputs (`git diff`, `grep`, `ls`, `tree`...) before sending to LLM | Save **20-40% input tokens** per request |
-| 🧠 **Headroom Token Saver** ([Headroom](https://github.com/chopratejas/headroom)) | Optional external `/v1/compress` proxy before provider routing | Save more context tokens without changing clients |
-| 🪨 **Caveman Mode** ([Caveman](https://github.com/JuliusBrussee/caveman) ⭐52K) | Inject caveman-speak prompt → LLM replies terse, technical substance preserved | Save **up to 65% output tokens** |
-| 🐴 **Ponytail** ([Ponytail](https://github.com/DietrichGebert/ponytail)) | Inject "lazy senior dev" prompt → LLM writes minimal, YAGNI-first code (Lite/Full/Ultra) | **Fewer output tokens, less refactoring** |
-| 🎯 **Smart 3-Tier Fallback** | Auto-route: Subscription → Cheap → Free | Never stop coding, zero downtime |
-| 📊 **Real-Time Quota Tracking** | Live token count + reset countdown | Maximize subscription value |
-| 🔄 **Format Translation** | OpenAI ↔ Claude ↔ Gemini ↔ Cursor ↔ Kiro ↔ Vertex | Works with any CLI tool |
-| 👥 **Multi-Account Support** | Multiple accounts per provider | Load balancing + redundancy |
-| 🔄 **Auto Token Refresh** | OAuth tokens refresh automatically | No manual re-login needed |
-| 🎨 **Custom Combos** | Create unlimited model combinations | Tailor fallback to your needs |
-| 🐝 **Hierarchical Swarm Engine** | Multi-agent orchestration: Manager → Staff → Workers → Audit → Synthesis with persona-bleed protection | Tackle complex tasks via parallel agents with a smart gatekeeper |
-| 🩺 **Health Monitor** | Live per-provider health (in-memory sliding window) + SSE dashboard | Spot degraded providers before they break your flow |
-| 🔌 **Circuit Breaker** | Per-provider CLOSED/OPEN/HALF_OPEN state machine that auto-skips failing upstreams | Stop wasting requests on a down provider; auto-recover when it heals |
-| 🔐 **Per-Key Model ACL** | Restrict which models each API key may call (`allowedModels`) | Hand out scoped keys to teammates/clients without opening everything |
-| 🍪 **Cookies Providers** | 20 web-chat providers via browser cookies (ChatGLM, DeepSeek, Qwen, Kimi, Blackbox, T3, DuckDuckGo, Venice, DouBao, v0, Poe, Copilot, Meta AI, Adapta, VeoAI, Claude/ChatGPT/Gemini web, Grok, Perplexity) | Use free web tiers with one pasted cookie — no API key needed |
-| 🤖 **Devin CLI Provider** | Session-based adapter for the Devin (Cognition) API | Route to Devin agent modes (normal/fast/lite/ultra) from any OpenAI client |
-| 🧪 **Model Test All** | Search box + "Test All" button on every provider's Available Models | Validate reachability of all models in one click, scoped to search results |
-| 📝 **Request Logging** | Debug mode with full request/response logs | Troubleshoot issues easily |
-| 💾 **Cloud Sync** | Sync config across devices | Same setup everywhere |
-| 📊 **Usage Analytics** | Track tokens, cost, trends over time | Optimize spending |
-| 🌐 **Deploy Anywhere** | Localhost, VPS, Docker, Cloudflare Workers | Flexible deployment options |
-
-<details>
-<summary><b>📖 Feature Details</b></summary>
-
-### 🚀 RTK Token Saver
-
-Tool outputs (`git diff`, `grep`, `find`, `ls`, `tree`, log dumps...) often eat 30-50% of your prompt budget. RTK detects them and applies smart, lossless compression **before** the request hits the LLM:
-
-- **Filters:** `git-diff`, `git-status`, `grep`, `find`, `ls`, `tree`, `dedup-log`, `smart-truncate`, `read-numbered`, `search-list`
-- **Auto-detect:** No config needed — RTK peeks the first 1KB of each `tool_result` and picks the right filter.
-- **Safe by design:** If a filter fails, throws, or makes output bigger, RTK silently keeps the original text. Errors never break your request.
-- **Universal:** Works across all formats (OpenAI, Claude, Gemini, Cursor, Kiro, OpenAI Responses) because it runs **before** any format translation.
-- **Default ON:** Toggle anytime in Dashboard → Endpoint settings.
-
-```
-Without RTK: 47K tokens sent to LLM
-With RTK:    28K tokens sent to LLM   (40% saved · same context · same answer)
-```
-
-### 🧠 Headroom Token Saver
-
-Headroom is optional and runs separately. ExtremeRouter calls Headroom's local `/v1/compress` endpoint, then keeps normal routing, fallback, auth, and usage tracking:
-
-```
-Client → ExtremeRouter → Headroom /v1/compress → ExtremeRouter → provider
-```
-
-Local setup:
-
-```bash
-pip install "headroom-ai[proxy]"
-headroom proxy --port 8787
-```
-
-Enable in Dashboard → Endpoint → Token Saver → Headroom. Default URL: `http://localhost:8787`.
-
-Docker examples:
-
-```bash
-# Headroom service in same Docker network
-http://headroom:8787
-
-# Headroom running on host machine
-http://host.docker.internal:8787
-```
-
-If Headroom is down or returns an error, ExtremeRouter fails open and sends the original request.
-
-### 🐴 Ponytail (Lazy Senior Dev)
-
-Ponytail injects a *"lazy senior dev"* system prompt into every request, biasing the LLM toward minimal, YAGNI-first code — deletion over addition, stdlib over new deps, one-liners over abstractions. Adapted from [DietrichGebert/ponytail](https://github.com/DietrichGebert/ponytail).
-
-- **Lite** — Build what's asked, name the lazier alternative.
-- **Full** — YAGNI ladder enforced: stdlib → native → existing deps → one-liner → minimal code.
-- **Ultra** — YAGNI extremist: deletion first, ship the one-liner, challenge the rest of the requirement in the same response.
-
-```
-Without Ponytail: verbose code, extra abstractions, "just in case" scaffolding
-With Ponytail:    shortest working diff, no unrequested abstractions, fewer tokens
-```
-
-Never trades away: input validation, error handling that prevents data loss, security, accessibility, or anything explicitly requested. Enable in Dashboard → Endpoint → Ponytail. Stacks with Caveman (output terseness) and RTK (input compression).
-
-### 🎯 Smart 3-Tier Fallback
-
-Create combos with automatic fallback:
-
-```
-Combo: "my-coding-stack"
-  1. cc/claude-opus-4-6        (your subscription)
-  2. glm/glm-4.7               (cheap backup, $0.6/1M)
-  3. if/kimi-k2-thinking       (free fallback)
-
-→ Auto switches when quota runs out or errors occur
-```
-
-### 📊 Real-Time Quota Tracking
-
-- Token consumption per provider
-- Reset countdown (5-hour, daily, weekly)
-- Cost estimation for paid tiers
-- Monthly spending reports
-
-### 🔄 Format Translation
-
-Seamless translation between formats:
-- **OpenAI** ↔ **Claude** ↔ **Gemini** ↔ **Cursor** ↔ **Kiro** ↔ **Vertex** ↔ **Antigravity** ↔ **Ollama** ↔ **OpenAI Responses**
-- Your CLI tool sends OpenAI format → ExtremeRouter translates → Provider receives native format
-- Works with any tool that supports custom OpenAI endpoints
-
-### 👥 Multi-Account Support
-
-- Add multiple accounts per provider
-- Auto round-robin or priority-based routing
-- Fallback to next account when one hits quota
-
-### 🔄 Auto Token Refresh
-
-- OAuth tokens automatically refresh before expiration
-- No manual re-authentication needed
-- Seamless experience across all providers
-
-### 🎨 Custom Combos
-
-- Create unlimited model combinations
-- Mix subscription, cheap, and free tiers
-- Name your combos for easy access
-- Share combos across devices with Cloud Sync
-
-### 🐝 Hierarchical Swarm Engine
-
-A multi-agent orchestration combo strategy for complex, multi-step tasks. Instead of one model answering, a small *team* of agents collaborates:
-
-- **Manager** plans the strategy and splits the task
-- **Staff** workers run subtasks in **parallel** (load-balanced across providers)
-- **Audit** stage reviews worker output
-- **Manager** synthesizes the final answer
-- A **Smart Gatekeeper** triages the prompt first (simple → single-model fast path; complex → swarm)
-- **Persona-bleed protection** keeps each stage's role isolated
-
-Live telemetry streams to the Dashboard → Swarm page (SSE). Configure in Dashboard → Combos → choose the "Hierarchical Swarm" strategy.
-
-### 🩺 Health Monitor + 🔌 Circuit Breaker
-
-Two reliability layers that keep requests flowing even when a provider degrades:
-
-- **Health Monitor** records a sliding window of success/failure samples per provider (in-memory ring buffer) and exposes a live SSE feed + the Dashboard → Health page. Spot a provider going red before it ruins your coding session.
-- **Circuit Breaker** wraps every provider in a CLOSED / OPEN / HALF_OPEN state machine. When a provider fails repeatedly, the breaker OPENS and routing **auto-skips** it (no wasted requests, no timeouts) — then probes with HALF_OPEN to auto-recover the moment it heals.
-
-Both are zero-config; tunable in Settings.
-
-### 🔐 Per-Key Model Access Control (ACL)
-
-Each API key you mint can carry an `allowedModels` allow-list. Requests using that key are rejected up-front (403) if they target a model outside the list — so you can hand out scoped keys to teammates, clients, or downstream tools without exposing your full catalog. Managed per-key in Dashboard → Endpoint.
-
-### 🍪 Cookies Providers
-
-A dedicated **Cookies Provider** category (above OAuth on the Providers page) for free web-chat services that authenticate via a browser cookie instead of an API key. Paste your cookies (or just the session token) into a multi-line field and ExtremeRouter handles token refresh, WAF cookies, PoW challenges, and SSE translation per site:
-
-- **No anti-bot (reliable):** ChatGLM, DeepSeek, Qwen, Kimi, Blackbox, T3 Chat, DuckDuckGo, Venice, DouBao, v0, Poe, Copilot, Meta AI (Muse), Adapta, VeoAI
-- **Anti-bot (best-effort, may be Cloudflare-blocked):** Claude Web, ChatGPT Web, Gemini Web
-- Plus existing cookie providers: Grok Web, Perplexity Web
-
-> Note: Claude/ChatGPT/Gemini web deploy aggressive Cloudflare anti-bot. Plain server-side fetch is often blocked (403) even with valid cookies — these are included best-effort.
-
-### 🤖 Devin CLI Provider
-
-Devin (by Cognition) is session-based, not OpenAI-compatible. The Devin adapter bridges it: it creates a Devin session, polls for completion, and synthesizes an OpenAI SSE stream back. Models map to Devin agent modes — `devin-normal`, `devin-fast`, `devin-lite`, `devin-ultra`. Auth is API-key only (`cog_...`).
-
-### 🍜 Kimchi CLI Provider
-
-Kimchi (by Cast AI) is a free-tier coding assistant that provides access to open-source models — Kimi, MiniMax, Nemotron, DeepSeek — through a monthly/daily quota reset. ExtremeRouter integrates Kimchi as an **OAuth browser-login provider** (the same flow the official Kimchi CLI uses), so you log in once via `app.kimchi.dev` and the router keeps the session alive.
-
-**CLI alignment (masquerade):** the router sends the same `User-Agent: kimchi/<version>` header the official CLI sends, so the Kimchi server treats gateway traffic identically to the real CLI — no request discrimination, no extra restrictions.
-
-**Current model catalog (v0.1.76, aligned with the official CLI model-registry):**
-
-| Model | Role in Kimchi CLI | Notes |
-|-------|--------------------|-------|
-| `kimi-k2.7` | Orchestrator / Planner / Reviewer | Heavy reasoning + vision |
-| `kimi-k2.6` | Primary model | 262K context |
-| `minimax-m3` | Builder (default) | Heavy reasoning + vision |
-| `minimax-m2.7` | Secondary builder | Standard tier |
-| `nemotron-3-ultra-fp4` | Coding subagent | 1M context |
-| `deepseek-v4-flash` | Orchestration fallback | Fast + cheap |
-
-> Models marked **"ignored"** by the official CLI (`kimi-k2.5`, `claude-opus-4-6`, `claude-sonnet-4-6`, `glm-5-fp8`, `minimax-m2.5`) are deliberately **not** exposed — the server rejects or ignores them.
-
-**Quota auto-reactivation:** Kimchi Community tier resets quota at 00:00 UTC daily. When a request hits a quota-exhausted error (`402` / "out of credits"), the account is marked `quota_exhausted` and deactivated until the next-day reset. A background sweep (startup + every 30 min) automatically reactivates the account — **no manual re-login needed**.
-
-**Web search:** Kimchi supports web search as a built-in tool; model routing is exposed through ExtremeRouter's standard search/combo pipeline.
-
-### 📝 Request Logging
-
-- Enable debug mode for full request/response logs
-- Track API calls, headers, and payloads
-- Troubleshoot integration issues
-- Export logs for analysis
-
-### 💾 Cloud Sync
-
-- Sync providers, combos, and settings across devices
-- Automatic background sync
-- Secure encrypted storage
-- Access your setup from anywhere
-
-#### Cloud Runtime Notes
-
-- Prefer server-side cloud variables in production:
-  - `BASE_URL` (internal callback URL used by sync scheduler)
-  - `CLOUD_URL` (cloud sync endpoint base)
-- `NEXT_PUBLIC_BASE_URL` and `NEXT_PUBLIC_CLOUD_URL` are still supported for compatibility/UI, but server runtime now prioritizes `BASE_URL`/`CLOUD_URL`.
-- Cloud sync requests now use timeout + fail-fast behavior to avoid UI hanging when cloud DNS/network is unavailable.
-
-### 📊 Usage Analytics
-
-- Track token usage per provider and model
-- Cost estimation and spending trends
-- Monthly reports and insights
-- Optimize your AI spending
-
-> **💡 IMPORTANT - Understanding Dashboard Costs:**
-> 
-> The "cost" displayed in Usage Analytics is **for tracking and comparison purposes only**. 
-> ExtremeRouter itself **never charges** you anything. You only pay providers directly (if using paid services).
-> 
-> **Example:** If your dashboard shows "$290 total cost" while using iFlow models, this represents 
-> what you would have paid using paid APIs directly. Your actual cost = **$0** (iFlow is free unlimited).
-> 
-> Think of it as a "savings tracker" showing how much you're saving by using free models or 
-> routing through ExtremeRouter!
-
-### 🌐 Deploy Anywhere
-
-- 💻 **Localhost** - Default, works offline
-- ☁️ **VPS/Cloud** - Share across devices
-- 🐳 **Docker** - One-command deployment
-- 🚀 **Cloudflare Workers** - Global edge network
-
-</details>
-
----
-
-## 💰 Pricing at a Glance
-
-| Tier | Provider | Cost | Quota Reset | Best For |
-|------|----------|------|-------------|----------|
-| **🚀 TOKEN SAVER** | **RTK (built-in)** | **FREE** | Always on | **Save 20-40% tokens on EVERY request** |
-| **💳 SUBSCRIPTION** | Claude Code (Pro/Max) | $20-200/mo | 5h + weekly | Already subscribed |
-| | Codex (Plus/Pro) | $20-200/mo | 5h + weekly | OpenAI users |
-| | GitHub Copilot | $10-19/mo | Monthly | GitHub users |
-| | Cursor IDE | $20/mo | Monthly | Cursor users |
-| **💰 CHEAP** | GLM-5.1 / GLM-4.7 | $0.6/1M | Daily 10AM | Budget backup |
-| | MiniMax M2.7 | $0.2/1M | 5-hour rolling | Cheapest option |
-| | Kimi K2.5 | $9/mo flat | 10M tokens/mo | Predictable cost |
-| **🆓 FREE** | Kiro AI | $0 | Unlimited | Claude 4.5 + GLM-5 + MiniMax free |
-| | OpenCode Free | $0 | Unlimited | No auth, auto-fetch models |
-| | Vertex AI | $300 credits | New GCP accounts | Gemini 3 Pro + DeepSeek + GLM-5 |
-
-**💡 Pro Tip:** RTK + Kiro AI + OpenCode Free combo = **$0 cost + 20-40% token savings**!
-
----
-
-### 📊 Understanding ExtremeRouter Costs & Billing
-
-**ExtremeRouter Billing Reality:**
-
-✅ **ExtremeRouter software = FREE forever** (open source, never charges)  
-✅ **Dashboard "costs" = Display/tracking only** (not actual bills)  
-✅ **You pay providers directly** (subscriptions or API fees)  
-✅ **FREE providers stay FREE** (iFlow, Kiro, Qwen = $0 unlimited)  
-❌ **ExtremeRouter never sends invoices** or charges your card
-
-**How Cost Display Works:**
-
-The dashboard shows **estimated costs** as if you were using paid APIs directly. This is **not billing** - it's a comparison tool to show your savings.
-
-**Example Scenario:**
-```
-Dashboard Display:
-• Total Requests: 1,662
-• Total Tokens: 47M
-• Display Cost: $290
-
-Reality Check:
-• Provider: iFlow (FREE unlimited)
-• Actual Payment: $0.00
-• What $290 Means: Amount you SAVED by using free models!
-```
-
-**Payment Rules:**
-- **Subscription providers** (Claude Code, Codex): Pay them directly via their websites
-- **Cheap providers** (GLM, MiniMax): Pay them directly, ExtremeRouter just routes
-- **FREE providers** (iFlow, Kiro, Qwen): Genuinely free forever, no hidden charges
-- **ExtremeRouter**: Never charges anything, ever
-
----
-
-## 🎯 Use Cases
-
-### Case 1: "I have Claude Pro subscription"
-
-**Problem:** Quota expires unused, rate limits during heavy coding
-
-**Solution:**
-```
-Combo: "maximize-claude"
-  1. cc/claude-opus-4-7        (use subscription fully)
-  2. glm/glm-5.1               (cheap backup when quota out)
-  3. kr/claude-sonnet-4.5      (free emergency fallback)
-
-Monthly cost: $20 (subscription) + ~$5 (backup) = $25 total
-vs. $20 + hitting limits = frustration
-```
-
-### Case 2: "I want zero cost"
-
-**Problem:** Can't afford subscriptions, need reliable AI coding
-
-**Solution:**
-```
-Combo: "free-forever"
-  1. kr/claude-sonnet-4.5      (Claude 4.5 free unlimited)
-  2. kr/glm-5                  (GLM-5 free via Kiro)
-  3. oc/<auto>                 (OpenCode Free, no auth)
-
-Monthly cost: $0
-Quality: Production-ready models + RTK saves 20-40% tokens
-```
-
-### Case 3: "I need 24/7 coding, no interruptions"
-
-**Problem:** Deadlines, can't afford downtime
-
-**Solution:**
-```
-Combo: "always-on"
-  1. cc/claude-opus-4-7        (best quality)
-  2. cx/gpt-5.5                (second subscription)
-  3. glm/glm-5.1               (cheap, resets daily)
-  4. minimax/MiniMax-M2.7      (cheapest, 5h reset)
-  5. kr/claude-sonnet-4.5      (free unlimited)
-
-Result: 5 layers of fallback = zero downtime
-Monthly cost: $20-200 (subscriptions) + $10-20 (backup)
-```
-
-### Case 4: "I want FREE AI in OpenClaw"
-
-**Problem:** Need AI assistant in messaging apps (WhatsApp, Telegram, Slack...), completely free
-
-**Solution:**
-```
-Combo: "openclaw-free"
-  1. kr/claude-sonnet-4.5      (Claude 4.5 free)
-  2. kr/glm-5                  (GLM-5 free)
-  3. kr/MiniMax-M2.5           (MiniMax free)
-
-Monthly cost: $0
-Access via: WhatsApp, Telegram, Slack, Discord, iMessage, Signal...
-```
-
----
-
-## ❓ Frequently Asked Questions
-
-<details>
-<summary><b>📊 Why does my dashboard show high costs?</b></summary>
-
-The dashboard tracks your token usage and displays **estimated costs** as if you were using paid APIs directly. This is **not actual billing** - it's a reference to show how much you're saving by using free models or existing subscriptions through ExtremeRouter.
-
-**Example:**
-- **Dashboard shows:** "$290 total cost"
-- **Reality:** You're using iFlow (FREE unlimited)
-- **Your actual cost:** **$0.00**
-- **What $290 means:** Amount you **saved** by using free models instead of paid APIs!
-
-The cost display is a "savings tracker" to help you understand your usage patterns and optimization opportunities.
-
-</details>
-
-<details>
-<summary><b>💳 Will I be charged by ExtremeRouter?</b></summary>
-
-**No.** ExtremeRouter is free, open-source software that runs on your own computer. It never charges you anything.
-
-**You only pay:**
-- ✅ **Subscription providers** (Claude Code $20/mo, Codex $20-200/mo) → Pay them directly on their websites
-- ✅ **Cheap providers** (GLM, MiniMax) → Pay them directly, ExtremeRouter just routes your requests
-- ❌ **ExtremeRouter itself** → **Never charges anything, ever**
-
-ExtremeRouter is a local proxy/router. It doesn't have your credit card, can't send invoices, and has no billing system. It's completely free software.
-
-</details>
-
-<details>
-<summary><b>🆓 Are FREE providers really unlimited?</b></summary>
-
-**Yes!** The current FREE providers (Kiro, OpenCode Free, Vertex) are genuinely free with **no hidden charges**.
-
-These are free services offered by those respective companies:
-- **Kiro AI**: Free unlimited Claude 4.5 + GLM-5 + MiniMax via AWS Builder ID / Google / GitHub OAuth
-- **OpenCode Free**: No-auth passthrough proxy, models auto-fetched from `opencode.ai/zen/v1/models`
-- **Vertex AI**: $300 free credits for new Google Cloud accounts (90 days)
-
-ExtremeRouter just routes your requests to them - there's no "catch" or future billing. They're truly free services, and ExtremeRouter makes them easy to use with fallback support.
-
-**Discontinued free tiers (no longer recommended):**
-- ❌ **iFlow**: Was free unlimited, now changed to paid (2026)
-- ❌ **Qwen Code**: Free OAuth tier discontinued by Alibaba on 2026-04-15
-- ❌ **Gemini CLI**: Still works, but using it with non-CLI tools (Claude, Codex, Cursor...) may result in account bans — only use if you stick to Gemini CLI itself
-
-</details>
-
-<details>
-<summary><b>💰 How do I minimize my actual AI costs?</b></summary>
-
-**Free-First Strategy:**
-
-1. **Start with 100% free combo:**
-   ```
-   1. gc/gemini-3-flash (180K/month free from Google)
-   2. if/kimi-k2-thinking (unlimited free from iFlow)
-   3. qw/qwen3-coder-plus (unlimited free from Qwen)
-   ```
-   **Cost: $0/month**
-
-2. **Add cheap backup** only if you need it:
-   ```
-   4. glm/glm-4.7 ($0.6/1M tokens)
-   ```
-   **Additional cost: Only pay for what you actually use**
-
-3. **Use subscription providers last:**
-   - Only if you already have them
-   - ExtremeRouter helps maximize their value through quota tracking
-
-**Result:** Most users can operate at $0/month using only free tiers!
-
-</details>
-
-<details>
-<summary><b>📈 What if my usage suddenly spikes?</b></summary>
-
-ExtremeRouter's smart fallback prevents surprise charges:
-
-**Scenario:** You're on a coding sprint and blow through your quotas
-
-**Without ExtremeRouter:**
-- ❌ Hit rate limit → Work stops → Frustration
-- ❌ Or: Accidentally rack up huge API bills
-
-**With ExtremeRouter:**
-- ✅ Subscription hits limit → Auto-fallback to cheap tier
-- ✅ Cheap tier gets expensive → Auto-fallback to free tier
-- ✅ Never stop coding → Predictable costs
-
-**You're in control:** Set spending limits per provider in dashboard, and ExtremeRouter respects them.
-
-</details>
-
----
-
-## 📖 Setup Guide
-
-<details>
-<summary><b>🔐 Subscription Providers (Maximize Value)</b></summary>
-
-### Claude Code (Pro/Max)
-
-```bash
-Dashboard → Providers → Connect Claude Code
-→ OAuth login → Auto token refresh
-→ 5-hour + weekly quota tracking
-
-Models:
-  cc/claude-opus-4-7
-  cc/claude-opus-4-6
-  cc/claude-sonnet-4-6
-  cc/claude-haiku-4-5-20251001
-```
-
-**Pro Tip:** Use Opus for complex tasks, Sonnet for speed. ExtremeRouter tracks quota per model!
-
-### OpenAI Codex (Plus/Pro)
-
-```bash
-Dashboard → Providers → Connect Codex
-→ OAuth login (port 1455)
-→ 5-hour + weekly reset
-
-Models:
-  cx/gpt-5.5
-  cx/gpt-5.4
-  cx/gpt-5.3-codex
-  cx/gpt-5.2-codex
-```
-
-### GitHub Copilot
-
-```bash
-Dashboard → Providers → Connect GitHub
-→ OAuth via GitHub
-→ Monthly reset (1st of month)
-
-Models:
-  gh/gpt-5.4
-  gh/claude-opus-4.7
-  gh/claude-sonnet-4.6
-  gh/gemini-3.1-pro-preview
-  gh/grok-code-fast-1
-```
-
-### Cursor IDE
-
-```bash
-Dashboard → Providers → Connect Cursor
-→ OAuth login
-→ Monthly subscription
-
-Models:
-  cu/claude-4.6-opus-max
-  cu/claude-4.5-sonnet-thinking
-  cu/gpt-5.3-codex
-```
-
-</details>
-
-<details>
-<summary><b>💰 Cheap Providers (Backup)</b></summary>
-
-### GLM-5.1 / GLM-4.7 (Daily reset, $0.6/1M)
-
-1. Sign up: [Zhipu AI](https://open.bigmodel.cn/)
-2. Get API key from Coding Plan
-3. Dashboard → Add API Key:
-   - Provider: `glm`
-   - API Key: `your-key`
-
-**Use:** `glm/glm-5.1`, `glm/glm-5`, `glm/glm-4.7`
-
-**Pro Tip:** Coding Plan offers 3× quota at 1/7 cost! Reset daily 10:00 AM.
-
-### MiniMax M2.7 (5h reset, $0.20/1M)
-
-1. Sign up: [MiniMax](https://www.minimax.io/)
-2. Get API key
-3. Dashboard → Add API Key
-
-**Use:** `minimax/MiniMax-M2.7`, `minimax/MiniMax-M2.5`
-
-**Pro Tip:** Cheapest option for long context (1M tokens)!
-
-### Kimi K2.5 ($9/month flat)
-
-1. Subscribe: [Moonshot AI](https://platform.moonshot.ai/)
-2. Get API key
-3. Dashboard → Add API Key
-
-**Use:** `kimi/kimi-k2.5`, `kimi/kimi-k2.5-thinking`
-
-**Pro Tip:** Fixed $9/month for 10M tokens = $0.90/1M effective cost!
-
-</details>
-
-<details>
-<summary><b>🆓 FREE Providers (Recommended)</b></summary>
-
-### Kiro AI (Claude 4.5 + GLM-5 + MiniMax FREE)
-
-```bash
-Dashboard → Connect Kiro
-→ AWS Builder ID, AWS IAM Identity Center, Google, or GitHub
-→ Unlimited usage
-
-Models:
-  kr/claude-sonnet-4.5
-  kr/claude-haiku-4.5
-  kr/glm-5
-  kr/MiniMax-M2.5
-  kr/qwen3-coder-next
-  kr/deepseek-3.2
-```
-
-**Pro Tip:** Best free option for Claude. No API key, no payment, fully unlimited.
-
-### OpenCode Free (No auth, auto-fetch models)
-
-```bash
-Dashboard → Connect OpenCode Free
-→ No login required (passthrough proxy)
-→ Models auto-fetched from opencode.ai/zen/v1/models
-```
-
-**Pro Tip:** Fastest setup. Just connect and start coding.
-
-### Vertex AI ($300 free credits for new GCP accounts)
-
-```bash
-Dashboard → Connect Vertex AI
-→ Upload Google Cloud Service Account JSON
-→ Enable Vertex AI API in your GCP project
-
-Models:
-  vertex/gemini-3.1-pro-preview
-  vertex/gemini-3-flash-preview
-  vertex/gemini-2.5-flash
-
-Vertex Partner (Anthropic / DeepSeek / GLM / Qwen via Vertex):
-  vertex-partner/glm-5-maas
-  vertex-partner/deepseek-v3.2-maas
-  vertex-partner/qwen3-next-80b-a3b-thinking-maas
-```
-
-**Pro Tip:** New Google Cloud accounts get $300 credits free for 90 days. Plenty for daily coding.
-
-</details>
-
-<details>
-<summary><b>🎨 Create Combos</b></summary>
-
-### Example 1: Maximize Subscription → Cheap Backup
-
-```
-Dashboard → Combos → Create New
-
-Name: premium-coding
-Models:
-  1. cc/claude-opus-4-7 (Subscription primary)
-  2. glm/glm-5.1 (Cheap backup, $0.6/1M)
-  3. minimax/MiniMax-M2.7 (Cheapest fallback, $0.20/1M)
-
-Use in CLI: premium-coding
-
-Monthly cost example (100M tokens):
-  80M via Claude (subscription): $0 extra
-  15M via GLM: $9
-  5M via MiniMax: $1
-  Total: $10 + your subscription
-```
-
-### Example 2: Free-Only (Zero Cost)
-
-```
-Name: free-combo
-Models:
-  1. kr/claude-sonnet-4.5 (Claude 4.5 free unlimited)
-  2. kr/glm-5 (GLM-5 free via Kiro)
-  3. vertex/gemini-3.1-pro-preview ($300 free credits)
-
-Cost: $0 forever (+ 20-40% token savings via RTK)!
-```
-
-</details>
-
-<details>
-<summary><b>🔧 CLI Integration</b></summary>
-
-### Cursor IDE
-
-```
-Settings → Models → Advanced:
-  OpenAI API Base URL: http://localhost:20128/v1
-  OpenAI API Key: [from extremerouter dashboard]
-  Model: cc/claude-opus-4-7
-```
-
-Or use combo: `premium-coding`
-
-### Claude Code
-
-Edit `~/.claude/config.json`:
-
-```json
-{
-  "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-extremerouter-api-key"
-}
-```
-
-### Codex CLI
-
-```bash
-export OPENAI_BASE_URL="http://localhost:20128"
-export OPENAI_API_KEY="your-extremerouter-api-key"
-
-codex "your prompt"
-```
-
-### OpenClaw
-
-**Option 1 — Dashboard (recommended):**
-
-```
-Dashboard → CLI Tools → OpenClaw → Select Model → Apply
-```
-
-**Option 2 — Manual:** Edit `~/.openclaw/openclaw.json`:
-
-```json
-{
-  "agents": {
-    "defaults": {
-      "model": {
-        "primary": "extremerouter/kr/claude-sonnet-4.5"
-      }
-    }
-  },
-  "models": {
-    "providers": {
-      "@rsalmn/extremerouter": {
-        "baseUrl": "http://127.0.0.1:20128/v1",
-        "apiKey": "sk_extremerouter",
-        "api": "openai-completions",
-        "models": [
-          {
-            "id": "kr/claude-sonnet-4.5",
-            "name": "Claude Sonnet 4.5 (Kiro Free)"
-          }
-        ]
-      }
-    }
-  }
-}
-```
-
-> **Note:** OpenClaw only works with local ExtremeRouter. Use `127.0.0.1` instead of `localhost` to avoid IPv6 resolution issues.
-
-### Cline / Continue / RooCode
-
-```
-Provider: OpenAI Compatible
-Base URL: http://localhost:20128/v1
-API Key: [from dashboard]
-Model: cc/claude-opus-4-7
-```
-
-</details>
-
-<details>
-<summary><b>🚀 Deployment</b></summary>
-
-### VPS Deployment
-
-```bash
-# Clone and install
 git clone https://github.com/rsalmn/extremerouter.git
 cd extremerouter
+cp .env.example .env
 npm install
-npm run build
-
-# Configure
-export JWT_SECRET="your-secure-secret-change-this"
-export INITIAL_PASSWORD="your-password"
-export DATA_DIR="/var/lib/extremerouter"
-export PORT="20128"
-export HOSTNAME="0.0.0.0"
-export NODE_ENV="production"
-export NEXT_PUBLIC_BASE_URL="http://localhost:20128"
-export NEXT_PUBLIC_CLOUD_URL="https://github.com/rsalmn/extremerouter"
-export API_KEY_SECRET="endpoint-proxy-api-key-secret"
-export MACHINE_ID_SALT="endpoint-proxy-salt"
-
-# Start
-npm run start
-
-# Or use PM2
-npm install -g pm2
-pm2 start npm --name extremerouter -- start
-pm2 save
-pm2 startup
+npm run dev
 ```
 
-### Docker
-
-Published images (multi-platform `linux/amd64` + `linux/arm64`):
-- Docker Hub: [`rsalmn/extremerouter`](https://hub.docker.com/r/rsalmn/extremerouter)
-- GHCR: [`ghcr.io/rsalmn/extremerouter`](https://github.com/rsalmn/extremerouter/pkgs/container/extremerouter)
-
-**Quick start (use published image):**
+**Option 3 — Docker:**
 
 ```bash
 docker run -d \
@@ -1162,217 +194,257 @@ docker run -d \
   rsalmn/extremerouter:latest
 ```
 
-→ Open http://localhost:20128
+**Connect a provider and start using it:**
 
-**Build from source (dev):**
+1. Open the dashboard → **Providers** → connect a provider (OAuth login, API key, or a browser cookie).
+2. Copy your API key from **Endpoint** (or use the auto-provisioned default key).
+3. Point your CLI tool at the gateway:
 
-```bash
-git clone https://github.com/rsalmn/extremerouter.git
-cd extremerouter/app
-docker build -t extremerouter .
-docker run -d --name extremerouter -p 20128:20128 \
-  -v "$HOME/.extremerouter:/app/data" -e DATA_DIR=/app/data extremerouter
+```
+Endpoint: http://localhost:20128/v1
+API Key:  [your key]
+Model:    kr/claude-sonnet-4.5   (or any model / combo name)
 ```
 
-**Container defaults:**
-- `PORT=20128`
-- `HOSTNAME=0.0.0.0`
+That's it — your CLI now routes through ExtremeRouter with fallback, quota tracking, and token savings.
 
-**Useful commands:**
-
-```bash
-docker logs -f extremerouter
-docker restart extremerouter
-docker stop extremerouter && docker rm extremerouter
-docker pull rsalmn/extremerouter:latest   # update to latest
-```
-
-**Data persistence:** `$HOME/.extremerouter/db/data.sqlite` on host ↔ `/app/data/db/data.sqlite` in container.
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `JWT_SECRET` | Auto-generated (`~/.extremerouter/jwt-secret`) | JWT signing secret for dashboard auth cookie (override to share across instances) |
-| `INITIAL_PASSWORD` | `123456` | First login password when no saved hash exists |
-| `DATA_DIR` | `~/.extremerouter` | Main app data location (SQLite at `$DATA_DIR/db/data.sqlite`) |
-| `PORT` | framework default | Service port (`20128` in examples) |
-| `HOSTNAME` | framework default | Bind host (Docker defaults to `0.0.0.0`) |
-| `NODE_ENV` | runtime default | Set `production` for deploy |
-| `BASE_URL` | `http://localhost:20128` | Server-side internal base URL used by cloud sync jobs |
-| `CLOUD_URL` | `https://github.com/rsalmn/extremerouter` | Server-side cloud sync endpoint base URL |
-| `NEXT_PUBLIC_BASE_URL` | `http://localhost:3000` | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime) |
-| `NEXT_PUBLIC_CLOUD_URL` | `https://github.com/rsalmn/extremerouter` | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime) |
-| `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC secret for generated API keys |
-| `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt for stable machine ID hashing |
-| `ENABLE_REQUEST_LOGS` | `false` | Enables request/response logs under `logs/` |
-| `AUTH_COOKIE_SECURE` | `false` | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy) |
-| `REQUIRE_API_KEY` | `false` | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty | Optional outbound proxy for upstream provider calls |
-
-Notes:
-- Lowercase proxy variables are also supported: `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy`.
-- `.env` is not baked into Docker image (`.dockerignore`); inject runtime config with `--env-file` or `-e`.
-- On Windows, `APPDATA` can be used for local storage path resolution.
-- `INSTANCE_NAME` appears in older docs/env templates, but is currently not used at runtime.
-
-### Runtime Files and Storage
-
-- Main app state: `${DATA_DIR}/db/data.sqlite` (SQLite — providers, combos, aliases, keys, settings, usage history)
-- Auto backups: `${DATA_DIR}/db/backups/`
-- Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`
-- Both `${DATA_DIR}` and `~/.extremerouter` resolve to the same location in a Docker container — the symlink `/root/.extremerouter -> /app/data` is created at build time.
-
-</details>
+See [DOCKER.md](DOCKER.md) for full deployment and environment-variable reference.
 
 ---
 
-## 📊 Available Models
+<a name="supported-cli-tools"></a>
+
+## Supported CLI Tools
+
+ExtremeRouter works with any tool that accepts a custom OpenAI/Anthropic-compatible endpoint. It also ships dedicated integration helpers (settings writers/checkers, MITM intercept) for:
+
+| Tool | Integration |
+|------|-------------|
+| Claude Code | Anthropic-compatible endpoint + settings writer |
+| Codex CLI | OpenAI-compatible endpoint + settings writer |
+| OpenClaw | Dedicated settings + model picker |
+| Cline | Settings writer + official model catalog |
+| Kilo Code | Settings writer |
+| Copilot / GitHub | OAuth provider + settings |
+| OpenCode | Settings writer + OpenCode Free provider |
+| Cursor | OpenAI-compatible endpoint (models auto-detect) |
+| Antigravity | MITM intercept + OAuth |
+| Droid | Settings writer |
+| Cowork | Settings + MCP registry/tools |
+| DeepSeek TUI | Settings writer |
+| Hermes / JCode | Settings writers |
+| Continue / Roo | OpenAI-compatible endpoint |
+| Zed | OAuth auto-import |
+
+Any other OpenAI/Anthropic-compatible client works out of the box.
+
+---
+
+<a name="supported-providers"></a>
+
+## Supported Providers
+
+**304 providers** across five categories:
+
+| Category | Count | Examples |
+|----------|-------|----------|
+| API-key providers | 206 | OpenAI, Anthropic, OpenRouter, GLM, Kimi, MiniMax, DeepSeek, Groq, xAI, Mistral, Fireworks, Cerebras, SiliconFlow, Nebius, Together, Perplexity, NVIDIA, Cohere, Novita, Helyx, TokenHarbor, 180+ more |
+| OAuth providers | 25 | Claude Code, Codex, GitHub Copilot, Cursor, Antigravity, Gemini CLI, Kimchi, Kiro, Qwen, Zed, WorkBuddy, CodeBuddy, Kimi Desktop, iFlow |
+| Web-cookie providers | 39 | Qwen Web, Claude Web, ChatGPT Web, Gemini Web, DeepSeek Web, Kimi Web, Grok Web, Perplexity Web, Blackbox, T3, DuckDuckGo, Venice, DouBao, v0, Poe, Copilot, Meta AI (Muse), Adapta, VeoAI, Conol, Notion AI, HyperAgent, Hailuo, Gemini Business, Inner.ai, and more |
+| Free-tier providers | 19 | Kiro AI (free Claude/GLM/MiniMax), OpenCode Free (no auth), Vertex AI ($300 credits), ZenMux, free API mirrors |
+| Free providers | 15 | Community free endpoints, no signup |
+
+**Zero-cost stack (recommended):** Kiro AI + OpenCode Free + Vertex AI — unlimited free usage for daily coding.
+
+> Note: some free tiers changed in 2026 — iFlow and Qwen Code free tiers were discontinued. Kiro / OpenCode Free / Vertex remain the recommended free options.
+
+---
+
+<a name="key-features-in-detail"></a>
+
+## Key Features in Detail
+
+### Combo strategies
+
+A combo is a named list of models with a strategy. Call a combo by its name from any client.
+
+- **fallback** — try members in order; move to the next on quota/rate-limit/error.
+- **round-robin** — rotate through members for load balancing.
+- **fusion** — send the task to a panel of models and let a judge pick/merge the best answer.
+- **swarm** — Hierarchical Swarm: a gatekeeper triages the prompt, a manager plans and splits subtasks, workers execute in parallel, an audit stage reviews, and the manager synthesizes the final answer. Live SSE telemetry on the dashboard Swarm page.
+- **cascade** — start cheap, escalate to more capable models only when confidence is low.
+- **smart-routing** — task-aware routing (available in combo templates): tool-calling tasks route to tool-capable API models; research-style prompts route to cookie/free providers. Every decision (reason, selected pool, excluded cookies) is recorded in Smart Routing telemetry, persisted to the database, and shown in a dedicated dashboard page with pagination and filters.
+
+### Token savers
+
+- **RTK** — auto-detects and compresses tool outputs (git-diff, grep, ls, tree, dedup-log, smart-truncate) before the request reaches the LLM. Runs before format translation, so it works across all formats. Default ON.
+- **Headroom** — optional external `/v1/compress` proxy (fails open if down).
+- **Ponytail** — injects a "lazy senior dev" YAGNI-first prompt (Lite / Full / Ultra).
+- **Caveman** — injects a terse-response prompt for up to 65% output-token savings.
+
+### Resilience
+
+- **Health monitor** — sliding-window success/failure samples per provider, live SSE feed, dashboard Health page.
+- **Circuit breaker** — per-provider CLOSED/OPEN/HALF_OPEN state machine; routing auto-skips open breakers and probes to auto-recover.
+- **Account fallback** — multiple accounts per provider, cooldown on transient/rate/auth errors, next account tried automatically.
+- **Combo budget & admission control** — per-combo cost/call/output ceilings and per-key concurrency caps.
+
+### Security
+
+- **Per-key model ACL** — each API key can carry `allowedModels`; requests outside the list are rejected with 403 up front.
+- **API keys** — HMAC-signed local keys (`API_KEY_SECRET`), optional `REQUIRE_API_KEY` enforcement for internet-exposed deployments.
+- **Secrets handling** — tokens never logged in plaintext (masked), provider secrets stored in the local database.
+- **Dashboard auth** — cookie session signed with JWT (`JWT_SECRET`), optional `INITIAL_PASSWORD`, secure-cookie flag behind HTTPS proxies.
+
+### Observability
+
+- **Usage analytics** — tokens and estimated cost per provider/model, trends, monthly reports, leaderboards.
+- **Request logging** — optional full request/response logs (`ENABLE_REQUEST_LOGS=true`), request-details viewer.
+- **Smart Routing telemetry** — persisted routing decisions (reason, pool, excluded cookies) with history, pagination, and filters.
+- **A/B Lab** — replay historical requests through different strategies and compare predicted vs actual results, flagging models that fail often in production.
+
+### Media & more
+
+- **Images** — generation via provider-native endpoints (e.g. flux-1, image models).
+- **Audio** — STT (assemblyai, gladia, soniox, rev-ai, speechmatics) and TTS (fishaudio and friends) async-batch adapters.
+- **Embeddings & search** — OpenAI-compatible embeddings and web-search endpoints.
+- **Proxy pools** — deploy routing nodes to Cloudflare Workers, Deno, or Vercel.
+- **Tunnels** — Cloudflare Quick Tunnel and Tailscale (enable/disable/status from the dashboard).
+- **Cloud sync** — sync providers, combos, keys, and settings across devices.
+- **MCP plugin** — mount MCP servers/tools for agents.
+
+---
+
+<a name="frequently-asked-questions"></a>
+
+## Frequently Asked Questions
 
 <details>
-<summary><b>View all available models</b></summary>
+<summary><b>Will ExtremeRouter ever charge me anything?</b></summary>
 
-**Claude Code (`cc/`)** - Pro/Max:
-- `cc/claude-opus-4-7`
-- `cc/claude-opus-4-6`
-- `cc/claude-sonnet-4-6`
-- `cc/claude-sonnet-4-5-20250929`
-- `cc/claude-haiku-4-5-20251001`
+No. ExtremeRouter is free, open-source software that runs on your own machine. It has no billing system and never sends invoices. You only pay providers directly (subscriptions or API fees) when you choose paid ones — ExtremeRouter just routes your traffic.
 
-**Codex (`cx/`)** - Plus/Pro:
-- `cx/gpt-5.5`
-- `cx/gpt-5.4`
-- `cx/gpt-5.3-codex`
-- `cx/gpt-5.2-codex`
-- `cx/gpt-5.1-codex-max`
+</details>
 
-**GitHub Copilot (`gh/`)**:
-- `gh/gpt-5.4`
-- `gh/claude-opus-4.7`
-- `gh/claude-sonnet-4.6`
-- `gh/gemini-3.1-pro-preview`
-- `gh/grok-code-fast-1`
+<details>
+<summary><b>Why does the dashboard show high costs if it's free?</b></summary>
 
-**Cursor (`cu/`)** - Subscription:
-- `cu/claude-4.6-opus-max`
-- `cu/claude-4.5-sonnet-thinking`
-- `cu/gpt-5.3-codex`
-- `cu/kimi-k2.5`
+The "cost" numbers are *estimated* costs — what the same usage would cost if you called the paid APIs directly. They are a savings tracker, not a bill. Example: dashboard shows "$290" while you used Kiro (free) — that $290 is what you saved.
 
-**GLM (`glm/`)** - $0.6/1M:
-- `glm/glm-5.1`
-- `glm/glm-5`
-- `glm/glm-4.7`
+</details>
 
-**MiniMax (`minimax/`)** - $0.2/1M:
-- `minimax/MiniMax-M2.7`
-- `minimax/MiniMax-M2.5`
+<details>
+<summary><b>Are the free providers really unlimited?</b></summary>
 
-**Kimi (`kimi/`)** - $9/mo flat:
-- `kimi/kimi-k2.5`
-- `kimi/kimi-k2.5-thinking`
+Yes for the recommended ones (Kiro AI, OpenCode Free, Vertex $300 credits) — they are genuinely free services offered by those companies. ExtremeRouter just makes them easy to route to, with fallback support.
 
-**Kiro (`kr/`)** - FREE unlimited:
-- `kr/claude-sonnet-4.5`
-- `kr/claude-haiku-4.5`
-- `kr/glm-5`
-- `kr/MiniMax-M2.5`
-- `kr/qwen3-coder-next`
-- `kr/deepseek-3.2`
+</details>
 
-**OpenCode Free (`oc/`)** - FREE no-auth:
-- Auto-fetched from `opencode.ai/zen/v1/models`
+<details>
+<summary><b>What happens when my subscription quota runs out mid-session?</b></summary>
 
-**Vertex AI (`vertex/`)** - $300 free credits:
-- `vertex/gemini-3.1-pro-preview`
-- `vertex/gemini-3-flash-preview`
-- `vertex/gemini-2.5-flash`
-- `vertex-partner/glm-5-maas`
-- `vertex-partner/deepseek-v3.2-maas`
+If you're using a combo, the router automatically falls back to the next member (cheap → free). You never see downtime; your cost stays predictable because you define the ladder.
+
+</details>
+
+<details>
+<summary><b>Can I hand out keys to teammates without exposing everything?</b></summary>
+
+Yes. Per-key model ACL lets you mint keys with an `allowedModels` allow-list. Any request outside the list is rejected with 403.
+
+</details>
+
+<details>
+<summary><b>Which tools can I use it with?</b></summary>
+
+Anything that accepts a custom OpenAI or Anthropic-compatible base URL: Claude Code, Codex, Cursor, Cline, Continue, Roo, OpenClaw, Kilo Code, OpenCode, Zed, and more. No plugin required — just point the endpoint at `http://localhost:20128/v1`.
+
+</details>
+
+<details>
+<summary><b>Do web-cookie providers require anything special?</b></summary>
+
+You paste a browser cookie (or session token) from the site's DevTools. The router handles token refresh, WAF cookies, PoW challenges, and SSE translation per site. Some sites (Claude/ChatGPT/Gemini web) deploy aggressive anti-bot protection and are included best-effort.
 
 </details>
 
 ---
 
-## 🐛 Troubleshooting
+<a name="api-reference"></a>
 
-**"Language model did not provide messages"**
-- Provider quota exhausted → Check dashboard quota tracker
-- Solution: Use combo fallback or switch to cheaper tier
+## API Reference
 
-**Rate limiting**
-- Subscription quota out → Fallback to GLM/MiniMax
-- Add combo: `cc/claude-opus-4-7 → glm/glm-5.1 → kr/claude-sonnet-4.5`
+The gateway exposes an OpenAI-compatible surface at `http://localhost:20128/v1`.
 
-**OAuth token expired**
-- Auto-refreshed by ExtremeRouter
-- If issues persist: Dashboard → Provider → Reconnect
-
-**High costs**
-- Enable RTK in Dashboard → Endpoint settings (default ON, saves 20-40% tokens)
-- Check usage stats in Dashboard
-- Switch primary model to GLM/MiniMax
-- Use free tier (Kiro, OpenCode Free, Vertex) for non-critical tasks
-
-**Dashboard opens on wrong port**
-- Set `PORT=20128` and `NEXT_PUBLIC_BASE_URL=http://localhost:20128`
-
-**First login not working**
-- Check `INITIAL_PASSWORD` in `.env`
-- If unset, fallback password is `123456`
-
-**No request logs under `logs/`**
-- Set `ENABLE_REQUEST_LOGS=true`
-
----
-
-## 🛠️ Tech Stack
-
-- **Runtime**: Node.js 20+
-- **Framework**: Next.js 16
-- **UI**: React 19 + Tailwind CSS 4
-- **Database**: SQLite (better-sqlite3 / node:sqlite / sql.js fallback)
-- **Streaming**: Server-Sent Events (SSE)
-- **Auth**: OAuth 2.0 (PKCE) + JWT + API Keys
-
----
-
-## 📝 API Reference
-
-### Chat Completions
+### Chat completions
 
 ```bash
-POST http://localhost:20128/v1/chat/completions
+POST /v1/chat/completions
 Authorization: Bearer your-api-key
 Content-Type: application/json
 
 {
-  "model": "cc/claude-opus-4-6",
+  "model": "kr/claude-sonnet-4.5",
   "messages": [
-    {"role": "user", "content": "Write a function to..."}
+    { "role": "user", "content": "Write a function to..." }
   ],
   "stream": true
 }
 ```
 
-### List Models
+### List models
 
 ```bash
-GET http://localhost:20128/v1/models
+GET /v1/models
 Authorization: Bearer your-api-key
-
-→ Returns all models + combos in OpenAI format
 ```
 
-## 📧 Support
+Returns all provider models + combos in OpenAI format.
 
-- **Website**: [github.com/rsalmn/extremerouter](https://github.com/rsalmn/extremerouter)
-- **GitHub**: [github.com/rsalmn/extremerouter](https://github.com/rsalmn/extremerouter)
-- **Issues**: [github.com/rsalmn/extremerouter/issues](https://github.com/rsalmn/extremerouter/issues)
+### Anthropic Messages (Claude Code)
+
+```bash
+POST /v1/messages
+Authorization: Bearer your-api-key
+```
+
+Anthropic-format entry point for Claude Code and similar clients.
+
+### OpenAI Responses API
+
+```bash
+POST /v1/responses
+```
+
+### Gemini-native (v1beta)
+
+```bash
+POST /v1beta/models/gemini-2.5-pro:generateContent
+```
+
+Gemini-native surface for Google clients (respects per-key model ACL).
+
+### Other endpoints
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /v1/embeddings` | Embeddings (OpenAI-compatible) |
+| `POST /v1/images/generations` | Image generation |
+| `POST /v1/audio/transcriptions` | Speech-to-text |
+| `POST /v1/audio/speech` | Text-to-speech |
+| `POST /v1/search` | Web search |
+| `POST /v1/web/fetch` | Web fetch |
+| `POST /v1/messages/count_tokens` | Token counting |
+
+### Model naming
+
+Models are namespaced by provider alias: `kr/claude-sonnet-4.5`, `cc/claude-opus-4-6`, `glm/glm-5.1`, `minimax/MiniMax-M2.7`, `vertex/gemini-3.1-pro-preview`. Combo names can be used directly as the model value.
 
 ---
 
-## 👥 Contributors
+<a name="contributors"></a>
+
+## Contributors
 
 Thanks to all contributors who helped make ExtremeRouter better!
 
@@ -1380,37 +452,46 @@ Thanks to all contributors who helped make ExtremeRouter better!
 
 ---
 
-## 📊 Star Chart
+<a name="support"></a>
+
+## Support
+
+- **Issues & bugs**: [github.com/rsalmn/extremerouter/issues](https://github.com/rsalmn/extremerouter/issues)
+- **Docker Hub**: [rsalmn/extremerouter](https://hub.docker.com/r/rsalmn/extremerouter)
+- **GHCR**: [ghcr.io/rsalmn/extremerouter](https://github.com/rsalmn/extremerouter/pkgs/container/extremerouter)
+- **npm**: [@rsalmn/extremerouter](https://www.npmjs.com/package/@rsalmn/extremerouter)
+
+---
+
+<a name="star-chart--forks"></a>
+
+## Star Chart & Forks
 
 [![Star Chart](https://starchart.cc/rsalmn/extremerouter.svg?variant=adaptive)](https://starchart.cc/rsalmn/extremerouter)
 
-
-
-## 🔀 Forks
-
-_Comunity forks will be listed here. Submit a Pull Request to add yours._
+Community forks will be listed here. Submit a Pull Request to add yours.
 
 ---
 
-## 🙏 Acknowledgments
+<a name="acknowledgments--references"></a>
+
+## Acknowledgments & References
 
 Built on the shoulders of giants:
 
-- **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** — original Go implementation that inspired this JavaScript port.
-- **[RTK](https://github.com/rtk-ai/rtk)** ![Stars](https://img.shields.io/github/stars/rtk-ai/rtk?style=flat&color=yellow) — Rust token-saver. ExtremeRouter ports its compression pipeline to JS → **−20-40% input tokens** on every request.
-- **[Caveman](https://github.com/JuliusBrussee/caveman)** ![Stars](https://img.shields.io/github/stars/JuliusBrussee/caveman?style=flat&color=yellow) by **[@JuliusBrussee](https://github.com/JuliusBrussee)** — viral *"why use many token when few token do trick"*. ExtremeRouter adapts its prompt → **−65% output tokens**.
-- **[Ponytail](https://github.com/DietrichGebert/ponytail)** ![Stars](https://img.shields.io/github/stars/DietrichGebert/ponytail?style=flat&color=yellow) by **[@DietrichGebert](https://github.com/DietrichGebert)** — *"lazy senior dev"* skill. ExtremeRouter injects its YAGNI-first ladder → **fewer tokens, less code, shorter diffs**.
-
-Huge thanks to these authors — without their work, ExtremeRouter's token-saving features wouldn't exist. ⭐ them on GitHub!
-
----
-
-## 📄 License
-
-MIT License - see [LICENSE](LICENSE) for details.
+- **[CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)** — the original Go implementation that inspired this JavaScript port.
+- **[RTK](https://github.com/rtk-ai/rtk)** — Rust token-saver; ExtremeRouter ports its compression pipeline to JS.
+- **[Headroom](https://github.com/chopratejas/headroom)** — context compression proxy.
+- **[Caveman](https://github.com/JuliusBrussee/caveman)** by **[@JuliusBrussee](https://github.com/JuliusBrussee)** — terse-response prompting.
+- **[Ponytail](https://github.com/DietrichGebert/ponytail)** by **[@DietrichGebert](https://github.com/DietrichGebert)** — YAGNI-first code prompting.
+- **[OmniRoute](https://github.com/diegosouzapw/omniroute)** — provider registry and web-cookie executor patterns that ExtremeRouter adapts.
+- **[9Router](https://github.com/9router/9router)** — the routing core lineage.
+- **gemini-web2api / gemini-business2api / g4f** — reverse-engineering references for Gemini and Hailuo web protocols.
 
 ---
 
-<div align="center">
-  <sub>Built with ❤️ for developers who code 24/7</sub>
-</div>
+<a name="license"></a>
+
+## License
+
+MIT License — see [LICENSE](LICENSE) for details.
