@@ -1,7 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <rect width="64" height="64" rx="14" fill="#0F0F1A"/>
-  <path d="M32 12 C24 20, 24 32, 32 40 C40 32, 40 20, 32 12 Z" fill="#2563EB" opacity="0.9"/>
-  <path d="M32 24 C28 28, 28 36, 32 40 C36 36, 36 28, 32 24 Z" fill="#6B8FFF"/>
-  <circle cx="32" cy="46" r="3" fill="#2563EB"/>
-  <text x="32" y="56" font-family="Inter,sans-serif" font-size="8" font-weight="700" fill="#6B8FFF" text-anchor="middle">ZW</text>
-</svg>
+<svg fill="#2D2D2D" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>Z.ai</title><path d="M12.606 1.806l-1.677 2.388c-0.258 0.374-0.697 0.606-1.161 0.606h-9.162V1.794C0.594 1.806 12.606 1.806 12.606 1.806zM24 1.806L9.6 22.206 0 22.206 14.4 1.806zM11.394 22.206l1.69-2.4c0.258-0.374 0.697-0.606 1.161-0.606h9.149v3.006H11.394z"/></svg>

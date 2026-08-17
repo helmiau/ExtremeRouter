@@ -1,11 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <rect width="64" height="64" rx="14" fill="#1A1A2E"/>
-  <!-- Alibaba orange smile/curl shape -->
-  <path d="M16 22 C16 22 24 14 32 14 C40 14 48 22 48 22" fill="none" stroke="#FF6A00" stroke-width="4" stroke-linecap="round"/>
-  <path d="M14 38 C14 38 24 32 32 32 C40 32 50 38 50 38" fill="none" stroke="#FF6A00" stroke-width="4" stroke-linecap="round"/>
-  <!-- Eyes -->
-  <circle cx="24" cy="28" r="2.5" fill="#FF6A00"/>
-  <circle cx="40" cy="28" r="2.5" fill="#FF6A00"/>
-  <!-- "A" letter -->
-  <text x="32" y="54" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="bold" fill="#FF6A00">ALIBABA</text>
-</svg>
+<svg fill="#FF6A00" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><title>Alibaba Cloud</title><path d="M3.996 4.517h5.291L8.01 6.324 4.153 7.506a1.668 1.668 0 0 0-1.165 1.601v5.786a1.668 1.668 0 0 0 1.165 1.6l3.857 1.183 1.277 1.807H3.996A3.996 3.996 0 0 1 0 15.487V8.513a3.996 3.996 0 0 1 3.996-3.996m16.008 0h-5.291l1.277 1.807 3.857 1.182c.715.227 1.17.889 1.165 1.601v5.786a1.668 1.668 0 0 1-1.165 1.6l-3.857 1.183-1.277 1.807h5.291A3.996 3.996 0 0 0 24 15.487V8.513a3.996 3.996 0 0 0-3.996-3.996m-4.007 8.345H8.002v-1.804h7.995Z"/></svg>
