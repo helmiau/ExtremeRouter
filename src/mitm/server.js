@@ -110,7 +110,23 @@ function extractModel(url, body) {
     if (parsed.conversationState) {
       return parsed.conversationState.currentMessage?.userInputMessage?.modelId || null;
     }
-    return parsed.model || null;
+    const model = parsed.model || null;
+    // Antigravity tiered Flash models encode effort in generationConfig.thinkingLevel
+    // while the wire model stays `gemini-3.x-flash-tiered`. Expand to the alias slot
+    // so MITM routing / quota bars hit the correct high/medium/low model.
+    if (model) {
+      const cleanModelName = String(model).replace(/^models\//, "");
+      if (cleanModelName === "gemini-3.6-flash-tiered" || cleanModelName === "gemini-3.7-flash-tiered") {
+        const ver = cleanModelName.includes("3.7") ? "3.7" : "3.6";
+        const rawLevel = parsed.request?.generationConfig?.thinkingConfig?.thinkingLevel
+          || parsed.generationConfig?.thinkingConfig?.thinkingLevel;
+        const level = ["high", "medium", "low"].includes(String(rawLevel).toLowerCase())
+          ? String(rawLevel).toLowerCase()
+          : "medium";
+        return `gemini-${ver}-flash-${level}`;
+      }
+    }
+    return model;
   } catch { return null; }
 }
 
