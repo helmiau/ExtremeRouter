@@ -15,9 +15,14 @@ async function getObservabilityConfig() {
   try {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
-    const envEnabled = process.env.OBSERVABILITY_ENABLED !== "false";
-    const enabled = typeof settings.enableObservability2 === "boolean"
-      ? settings.enableObservability2
+    // Opt-in by default: full request/response capture (prompts included) only
+    // runs when the user enables the dashboard toggle or sets
+    // OBSERVABILITY_ENABLED=true explicitly. (The old reader key
+    // `enableObservability2` was never written by any UI — the profile toggle
+    // writes `enableObservability`, which now actually controls capture.)
+    const envEnabled = process.env.OBSERVABILITY_ENABLED === "true";
+    const enabled = typeof settings.enableObservability === "boolean"
+      ? settings.enableObservability
       : envEnabled;
     cachedConfig = {
       enabled,
@@ -51,6 +56,32 @@ function sanitizeHeaders(headers) {
     if (sensitiveKeys.some((s) => key.toLowerCase().includes(s))) delete sanitized[key];
   }
   return sanitized;
+}
+
+// Content redaction: prompts / responses can carry gateway keys, bearer
+// tokens or JWTs. Deep-walk the stored objects and replace known secret
+// shapes with [REDACTED] before the truncation pass (shapes stay intact).
+const SECRET_PATTERNS = [
+  /\bsk-[A-Za-z0-9_-]{8,}\b/g,
+  /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi,
+  /\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\b/g,
+];
+const REDACTED = "[REDACTED]";
+
+export function redactSecretsDeep(value, depth = 0) {
+  if (depth > 12) return value;
+  if (typeof value === "string") {
+    let out = value;
+    for (const re of SECRET_PATTERNS) out = out.replace(re, REDACTED);
+    return out;
+  }
+  if (Array.isArray(value)) return value.map((v) => redactSecretsDeep(v, depth + 1));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) out[k] = redactSecretsDeep(v, depth + 1);
+    return out;
+  }
+  return value;
 }
 
 function generateDetailId(model) {
@@ -97,10 +128,10 @@ async function flushToDatabase() {
             // Combo observability: which combo/strategy/role/trafficClass
             // produced this call (null for plain single-model requests).
             combo: item.combo || null,
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-            providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-            response: truncateField(item.response, config.maxJsonSize),
+            request: truncateField(redactSecretsDeep(item.request), config.maxJsonSize),
+            providerRequest: truncateField(redactSecretsDeep(item.providerRequest), config.maxJsonSize),
+            providerResponse: truncateField(redactSecretsDeep(item.providerResponse), config.maxJsonSize),
+            response: truncateField(redactSecretsDeep(item.response), config.maxJsonSize),
           };
 
           db.run(

@@ -5,32 +5,27 @@ import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
 import DonutChart from "@/shared/components/charts/DonutChart";
 import EmptyState from "@/shared/components/EmptyState";
+import { isUsageErrorStatus } from "@/shared/constants/usageStatus";
 import { fmt } from "./format";
 
-// Treat any status that isn't an error as success. statusCounts keys vary
-// (ok, success, error, failed, ...); collapse them to two buckets for the donut.
-const ERROR_KEYS = new Set(["error", "errors", "failed", "failure", "fail", "timeout", "5xx", "4xx"]);
-
 export default function OverviewErrorDonut({ stats }) {
-  const { segments, okCount, errCount, total, ratePct } = useMemo(() => {
+  const { okCount, errCount, total, ratePct } = useMemo(() => {
     const counts = stats?.statusCounts || {};
-    let ok = 0;
+    let total = 0;
     let err = 0;
     for (const [key, val] of Object.entries(counts)) {
       const n = Number(val) || 0;
-      if (ERROR_KEYS.has(String(key).toLowerCase())) err += n;
-      else ok += n;
+      total += n;
+      if (isUsageErrorStatus(key)) err += n;
     }
-    const t = ok + err;
+    // The server-computed errorCount is authoritative (same shared status
+    // contract) — prefer it so the donut can never disagree with the KPI.
+    if (typeof stats?.errorCount === "number" && stats.errorCount >= 0) err = stats.errorCount;
     return {
-      segments: [
-        { value: ok, color: "success", label: "Success" },
-        { value: err, color: "danger", label: "Error" },
-      ],
-      okCount: ok,
+      okCount: Math.max(0, total - err),
       errCount: err,
-      total: t,
-      ratePct: t > 0 ? (err / t) * 100 : 0,
+      total,
+      ratePct: total > 0 ? (err / total) * 100 : 0,
     };
   }, [stats]);
 
@@ -38,6 +33,11 @@ export default function OverviewErrorDonut({ stats }) {
   const serverRate = stats?.errorRate;
   const centerValue =
     serverRate != null ? `${(serverRate * 100).toFixed(1)}%` : `${ratePct.toFixed(1)}%`;
+
+  const segments = [
+    { value: okCount, color: "success", label: "Success" },
+    { value: errCount, color: "danger", label: "Error" },
+  ];
 
   return (
     <Card title="Success Rate" icon="check_circle" className="flex h-full min-w-0 flex-col">

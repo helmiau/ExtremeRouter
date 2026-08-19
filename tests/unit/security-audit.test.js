@@ -6,12 +6,12 @@ import path from "path";
 // AUDIT-002 (#1962): API key masking in usage stats
 // ============================================================
 describe("AUDIT-002: API key masking", () => {
-  it("source should contain maskApiKey function", () => {
+  it("source should import maskApiKey/hashApiKey helpers", () => {
     const source = fs.readFileSync(
       path.resolve("src/lib/db/repos/usageRepo.js"),
       "utf-8"
     );
-    expect(source).toContain("function maskApiKey");
+    expect(source).toContain('from "../helpers/usageKeySanitize.js"');
   });
 
   it("getUsageHistory should use apiKeyMasked instead of apiKey", () => {
@@ -19,8 +19,9 @@ describe("AUDIT-002: API key masking", () => {
       path.resolve("src/lib/db/repos/usageRepo.js"),
       "utf-8"
     );
-    // The REST response should use apiKeyMasked
-    expect(source).toContain("apiKeyMasked: maskApiKey(r.apiKey)");
+    // The REST response should use apiKeyMasked (column stores a masked
+    // prefix, never the raw key)
+    expect(source).toContain("apiKeyMasked: maskApiKey(r.apiKey || r.apiKeyHash)");
     // The return mapping in getUsageHistory should not have raw apiKey
     // (The internal ring buffer still uses apiKey: r.apiKey for internal state - that's fine)
     const historyReturn = source.match(/return rows\.map\(\(r\)\s*=>\s*\(\{[\s\S]*?\}\)\);/);
@@ -48,13 +49,13 @@ describe("AUDIT-002: API key masking", () => {
     expect(livePath.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("byApiKey object keys should use masked key, not raw key", () => {
+  it("byApiKey object keys should use hashed key, not raw key", () => {
     const source = fs.readFileSync(
       path.resolve("src/lib/db/repos/usageRepo.js"),
       "utf-8"
     );
-    // The 24h path should use apiKeyMasked in the akKey template
-    expect(source).toContain("${apiKeyMasked}|${r.model}|${r.provider");
+    // The 24h path should key by apiKeyHash
+    expect(source).toContain("${rowApiKeyHash}|${r.model}|${r.provider");
     // Should NOT use raw r.apiKey in the key
     expect(source).not.toContain("${r.apiKey}|${r.model}|${r.provider");
   });

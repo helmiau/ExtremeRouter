@@ -1095,7 +1095,7 @@ export default function ProfilePage() {
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm sm:text-base">Enable Observability</p>
               <p className="text-xs sm:text-sm text-text-muted">
-                Record request details for inspection in the logs view
+                Record prompts and responses for inspection in the logs view (may contain sensitive data)
               </p>
             </div>
             <Toggle

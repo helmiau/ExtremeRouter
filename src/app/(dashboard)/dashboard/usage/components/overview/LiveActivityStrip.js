@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 import Card from "@/shared/components/Card";
 import Badge from "@/shared/components/Badge";
+import { isUsageErrorStatus } from "@/shared/constants/usageStatus";
 import { fmtTime } from "./format";
 
 // A single shared 30s tick so all chips re-render their relative time together
@@ -17,7 +18,7 @@ function useSharedTick(intervalMs = 30000) {
 }
 
 function ActivityChip({ req }) {
-  const ok = !req.status || req.status === "ok" || req.status === "success";
+  const ok = !req.status || !isUsageErrorStatus(req.status);
   const model = req.model || "unknown";
   const provider = req.provider || "—";
   const inTok = Number(req.promptTokens) || 0;

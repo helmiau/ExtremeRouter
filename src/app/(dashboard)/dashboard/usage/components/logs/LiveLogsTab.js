@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { Card, SegmentedControl, Input, Badge, EmptyState } from "@/shared/components";
+import { isUsageErrorStatus } from "@/shared/constants/usageStatus";
 import { cn } from "@/shared/utils/cn";
 
 const MAX_BUFFER = 100;
@@ -28,7 +29,9 @@ function timeAgo(iso, now) {
 }
 
 const rowKey = (r) => `${r.timestamp ?? ""}|${r.model ?? ""}|${r.provider ?? ""}`;
-const isOk = (s) => !s || s === "ok";
+// Same status contract as the server error-rate and the activity strip —
+// anything that is not a known error status renders as OK.
+const isOk = (s) => !s || !isUsageErrorStatus(s);
 
 export default function LiveLogsTab() {
   const [buffer, setBuffer] = useState([]);

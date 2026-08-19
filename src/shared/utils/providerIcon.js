@@ -16,7 +16,7 @@ import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX } from "@/shared/
 // When adding a new .svg asset, add its id here too.
 export const SVG_ICON_IDS = new Set([
   "windsurf", "trae", "cody", "kimchi",
-  "zai-web", "blackbox-web", "puter", "adapta-web", "deepseek-web",
+  "zai-web", "puter", "adapta-web", "deepseek-web",
   "chatgpt-web", "doubao-web", "gemini-web", "copilot-web", "muse-spark-web",
   "duckduckgo-web", "venice-web", "t3-web", "lmarena", "veoaifree-web",
   "claude-web", "pollinations", "poe-web", "v0-vercel-web", "qwen-web",
@@ -32,21 +32,20 @@ export const SVG_ICON_IDS = new Set([
   "felo-web",
   "bazaarlink", "meta-ai", "freebuff", "g4f-pollinations", "fireworks",
   // 2026-08 OmniRoute enterprise + frontier import
-  "reka", "pioneer", "meta-llama", "morph", "ai21", "upstage", "maritalk",
-  "nous-research", "arcee-ai", "liquid", "inception", "writer",
+  "reka", "pioneer", "meta-llama", "morph", "upstage", "maritalk",
+  "nous-research", "liquid", "inception", "writer",
   "modal", "scaleway", "ovhcloud", "heroku", "clarifai", "azure-ai",
-  "watsonx", "oci", "sap", "datarobot", "snowflake",
+  "watsonx", "oci", "sap", "snowflake",
   // 2026-08 OmniRoute gateways + inference-hosts import
-  "aimlapi", "ainative", "aion", "anyapi", "auriko", "bai", "baseten",
-  "bluesminds", "bytez", "charm-hyper", "chat-oripe", "chatanywhere",
-  "cheaperinference", "chenzk", "cloudcode-one", "crof", "digitalocean", "dit",
+  "auriko",
+  "chat-oripe", "chatanywhere", "cloudcode-one", "digitalocean", "dit",
   "dxnt", "electronhub", "empower", "factory", "fastrouter", "free-ai",
   "freeaiapikey", "freeinference", "freemodel-dev", "freetheai", "friendliai",
   "getgoapi", "gitlawb-gmi", "gitlawb", "helixmind", "inference-net", "kenari",
   "kilo-gateway", "lambda-ai", "laozhang", "literouter", "llamagate", "llm-kiwi",
   "llmgateway", "meganova-ai", "mixlayer", "mnn-ai", "modelscope", "naga-ac",
   "naga-ai", "nanogpt", "nara", "navy", "nscale", "nube", "ofoxai",
-  "ollama-cloud", "openadapter", "opencode-zen", "openference-api", "orcarouter",
+  "ollama-cloud", "openadapter", "opencode-zen", "openference-api",
   "piapi", "poixe-ai", "poolside", "predibase", "publicai", "qiniu", "regolo",
   "requesty", "routeway", "sambanova", "speka", "sumopod", "synthetic",
   "thebai", "tokenreply", "unorouter", "void-ai", "wafer", "wandb", "x5lab",
@@ -56,7 +55,7 @@ export const SVG_ICON_IDS = new Set([
   "docker-model-runner", "xinference", "oobabooga",
   "soniox", "gladia", "fishaudio", "rev-ai", "speechmatics",
   // 2026-08 OmniRoute web-cookie executor ports
-  "hailuo-web", "gemini-business", "inner-ai", "conol-web", "notion-web", "hyperagent",
+  "hailuo-web", "gemini-business", "inner-ai", "notion-web", "hyperagent",
 ]);
 
 /**

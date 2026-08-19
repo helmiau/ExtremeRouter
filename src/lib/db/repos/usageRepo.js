@@ -4,12 +4,8 @@ import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 import { getPricingForModel } from "open-sse/providers/pricing.js";
 import { percentile } from "@/lib/usageStats.js";
-
-function maskApiKey(key) {
-  if (!key || typeof key !== "string") return null;
-  if (key.length <= 8) return key.charAt(0) + "***";
-  return key.slice(0, 8) + "***";
-}
+import { isUsageErrorStatus, classifyUsageStatus } from "@/shared/constants/usageStatus.js";
+import { hashApiKey, maskApiKey } from "../helpers/usageKeySanitize.js";
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
 const RING_CAP = 50;
@@ -157,9 +153,16 @@ function aggregateEntryToDay(day, entry) {
     addToCounter(day.byAccount, entry.connectionId, { ...vals, meta: { rawModel: entry.model, provider: entry.provider } });
   }
 
-  const apiKeyVal = entry.apiKey && typeof entry.apiKey === "string" ? entry.apiKey : "local-no-key";
+  const apiKeyHash = entry.apiKeyHash || hashApiKey(entry.apiKey);
+  const apiKeyPrefix = entry.apiKeyPrefix || maskApiKey(entry.apiKey);
+  const apiKeyVal = apiKeyHash || "local-no-key";
   const akModelKey = `${apiKeyVal}|${entry.model}|${entry.provider || "unknown"}`;
-  addToCounter(day.byApiKey, akModelKey, { ...vals, meta: { rawModel: entry.model, provider: entry.provider, apiKey: entry.apiKey || null } });
+  addToCounter(day.byApiKey, akModelKey, { ...vals, meta: {
+    rawModel: entry.model,
+    provider: entry.provider,
+    apiKeyHash,
+    apiKeyPrefix,
+  } });
 
   const endpoint = entry.endpoint || "Unknown";
   const epKey = `${endpoint}|${entry.model}|${entry.provider || "unknown"}`;
@@ -326,10 +329,17 @@ export async function saveRequestUsage(entry) {
   try {
     const db = await getAdapter();
 
-    if (!entry.timestamp) entry.timestamp = new Date().toISOString();
-    entry.cost = await calculateCost(entry.provider, entry.model, entry.tokens);
+    const apiKeyHash = hashApiKey(entry.apiKey);
+    const apiKeyPrefix = maskApiKey(entry.apiKey);
+    const storedEntry = {
+      ...entry,
+      apiKey: apiKeyPrefix,
+      apiKeyHash,
+      timestamp: entry.timestamp || new Date().toISOString(),
+    };
+    storedEntry.cost = await calculateCost(storedEntry.provider, storedEntry.model, storedEntry.tokens);
 
-    const tokens = entry.tokens || {};
+    const tokens = storedEntry.tokens || {};
     const promptTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
 
@@ -344,43 +354,43 @@ export async function saveRequestUsage(entry) {
            AND COALESCE(provider, '') = COALESCE(?, '')
            AND COALESCE(model, '') = COALESCE(?, '')
            AND COALESCE(connectionId, '') = COALESCE(?, '')
-           AND COALESCE(apiKey, '') = COALESCE(?, '')
+           AND COALESCE(apiKeyHash, '') = COALESCE(?, '')
            AND promptTokens = ?
            AND completionTokens = ?
          ORDER BY id DESC LIMIT 1`,
         [
-          entry.timestamp, entry.provider || null, entry.model || null,
-          entry.connectionId || null, entry.apiKey || null,
+          storedEntry.timestamp, storedEntry.provider || null, storedEntry.model || null,
+          storedEntry.connectionId || null, storedEntry.apiKeyHash || null,
           promptTokens, completionTokens,
         ]
       );
 
       if (existing) {
-        if (!existing.endpoint && entry.endpoint) {
-          db.run(`UPDATE usageHistory SET endpoint = ? WHERE id = ?`, [entry.endpoint, existing.id]);
+        if (!existing.endpoint && storedEntry.endpoint) {
+          db.run(`UPDATE usageHistory SET endpoint = ? WHERE id = ?`, [storedEntry.endpoint, existing.id]);
         }
         return;
       }
 
       db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, latencyTtftMs, latencyTotalMs) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, apiKeyHash, endpoint, promptTokens, completionTokens, cost, status, tokens, meta, latencyTtftMs, latencyTotalMs) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          entry.timestamp, entry.provider || null, entry.model || null,
-          entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
-          promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson(buildUsageMeta(entry)),
-          Math.max(0, Math.round(entry.latency?.ttft || 0)),
-          Math.max(0, Math.round(entry.latency?.total || 0)),
+          storedEntry.timestamp, storedEntry.provider || null, storedEntry.model || null,
+          storedEntry.connectionId || null, storedEntry.apiKey || null, storedEntry.apiKeyHash || null,
+          storedEntry.endpoint || null, promptTokens, completionTokens, storedEntry.cost || 0, storedEntry.status || "ok",
+          stringifyJson(tokens), stringifyJson(buildUsageMeta(storedEntry)),
+          Math.max(0, Math.round(storedEntry.latency?.ttft || 0)),
+          Math.max(0, Math.round(storedEntry.latency?.total || 0)),
         ]
       );
 
-      const dateKey = getLocalDateKey(entry.timestamp);
+      const dateKey = getLocalDateKey(storedEntry.timestamp);
       const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
       const day = row ? parseJson(row.data, {}) : {
         requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
         byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
       };
-      aggregateEntryToDay(day, entry);
+      aggregateEntryToDay(day, storedEntry);
       db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?) ON CONFLICT(dateKey) DO UPDATE SET data = excluded.data`, [dateKey, stringifyJson(day)]);
 
       // Atomic counter increment in same transaction
@@ -461,7 +471,7 @@ export async function saveRequestUsage(entry) {
     });
 
     if (inserted) {
-      pushToRing(entry);
+      pushToRing(storedEntry);
       scheduleStatsEvent("update", 250);
     }
     // P0 (activity): opportunistically prune old rows. Throttled internally so
@@ -489,11 +499,11 @@ export async function getUsageHistory(filter = {}) {
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   // Fix 4.1: include latency columns so the leaderboard can compute TTFT/P95
-  const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens, latencyTtftMs, latencyTotalMs FROM usageHistory ${where} ORDER BY id ASC`, params);
+  const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, apiKeyHash, endpoint, cost, status, tokens, latencyTtftMs, latencyTotalMs FROM usageHistory ${where} ORDER BY id ASC`, params);
 
   return rows.map((r) => ({
     timestamp: r.timestamp, provider: r.provider, model: r.model,
-    connectionId: r.connectionId, apiKeyMasked: maskApiKey(r.apiKey), endpoint: r.endpoint,
+    connectionId: r.connectionId, apiKeyMasked: maskApiKey(r.apiKey || r.apiKeyHash), endpoint: r.endpoint,
     cost: r.cost, status: r.status, tokens: parseJson(r.tokens, {}),
     latencyTtftMs: r.latencyTtftMs || 0,
     latencyTotalMs: r.latencyTotalMs || 0,
@@ -533,7 +543,10 @@ export async function getUsageStats(period = "all") {
   let allApiKeys = [];
   try { allApiKeys = await getApiKeys(); } catch {}
   const apiKeyMap = {};
-  for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
+  for (const k of allApiKeys) {
+    const keyHash = hashApiKey(k.key);
+    if (keyHash) apiKeyMap[keyHash] = { name: k.name, id: k.id, createdAt: k.createdAt };
+  }
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
   const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
@@ -671,11 +684,12 @@ export async function getUsageStats(period = "all") {
         const rawModel = ak.rawModel || "";
         const provider = ak.provider || "";
         const providerDisplayName = providerNodeNameMap[provider] || provider;
-        const apiKeyVal = ak.apiKey;
-        const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
-        const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
-        const apiKeyMasked = maskApiKey(apiKeyVal);
-        const apiKeyKey = apiKeyMasked || "local-no-key";
+        const apiKeyHash = ak.apiKeyHash || (typeof ak.apiKey === "string" ? hashApiKey(ak.apiKey) : null);
+        const apiKeyPrefix = ak.apiKeyPrefix || (typeof ak.apiKey === "string" ? maskApiKey(ak.apiKey) : null);
+        const keyInfo = apiKeyHash ? apiKeyMap[apiKeyHash] : null;
+        const keyName = keyInfo?.name || apiKeyPrefix || "Local (No API Key)";
+        const apiKeyMasked = apiKeyPrefix;
+        const apiKeyKey = apiKeyHash || "local-no-key";
         if (!stats.byApiKey[akKey]) {
           stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
         }
@@ -707,7 +721,7 @@ export async function getUsageStats(period = "all") {
     // Overlay precise lastUsed timestamps from history
     const overlayCutoff = maxDays ? Date.now() - maxDays * 86400000 : 0;
     const histRows = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, provider, model, connectionId, apiKey, apiKeyHash, endpoint FROM usageHistory WHERE timestamp >= ?`,
       [new Date(overlayCutoff).toISOString()]
     );
     for (const e of histRows) {
@@ -721,8 +735,8 @@ export async function getUsageStats(period = "all") {
         if (stats.byAccount[accountKey] && new Date(ts) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = ts;
       }
 
-      const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
-        ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
+        const apiKeyKey = (e.apiKeyHash && typeof e.apiKeyHash === "string")
+        ? `${e.apiKeyHash}|${e.model}|${e.provider || "unknown"}`
         : "local-no-key";
       if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
 
@@ -741,7 +755,7 @@ export async function getUsageStats(period = "all") {
       cutoff = new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
     }
     const filtered = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, provider, model, connectionId, apiKey, apiKeyHash, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
       [cutoff]
     );
 
@@ -790,13 +804,14 @@ export async function getUsageStats(period = "all") {
         if (new Date(r.timestamp) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = r.timestamp;
       }
 
-      if (r.apiKey && typeof r.apiKey === "string") {
-        const keyInfo = apiKeyMap[r.apiKey];
-        const keyName = keyInfo?.name || r.apiKey.slice(0, 8) + "...";
-        const apiKeyMasked = maskApiKey(r.apiKey);
-        const akKey = `${apiKeyMasked}|${r.model}|${r.provider || "unknown"}`;
+      const rowApiKeyHash = r.apiKeyHash || (r.apiKey && typeof r.apiKey === "string" && r.apiKey.startsWith("sha256:") ? r.apiKey : null);
+      if (rowApiKeyHash) {
+        const keyInfo = apiKeyMap[rowApiKeyHash];
+        const apiKeyMasked = r.apiKey && r.apiKey.endsWith("***") ? r.apiKey : null;
+        const keyName = keyInfo?.name || apiKeyMasked || "Local (No API Key)";
+        const akKey = `${rowApiKeyHash}|${r.model}|${r.provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: rowApiKeyHash, lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey[akKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
@@ -841,10 +856,10 @@ export async function getUsageStats(period = "all") {
       total += r.n;
     }
     stats.statusCounts = statusCounts;
-    // errorRate = non-ok / total (treat "error"/"failed"/"unauthorized"/etc. as errors)
-    const errorKeys = new Set(["error", "failed", "unauthorized", "forbidden", "timeout", "blocked"]);
+    // errorRate = non-ok / total, classified by the shared status contract
+    // (src/shared/constants/usageStatus.js) so every dashboard widget agrees.
     let errorCount = 0;
-    for (const [k, v] of Object.entries(statusCounts)) if (errorKeys.has(k)) errorCount += v;
+    for (const [k, v] of Object.entries(statusCounts)) if (isUsageErrorStatus(k)) errorCount += v;
     stats.errorRate = total > 0 ? errorCount / total : 0;
     stats.errorCount = errorCount;
 
@@ -1071,7 +1086,6 @@ export async function getLatencyChartData(period = "7d") {
 export async function getErrorChartData(period = "7d") {
   const db = await getAdapter();
   const { buckets, fromMs } = resolveChartBuckets(period);
-  const errorKeys = new Set(["error", "failed", "unauthorized", "forbidden", "timeout", "blocked"]);
   const rows = db.all(
     `SELECT timestamp, status FROM usageHistory WHERE timestamp >= ?`,
     [new Date(fromMs).toISOString()]
@@ -1080,7 +1094,7 @@ export async function getErrorChartData(period = "7d") {
     const t = new Date(r.timestamp).getTime();
     const idx = buckets.findIndex((b) => t >= b.startMs && t < b.endMs);
     if (idx < 0) continue;
-    if (errorKeys.has(String(r.status || "ok").toLowerCase())) buckets[idx].error = (buckets[idx].error || 0) + 1;
+    if (isUsageErrorStatus(r.status)) buckets[idx].error = (buckets[idx].error || 0) + 1;
     else buckets[idx].ok = (buckets[idx].ok || 0) + 1;
   }
   return buckets.map((b) => ({ label: b.label, ok: b.ok || 0, error: b.error || 0 }));
@@ -1165,11 +1179,13 @@ export async function getProviderHealthTimeline(providerId, hours = 24) {
         buckets.set(bucketHour, { ts: new Date(bucketHour).toISOString(), ok: 0, err: 0, latSum: 0, latCount: 0 });
       }
       const b = buckets.get(bucketHour);
-      const statusNum = Number(r.status);
-      if (statusNum >= 200 && statusNum < 400) {
-        b.ok++;
-      } else {
+      // Status is a string ("ok"/"failed"/…) in usageHistory — the old
+      // Number(status) check was always NaN, marking every request as an
+      // error. classifyUsageStatus handles both strings and numeric codes.
+      if (classifyUsageStatus(r.status) === "error") {
         b.err++;
+      } else {
+        b.ok++;
       }
       if (r.latencyTotalMs > 0) {
         b.latSum += r.latencyTotalMs;
