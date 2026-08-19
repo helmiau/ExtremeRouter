@@ -173,8 +173,9 @@ export const CLI_TOOLS = {
       { step: 4, title: "Set Model", desc: "Pick a model from ExtremeRouter", value: "export XAI_MODEL={{model}}", copyable: true },
       { step: 5, title: "Run", desc: "Start Grok Build in your project directory", value: "grok-build", copyable: true },
     ],
-    modelAliases: ["grok-4.5", "grok-4-fast-reasoning", "grok-code-fast-1"],
+    modelAliases: ["grok-4.6", "grok-4.5", "grok-4-fast-reasoning", "grok-code-fast-1"],
     defaultModels: [
+      { id: "grok-4.6", name: "Grok 4.6", alias: "grok-4.6", defaultValue: "xai/grok-4.6" },
       { id: "grok-4.5", name: "Grok 4.5", alias: "grok-4.5", defaultValue: "xai/grok-4.5" },
       { id: "grok-4-fast-reasoning", name: "Grok 4 Fast Reasoning", alias: "grok-4-fast-reasoning", defaultValue: "xai/grok-4-fast-reasoning" },
       { id: "grok-code-fast-1", name: "Grok Code Fast 1", alias: "grok-code-fast-1", defaultValue: "xai/grok-code-fast-1" },

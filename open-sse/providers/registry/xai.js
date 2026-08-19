@@ -19,7 +19,7 @@ export default {
   ],
   hasOAuth: true,
   thinkingConfig: {
-    options: ["auto", "none", "low", "medium", "high"],
+    options: ["auto", "none", "low", "medium", "high", "xhigh"],
     defaultMode: "auto",
   },
   transport: {
@@ -41,6 +41,7 @@ export default {
   features: { usage: true, usageApikey: true },
   models: [
     // Reasoning LLMs (Responses API + Chat Completions)
+    { id: "grok-4.6", name: "Grok 4.6", contextWindow: 500000 },
     { id: "grok-4.5", name: "Grok 4.5", contextWindow: 500000 },
     { id: "grok-4.20-multi-agent", name: "Grok 4.20 Multi-Agent" },
     { id: "grok-4.20-reasoning", name: "Grok 4.20 Reasoning" },
@@ -50,6 +51,7 @@ export default {
     { id: "grok-3", name: "Grok 3" },
     // Image generation / editing
     { id: "grok-imagine-image-quality", name: "Grok Imagine (Image Quality)", params: ["n","response_format"], kind: "image" },
+    { id: "grok-imagine-image-2.0", name: "Grok Imagine Image 2.0", params: ["n","response_format"], kind: "image" },
     { id: "grok-2-image-1212", name: "Grok 2 Image", params: ["n","response_format"], kind: "image" },
     // Image-to-Video
     { id: "grok-imagine-video-1.5", name: "Grok Imagine Video 1.5", kind: "video" },

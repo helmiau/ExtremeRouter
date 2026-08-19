@@ -57,6 +57,8 @@ const USAGE_HANDLERS = {
   "codebuddy-cn": (c) => getCodeBuddyCnUsage(c.accessToken, c.apiKey, c.providerSpecificData, c.proxyOptions),
   "codebuddy-intl": (c) => getCodebuddyUsage("codebuddy-intl", c.accessToken, c.apiKey, c.proxyOptions),
   workbuddy: (c) => getCodebuddyUsage("workbuddy", c.accessToken, c.apiKey, c.proxyOptions),
+  // Pass full connection context so xAI can aggregate local usageHistory by
+  // connectionId when the (removed) public billing API is unavailable.
   xai: (c) => getXaiUsage(c, c.proxyOptions),
   tokenrouter: (c) => getTokenRouterUsage(c, c.providerSpecificData, c.proxyOptions),
   // Cline + ClinePass share the same upstream host and plan-limits endpoint;
@@ -71,7 +73,7 @@ const USAGE_HANDLERS = {
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null) {
-  const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
+  const { provider, accessToken, apiKey, providerSpecificData, projectId, id } = connection;
   const providerDataWithProjectId = {
     ...(providerSpecificData || {}),
     ...(projectId ? { projectId } : {}),
@@ -79,5 +81,16 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
 
   const handler = USAGE_HANDLERS[provider];
   if (!handler) return { message: `Usage API not implemented for ${provider}` };
-  return await handler({ provider, accessToken, apiKey, providerSpecificData, providerDataWithProjectId, proxyOptions });
+  // connectionId/id lets handlers that lack a remote billing API (xAI) aggregate
+  // local usageHistory spend for the specific connection card.
+  return await handler({
+    provider,
+    accessToken,
+    apiKey,
+    providerSpecificData,
+    providerDataWithProjectId,
+    proxyOptions,
+    connectionId: id || connection.connectionId || null,
+    id: id || null,
+  });
 }

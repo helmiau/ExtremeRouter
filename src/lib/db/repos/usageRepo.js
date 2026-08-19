@@ -489,6 +489,7 @@ export async function getUsageHistory(filter = {}) {
 
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
+  if (filter.connectionId) { conds.push("connectionId = ?"); params.push(filter.connectionId); }
   // Fix 4.2: support period filter (convert to startDate like getUsageStats does)
   if (filter.period && !filter.startDate) {
     const ms = PERIOD_MS[filter.period];
@@ -499,11 +500,13 @@ export async function getUsageHistory(filter = {}) {
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   // Fix 4.1: include latency columns so the leaderboard can compute TTFT/P95
-  const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, apiKeyHash, endpoint, cost, status, tokens, latencyTtftMs, latencyTotalMs FROM usageHistory ${where} ORDER BY id ASC`, params);
+  const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, apiKeyHash, endpoint, promptTokens, completionTokens, cost, status, tokens, latencyTtftMs, latencyTotalMs FROM usageHistory ${where} ORDER BY id ASC`, params);
 
   return rows.map((r) => ({
     timestamp: r.timestamp, provider: r.provider, model: r.model,
     connectionId: r.connectionId, apiKeyMasked: maskApiKey(r.apiKey || r.apiKeyHash), endpoint: r.endpoint,
+    promptTokens: r.promptTokens || 0,
+    completionTokens: r.completionTokens || 0,
     cost: r.cost, status: r.status, tokens: parseJson(r.tokens, {}),
     latencyTtftMs: r.latencyTtftMs || 0,
     latencyTotalMs: r.latencyTotalMs || 0,

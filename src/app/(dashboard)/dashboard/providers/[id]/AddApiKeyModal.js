@@ -36,8 +36,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     proxyPoolId: NONE_PROXY_POOL_VALUE,
     ollamaHostUrl: "",
   });
-  // TokenRouter management key — separate from chat API key, used by Quota Tracker.
-  const [tokenRouterMgmtKey, setTokenRouterMgmtKey] = useState("");
+  // Management key — separate from chat API key, used by Quota Tracker
+  // (TokenRouter wallet + xAI Management API forward-compat).
+  const [mgmtKey, setMgmtKey] = useState("");
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
     apiVersion: "2024-10-01-preview",
@@ -68,8 +69,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
     }
-    if (isTokenRouter && tokenRouterMgmtKey.trim()) {
-      return { mgmtKey: tokenRouterMgmtKey.trim() };
+    if ((isTokenRouter || isXaiApiKey) && mgmtKey.trim()) {
+      return { mgmtKey: mgmtKey.trim() };
     }
     if (providerRegions && region) {
       return { region };
@@ -324,14 +325,31 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             <Input
               label="Management Key"
               type="password"
-              value={tokenRouterMgmtKey}
-              onChange={(e) => setTokenRouterMgmtKey(e.target.value)}
+              value={mgmtKey}
+              onChange={(e) => setMgmtKey(e.target.value)}
               placeholder="your_management_key..."
             />
             <p className="text-xs text-text-muted mt-2">
               The management key is separate from the chat API key (sk-...) and is required for
               Quota Tracker to read your wallet balance. Without it, chat still works but quota
               tracking is disabled. Get it from the TokenRouter dashboard.
+            </p>
+          </div>
+        )}
+        {isXaiApiKey && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">xAI Management Key (optional)</h3>
+            <Input
+              label="Management Key"
+              type="password"
+              value={mgmtKey}
+              onChange={(e) => setMgmtKey(e.target.value)}
+              placeholder="xai-mgmt-..."
+            />
+            <p className="text-xs text-text-muted mt-2">
+              Optional. Separate from the chat API key (xai-...). Used by Quota Tracker to probe
+              the xAI Management API when available. Without it, Quota Tracker still shows local
+              gateway spend for this connection. Create one at console.x.ai → Settings → Management Keys.
             </p>
           </div>
         )}

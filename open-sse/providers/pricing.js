@@ -131,7 +131,16 @@ export const MODEL_PRICING = {
   "minimax-m2.1":                 { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  },
   "minimax-m2.5":                 { input: 0.60,  output: 2.40,  cached: 0.30,  reasoning: 3.60,   cache_creation: 0.60  },
 
-  // === Grok ===
+  // === Grok (xAI official rates, pre-200k context; ≥200k bills 2x) ===
+  // Source: https://docs.x.ai/docs/models — grok-4.6/4.5 $2/$6, cached $0.50/$0.30.
+  "grok-4.6":                     { input: 2.00,  output: 6.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 2.00  },
+  "grok-4.5":                     { input: 2.00,  output: 6.00,  cached: 0.30,  reasoning: 6.00,   cache_creation: 2.00  },
+  "grok-4.20-multi-agent":        { input: 2.00,  output: 6.00,  cached: 0.20,  reasoning: 6.00,   cache_creation: 2.00  },
+  "grok-4.20-reasoning":          { input: 2.00,  output: 6.00,  cached: 0.20,  reasoning: 6.00,   cache_creation: 2.00  },
+  "grok-4.3":                     { input: 1.25,  output: 2.50,  cached: 0.20,  reasoning: 2.50,   cache_creation: 1.25  },
+  "grok-4":                       { input: 3.00,  output: 15.00, cached: 0.75,  reasoning: 15.00,  cache_creation: 3.00  },
+  "grok-4-fast-reasoning":        { input: 0.20,  output: 0.50,  cached: 0.05,  reasoning: 0.50,   cache_creation: 0.20  },
+  "grok-3":                       { input: 3.00,  output: 15.00, cached: 0.75,  reasoning: 15.00,  cache_creation: 3.00  },
   "grok-code-fast-1":             { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  },
 
   // === OpenRouter fallback ===
@@ -259,6 +268,20 @@ export const PROVIDER_PRICING = {
   // canonical $6/$24 instead of GitHub's actual $1.75/$14.
   github: {
     "gpt-5.3-codex": { input: 1.75, output: 14.00, cached: 0.175, reasoning: 14.00, cache_creation: 1.75 },
+  },
+  // xAI (xai) — official console.x.ai rates (pre-200k). ≥200k context bills 2x.
+  // Mirrors MODEL_PRICING so provider-scoped lookups don't fall through to the
+  // old $0.50/$2.00 grok-* pattern for unknown aliases.
+  xai: {
+    "grok-4.6":              { input: 2.00, output: 6.00, cached: 0.50, reasoning: 6.00, cache_creation: 2.00 },
+    "grok-4.5":              { input: 2.00, output: 6.00, cached: 0.30, reasoning: 6.00, cache_creation: 2.00 },
+    "grok-4.20-multi-agent": { input: 2.00, output: 6.00, cached: 0.20, reasoning: 6.00, cache_creation: 2.00 },
+    "grok-4.20-reasoning":   { input: 2.00, output: 6.00, cached: 0.20, reasoning: 6.00, cache_creation: 2.00 },
+    "grok-4.3":              { input: 1.25, output: 2.50, cached: 0.20, reasoning: 2.50, cache_creation: 1.25 },
+    "grok-4":                { input: 3.00, output: 15.00, cached: 0.75, reasoning: 15.00, cache_creation: 3.00 },
+    "grok-4-fast-reasoning": { input: 0.20, output: 0.50, cached: 0.05, reasoning: 0.50, cache_creation: 0.20 },
+    "grok-3":                { input: 3.00, output: 15.00, cached: 0.75, reasoning: 15.00, cache_creation: 3.00 },
+    "grok-code-fast-1":      { input: 0.50, output: 2.00, cached: 0.25, reasoning: 3.00, cache_creation: 0.50 },
   },
   // Fireworks AI (fireworks) — serverless rates, $/1M tokens (docs.fireworks.ai/serverless/pricing).
   // Keys carry the full accounts/fireworks/models/... id as served by Fireworks.
@@ -408,6 +431,7 @@ export const PROVIDER_PRICING = {
     "x-ai/grok-4.20-beta": { input: 2, output: 6, cached: 0.2, reasoning: 6 },
     "x-ai/grok-4.3": { input: 1.25, output: 2.5, cached: 0.2, reasoning: 2.5 },
     "x-ai/grok-4.5": { input: 2, output: 6, cached: 0.5, reasoning: 6 },
+    "x-ai/grok-4.6": { input: 2, output: 6, cached: 0.5, reasoning: 6 },
     "x-ai/grok-build-0.1": { input: 1.0, output: 2.0, cached: 0.2, reasoning: 2.0 },
     "xiaomi/mimo-v2-flash": { input: 0.1, output: 0.3, cached: 0.01, reasoning: 0.3 },
     "xiaomi/mimo-v2-omni": { input: 0.4, output: 2.0, cached: 0.08, reasoning: 2.0 },
@@ -836,8 +860,13 @@ export const PATTERN_PRICING = [
   { pattern: "minimax-*",       pricing: { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  } },
 
   // --- Grok ---
+  // Canonical pricing (pre-200k): grok-4.6 $2/$6, grok-4.5 $2/$6, grok-4.3 $1.25/$2.5
+  // Long-context pricing (≥200k): 2x for all tokens. MODEL_PRICING + xai PROVIDER_PRICING
+  // pin exact rates; these patterns are last-resort fallbacks for unknown grok-*.
+  { pattern: "grok-4.6*",       pricing: { input: 2.00,  output: 6.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 2.00  } },
+  { pattern: "grok-4.5*",       pricing: { input: 2.00,  output: 6.00,  cached: 0.30,  reasoning: 6.00,   cache_creation: 2.00  } },
   { pattern: "grok-code-*",     pricing: { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  } },
-  { pattern: "grok-*",          pricing: { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  } },
+  { pattern: "grok-*",          pricing: { input: 2.00,  output: 6.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 2.00  } },
 ];
 
 /**

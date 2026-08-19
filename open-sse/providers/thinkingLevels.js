@@ -28,6 +28,8 @@ const L = {
   // Codex GPT-5.6 (port of decolua/9router GPT-5.6 reasoning-overrides design):
   // Sol/Terra advertise the full range plus `ultra`; Luna tops out at `max`.
   CODEX_GPT_5_6: ["none", "minimal", "low", "medium", "high", "xhigh", "max"],
+  // Grok 4.6: low / medium / high / xhigh (no minimal).
+  GROK_46: ["low", "medium", "high", "xhigh"],
   // Grok 4.5: low / medium / high only (no minimal/max).
   GROK_45: ["low", "medium", "high"],
 };
@@ -46,7 +48,9 @@ const PATTERN_THINKING = [
   { pattern: "claude-opus-5*", levels: L.KIRO_NATIVE },
   { pattern: "claude-sonnet-5*", levels: L.KIRO_NATIVE },
   { pattern: "claude-haiku-5*", levels: L.KIRO_NATIVE },
-  // Grok 4.5: low / medium / high only.
+  // Grok 4.6: low / medium / high / xhigh (no minimal).
+  { pattern: "*grok-4.6*", levels: L.GROK_46 },
+  // Grok 4.5: low / medium / high only (no minimal/max).
   { pattern: "*grok-4.5*", levels: L.GROK_45 },
 ];
 

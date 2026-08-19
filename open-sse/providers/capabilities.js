@@ -371,6 +371,8 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*grok-imagine-video*", caps: { videoOutput: true } },
   { pattern: "*grok*image*",    caps: { imageOutput: true } },
   { pattern: "*grok-code*",     caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 256000 } },
+  // Grok 4.6: 500k context + effort levels low/medium/high/xhigh (docs.x.ai 2026-08).
+  { pattern: "*grok-4.6*",      caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, thinkingLevels: ["low", "medium", "high", "xhigh"], thinkingMaxEffort: true } },
   // Grok 4.5: 500k context + effort levels low/medium/high only (no minimal).
   { pattern: "*grok-4.5*",      caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, thinkingLevels: ["low", "medium", "high"] } },
   { pattern: "*grok-4*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 256000 } },
