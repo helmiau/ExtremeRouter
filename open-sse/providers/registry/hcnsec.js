@@ -33,6 +33,13 @@ export default {
   transport: {
     baseUrl: "https://api.hcnsec.cn/v1/chat/completions",
     format: "openai",
+    // Free-tier public gateway: soft 429s recover with short in-place retry
+    // (DEFAULT_RETRY_CONFIG has attempts:0 for 429). Hard quota exhaust still
+    // fails after 2 attempts and enters backoff cooldown via ERROR_RULES.
+    retry: { "429": 2 },
+    // Same multi-model OpenAI gateway shape as bynara — don't emit native
+    // DeepSeek thinking blocks on DeepSeek-V4-Pro routed through this host.
+    thinkingFormat: "openai",
     validateUrl: "https://api.hcnsec.cn/v1/models",
     auth: {
       combined: true,

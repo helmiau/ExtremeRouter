@@ -199,6 +199,38 @@ export const PROVIDER_CAPABILITIES = {
     "nemotron-3-ultra":    { contextWindow: 1000000 },
     "stepfun-3.7-flash":   { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 262000 },
     "tencent-hy3-free":    { contextWindow: 262000 },
+    // DeepSeek V4 free/paid on Bynara speak OpenAI reasoning_effort only
+    // (gateway rejects native DeepSeek thinking:{type} blocks → HTTP 400).
+    // vision:false — free tier is text-only; generic *deepseek-v4* has no vision
+    // either, pin keeps picker/combo honest if patterns drift later.
+    "deepseek-v4-pro":       { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1000000, maxOutput: 384000 },
+    "deepseek-v4-pro-free":  { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1000000, maxOutput: 384000 },
+    "deepseek-v4-flash":     { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1000000, maxOutput: 384000 },
+    "deepseek-v4-flash-free":{ vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1000000, maxOutput: 384000 },
+  },
+  // OrcaRouter (api.orcarouter.ai) — multi-provider OpenAI gateway. Live model
+  // cards: https://www.orcarouter.ai/api/public/models/<id>. thinkingFormat is
+  // also pinned on transport (openai reasoning_effort is the unified wire
+  // shape per docs.orcarouter.ai/advanced/reasoning); provider-scoped caps fix
+  // context/vision so generic *qwen3.7*/*deepseek-v4* patterns don't inflate
+  // free-tier text models to 1M multimodal.
+  orcarouter: {
+    "orcarouter/free":                 { contextWindow: 1000000, maxOutput: 64000 },
+    "orcarouter/fusion":               { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 64000 },
+    "orcarouter/fusion-flash":         { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 64000 },
+    "orcarouter/fusion-mini":          { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 64000 },
+    "qwen/qwen3.8-27b-free":           { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 65536, maxOutput: 65536 },
+    "qwen/qwen3.8-27b":                { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 65536, maxOutput: 65536 },
+    "qwen/qwen3.7-max":                { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 64000 },
+    "qwen/qwen3.5-27b":                { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 32768, maxOutput: 65536 },
+    "deepseek/deepseek-v4-pro":        { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1048576, maxOutput: 384000 },
+    "deepseek/deepseek-v4-pro-free":   { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1048576, maxOutput: 384000 },
+    "deepseek/deepseek-v4-flash":      { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1048576, maxOutput: 384000 },
+    "deepseek/deepseek-v4-flash-free": { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1048576, maxOutput: 384000 },
+    "deepseek/deepseek-reasoner":      { vision: false, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 384000 },
+    "minimax/minimax-m2.7":            { vision: false, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 204800, maxOutput: 131072 },
+    "openai/gpt-5.5":                  { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 400000, maxOutput: 128000 },
+    "tencent/hy3-free":                { vision: false, contextWindow: 262000 },
   },
   // tokenharbor — AI gateway; pin the Claude 5 flagships to claude-adaptive 1M
   // so the generic *claude*opus*/*claude*fable* pattern (claude-budget 200k)
@@ -353,6 +385,10 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*qwen3.5*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen3.6*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen3.7*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
+  // Qwen3.8 dense (OrcaRouter self-host + Alibaba) — reasoning + tools; vision
+  // not guaranteed on every host (Orca free card is text-only 64k). Keep
+  // family-level reasoning; provider-scoped orcarouter pin overrides ctx/vision.
+  { pattern: "*qwen3.8*",       caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 262144, maxOutput: 65536 } },
   { pattern: "*qwen*plus*",     caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen*235b*",     caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
   { pattern: "*qwq*",           caps: { reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 131072 } },

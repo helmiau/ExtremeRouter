@@ -36,6 +36,10 @@ export default {
     // Default = OpenAI format (most clients use this).
     baseUrl: "https://router.bynara.id/v1/chat/completions",
     format: "openai",
+    // Multi-model OpenAI gateway — force openai reasoning_effort. Without this,
+    // *deepseek-v4* pattern injects native {thinking:{type:"enabled"}} which
+    // Bynara rejects with 400 "model rejected request... parameter invalid".
+    thinkingFormat: "openai",
     responsesUrl: "https://router.bynara.id/v1/responses",
     validateUrl: "https://router.bynara.id/v1/models",
     auth: {
