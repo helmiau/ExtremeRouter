@@ -1,7 +1,7 @@
 import { detectFormat, getTargetFormat, resolveTransport, resolveAlternateTransport } from "../services/provider.js";
 import { translateRequest } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
-import { normalizeClaudePassthrough } from "../translator/formats/claude.js";
+import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { COLORS } from "../utils/stream.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
@@ -303,6 +303,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const headroomBytesSample = buildHeadroomBytesSample(headroomDiagnostics);
   if (headroomBytesSample) savedBytesByMechanism.headroom = headroomBytesSample;
 
+  // Pin cache breakpoints to the final body — every saver above can reshape
+  // system/tools/messages, and a stale anchor costs a full prefix rewrite.
+  if (passthrough && clientTool === "claude") anchorClaudeCache(translatedBody);
 
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
