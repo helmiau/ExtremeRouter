@@ -460,6 +460,25 @@ export default function ProfilePage() {
     }
   };
 
+  const updateCircuitBreakerEnabled = async (enabled) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ circuitBreaker: { enabled } }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSettings((prev) => ({
+          ...prev,
+          circuitBreaker: data.circuitBreaker || { ...(prev.circuitBreaker || {}), enabled },
+        }));
+      }
+    } catch (err) {
+      console.error("Failed to update circuitBreaker.enabled:", err);
+    }
+  };
+
   const reloadSettings = async () => {
     try {
       const res = await fetch("/api/settings");
@@ -551,6 +570,8 @@ export default function ProfilePage() {
   };
 
   const observabilityEnabled = settings.enableObservability === true;
+  // Default ON when unset — matches BREAKER_DEFAULTS / settingsRepo defaults.
+  const circuitBreakerEnabled = settings.circuitBreaker?.enabled !== false;
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -1101,6 +1122,29 @@ export default function ProfilePage() {
             <Toggle
               checked={observabilityEnabled}
               onChange={updateObservabilityEnabled}
+              disabled={loading}
+            />
+          </div>
+        </Card>
+
+        {/* Reliability */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-amber-500/10 text-amber-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">electric_bolt</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Reliability</h3>
+          </div>
+          <div className="flex items-start sm:items-center justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm sm:text-base">Circuit Breaker</p>
+              <p className="text-xs sm:text-sm text-text-muted">
+                Temporarily block a provider after repeated 5xx/429/network failures, then probe recovery. Turn off to never auto-block providers.
+              </p>
+            </div>
+            <Toggle
+              checked={circuitBreakerEnabled}
+              onChange={updateCircuitBreakerEnabled}
               disabled={loading}
             />
           </div>

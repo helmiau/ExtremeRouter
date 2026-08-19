@@ -89,6 +89,9 @@ async function readRaw() {
   return row ? parseJson(row.data, {}) : {};
 }
 
+// Nested objects that must deep-merge with defaults (PATCH often sends a partial).
+const NESTED_SETTING_KEYS = ["circuitBreaker", "healthMonitor", "webhookAlertEvents"];
+
 // Merge raw settings with defaults; backward-compat for missing keys
 function mergeWithDefaults(raw) {
   const merged = { ...DEFAULT_SETTINGS, ...(raw || {}) };
@@ -103,6 +106,12 @@ function mergeWithDefaults(raw) {
       } else {
         merged[key] = defVal;
       }
+    } else if (
+      NESTED_SETTING_KEYS.includes(key) &&
+      defVal && typeof defVal === "object" && !Array.isArray(defVal) &&
+      merged[key] && typeof merged[key] === "object" && !Array.isArray(merged[key])
+    ) {
+      merged[key] = { ...defVal, ...merged[key] };
     }
   }
   return merged;
@@ -170,6 +179,19 @@ export async function updateSettings(updates) {
         }
       }
       next.comboStrategies = mergedCs;
+    }
+
+    // Partial nested objects (e.g. { circuitBreaker: { enabled: false } }) must
+    // not wipe sibling keys like failureThreshold / cooldownMs.
+    for (const key of NESTED_SETTING_KEYS) {
+      if (
+        updates &&
+        Object.prototype.hasOwnProperty.call(updates, key) &&
+        updates[key] && typeof updates[key] === "object" && !Array.isArray(updates[key])
+      ) {
+        const base = (current[key] && typeof current[key] === "object") ? current[key] : {};
+        next[key] = { ...base, ...updates[key] };
+      }
     }
 
     db.run(

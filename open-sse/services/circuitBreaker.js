@@ -325,6 +325,16 @@ export function getBreakerCooldownEndsAt(provider, key = null) {
 }
 
 /**
+ * Drop every breaker entry. Used when the feature is toggled off so a later
+ * re-enable starts from a clean slate instead of resurrecting stale OPEN state.
+ */
+export function clearAllBreakers() {
+  if (breakers.size === 0) return false;
+  breakers.clear();
+  return true;
+}
+
+/**
  * Manually reset a breaker (for dashboard "force close" action).
  * When `key` is null, resets EVERY breaker entry for this provider
  * (all proxy variants) — matching the old per-provider semantics.

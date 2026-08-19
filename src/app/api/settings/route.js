@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings, getApiKeys, createApiKey } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { clearAllBreakers } from "open-sse/services/circuitBreaker.js";
 import { runQuotaAutoPingTick } from "@/shared/services/quotaAutoPing";
 import { shouldProvisionDefaultKey, provisionDefaultKey } from "@/lib/endpoint/defaultKey";
 import bcrypt from "bcryptjs";
@@ -111,6 +112,15 @@ export async function PATCH(request) {
       Object.prototype.hasOwnProperty.call(body, "comboStrategies")
     ) {
       resetComboRotation();
+    }
+
+    // Turning the breaker off clears in-memory OPEN state so re-enable is clean.
+    if (
+      body?.circuitBreaker &&
+      typeof body.circuitBreaker === "object" &&
+      body.circuitBreaker.enabled === false
+    ) {
+      clearAllBreakers();
     }
 
     if (
