@@ -303,6 +303,7 @@ import p300 from "./zerolimitai.js";
 import p301 from "./zylo-api.js";
 import p302 from "./notion-web.js";
 import p303 from "./hyperagent.js";
+import p304 from "./alitp-intl.js";
 
 export default [
   p0,
@@ -609,4 +610,5 @@ export default [
   p301,
   p302,
   p303,
+  p304,
 ];

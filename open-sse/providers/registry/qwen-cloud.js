@@ -11,9 +11,12 @@
 // array lets the engine pick the right endpoint per client sourceFormat and
 // fall back across transports on failure (cross-transport fallback).
 //
-// This provider merges the former `qwen-cloud-token-plan` provider (regional
-// ap-southeast-1 endpoint) into a single catalog. DB migration 002 renames any
-// existing token-plan connections to this id.
+// Historical note: v0.7.7 merged the former `qwen-cloud-token-plan` provider
+// (regional ap-southeast-1 host) into this catalog and migration 002 renamed
+// connections. That collapsed two hosts onto dashscope-intl, which rejects
+// Token Plan keys. Token Plan traffic now lives on dedicated `alitp-intl`
+// (token-plan.ap-southeast-1.maas.aliyuncs.com). The legacy alias
+// `qwen-cloud-token-plan` resolves there, not here.
 //
 // Reasoning: `reasoningInject` injects a placeholder reasoning_content into
 // assistant messages so DeepSeek/Kimi thinking-mode validation passes on the
@@ -28,7 +31,7 @@ export default {
   id: "qwen-cloud",
   priority: 164,
   alias: "qwc",
-  aliases: ["qwen-cloud", "qwen-cloud-token-plan"],
+  aliases: ["qwen-cloud"],
   uiAlias: "qwc",
   display: {
     name: "Qwen Cloud",
@@ -86,8 +89,8 @@ export default {
       auth: { combined: true, header: "Authorization", scheme: "bearer" },
     },
   ],
-  // Seed catalog — merged from the former qwen-cloud + qwen-cloud-token-plan
-  // providers. Live discovery via /compatible-mode/v1/models.
+  // Seed catalog (includes models also served on Token Plan — live discovery
+  // via /compatible-mode/v1/models). Token Plan keys still need `alitp-intl`.
   models: [
     // Qwen (flagship + coding)
     { id: "qwen3.8-max-preview", name: "Qwen3.8 Max Preview", contextWindow: 1000000, maxOutput: 65536 },

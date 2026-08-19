@@ -89,7 +89,11 @@
     "polly": "aws-polly",
     "aws-polly": "aws-polly",
     "bb": "blackbox",
-    "blackbox": "blackbox"
+    "blackbox": "blackbox",
+    "atp": "alitp-intl",
+    "token-plan": "alitp-intl",
+    "qwen-cloud-token-plan": "alitp-intl",
+    "alitp-intl": "alitp-intl"
   },
   "idToAlias": {
     "alicode": "alicode",
@@ -153,12 +157,14 @@
     "volcengine-ark": "volcengine-ark",
     "xai": "xai",
     "xiaomi-mimo": "xiaomi-mimo",
-    "xiaomi-tokenplan": "xiaomi-tokenplan"
+    "xiaomi-tokenplan": "xiaomi-tokenplan",
+    "alitp-intl": "atp"
   },
   "modelKeys": [
     "ag",
     "alicode",
     "alicode-intl",
+    "alitp-intl",
     "anthropic",
     "assemblyai",
     "black-forest-labs",

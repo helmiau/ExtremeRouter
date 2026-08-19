@@ -23,7 +23,7 @@ export const SVG_ICON_IDS = new Set([
   "kimi-web", "huggingchat", "api-airforce", "openvecta", "freebuff-web",
   "zenmux-free", "perplexity-agent", "featherless", "moonshot", "qwencloud",
   "devin", "forge", "tokenrouter",
-  "qwen-cloud", "alibaba", "alibaba-cn", "hcnsec",
+  "qwen-cloud", "alibaba", "alibaba-cn", "alitp-intl", "hcnsec",
   "cline", "clinepass", "grok-web", "inxorastudio", "inxorastudio-web", "bynara", "infron", "1min", "zed", "wp-studio", "agnes-web", "agnes-api", "stepfun",
   "unimodel",
   "1min-api", "deepinfra", "codestral", "databricks", "venice", "vercel-ai-gateway", "marathon", "qwen2api",
