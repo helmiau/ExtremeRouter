@@ -37,7 +37,10 @@ function buildProviderEntry(r) {
   return {
     ...display,
     id: r.id,
-    alias: r.uiAlias || r.alias,
+    // Routing alias only: uiAlias is display-only and the gateway cannot
+    // resolve it server-side (e.g. tokenrouter badge "tr" belongs to trae).
+    alias: r.alias || r.id,
+    ...(r.uiAlias ? { uiAlias: r.uiAlias } : {}),
     ...(r.hidden ? { hidden: true } : {}),
     ...mediaFields,
     ...(r.priority !== undefined ? { priority: r.priority } : {}),

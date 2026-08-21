@@ -168,7 +168,7 @@ export default function ProvidersPage() {
     // OAuth providers
     for (const [key, info] of Object.entries(OAUTH_PROVIDERS)) {
       if (info.hidden) continue;
-      if (!matchSearch(info.name, info.id, info.alias)) continue;
+      if (!matchSearch(info.name, info.id, info.alias, info.uiAlias)) continue;
       const at = resolveStatsAuthType(info, "oauth");
       entries.push({
         id: key,
@@ -188,7 +188,7 @@ export default function ProvidersPage() {
     // Free providers (no-auth + free-tier)
     for (const [key, info] of Object.entries(FREE_PROVIDERS)) {
       if (info.hidden) continue;
-      if (!matchSearch(info.name, info.id, info.alias)) continue;
+      if (!matchSearch(info.name, info.id, info.alias, info.uiAlias)) continue;
       const freeAuthTypes = key === "kiro" ? ["oauth", "apikey", "api_key"] : "oauth";
       entries.push({
         id: key,
@@ -207,7 +207,7 @@ export default function ProvidersPage() {
 
     for (const [key, info] of Object.entries(FREE_TIER_PROVIDERS)) {
       if (info.hidden) continue;
-      if (!matchSearch(info.name, info.id, info.alias)) continue;
+      if (!matchSearch(info.name, info.id, info.alias, info.uiAlias)) continue;
       entries.push({
         id: key,
         name: info.name,
@@ -227,7 +227,7 @@ export default function ProvidersPage() {
     for (const [key, info] of Object.entries(APIKEY_PROVIDERS)) {
       if (info.hidden) continue;
       if (!(info.serviceKinds ?? ["llm"]).includes("llm")) continue;
-      if (!matchSearch(info.name, info.id, info.alias)) continue;
+      if (!matchSearch(info.name, info.id, info.alias, info.uiAlias)) continue;
       entries.push({
         id: key,
         name: info.name,
@@ -246,7 +246,7 @@ export default function ProvidersPage() {
     // Cookie providers
     for (const [key, info] of Object.entries(WEB_COOKIE_PROVIDERS)) {
       if (info.hidden) continue;
-      if (!matchSearch(info.name, info.id, info.alias)) continue;
+      if (!matchSearch(info.name, info.id, info.alias, info.uiAlias)) continue;
       entries.push({
         id: key,
         name: info.name,

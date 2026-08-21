@@ -90,12 +90,13 @@ function getRelativeTime(dateString) {
 
 export function makeMatchSearch(searchQuery) {
   const q = searchQuery.trim().toLowerCase();
-  return (name, id = "", alias = "") => {
+  return (name, id = "", alias = "", uiAlias = "") => {
     if (!q) return true;
     return (
       name.toLowerCase().includes(q) ||
       id.toLowerCase().includes(q) ||
-      alias.toLowerCase().includes(q)
+      alias.toLowerCase().includes(q) ||
+      uiAlias.toLowerCase().includes(q)
     );
   };
 }
