@@ -105,12 +105,6 @@ startCacheCleanup();
 export async function getProjectIdForConnection(connectionId, accessToken, provider = "gemini-cli") {
     if (!connectionId || !accessToken) return null;
 
-    // Antigravity uses daily-cloudcode-pa endpoint which doesn't support
-    // onboardUser provisioning. Its executor generates random project IDs,
-    // so we skip the fetch entirely to avoid the 10s onboardUser burn per
-    // connection on every token refresh.
-    if (provider === "antigravity") return null;
-
     // Return cached value if still fresh
     const cached = projectIdCache.get(connectionId);
     if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
@@ -213,6 +207,16 @@ async function fetchProjectId(accessToken, signal, provider) {
     const data = await response.json();
     const projectId = extractProjectId(data);
     if (projectId) return projectId;
+
+    // Providers using the daily-cloudcode-pa endpoint (e.g. antigravity) do not
+    // support onboardUser provisioning — their executors generate random project
+    // IDs locally. Skip onboardUser to avoid the 10s burn (5 attempts × 2s) per
+    // connection on every token refresh.
+    const onboardEndpoint = CLOUD_CODE_API[provider]?.onboardUser || "";
+    if (onboardEndpoint.includes("daily-")) {
+        console.warn(`[ProjectId] Provider "${provider}" uses daily endpoint; skipping onboardUser (executor generates project ID locally)`);
+        return null;
+    }
 
     // Determine the tier to use for onboarding
     let tierID = "legacy-tier";

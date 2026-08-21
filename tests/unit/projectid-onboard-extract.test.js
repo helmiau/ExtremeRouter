@@ -41,7 +41,7 @@ describe("onboardUser project-id extraction (contract-drift hardening)", () => {
   it("still recognizes the historical response.cloudaicompanionProject shape", async () => {
     stubFetch({}, [{ done: true, response: { cloudaicompanionProject: { id: "proj-hist" } } }]);
 
-    const pid = await getProjectIdForConnection(connId, "token", "antigravity");
+    const pid = await getProjectIdForConnection(connId, "token", "gemini-cli");
     expect(pid).toBe("proj-hist");
   });
 
@@ -56,7 +56,7 @@ describe("onboardUser project-id extraction (contract-drift hardening)", () => {
   ])("recognizes %s", async (_label, onboardBody, expected) => {
     stubFetch({}, [onboardBody]);
 
-    const pid = await getProjectIdForConnection(connId, "token", "antigravity");
+    const pid = await getProjectIdForConnection(connId, "token", "gemini-cli");
     expect(pid).toBe(expected);
   });
 
@@ -66,7 +66,7 @@ describe("onboardUser project-id extraction (contract-drift hardening)", () => {
       { done: true, response: { project: { id: "proj-real" }, id: "proj-generic" } },
     ]);
 
-    const pid = await getProjectIdForConnection(connId, "token", "antigravity");
+    const pid = await getProjectIdForConnection(connId, "token", "gemini-cli");
     expect(pid).toBe("proj-real");
   });
 
@@ -77,7 +77,7 @@ describe("onboardUser project-id extraction (contract-drift hardening)", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     stubFetch({}, [{ done: true, response: { someOtherField: 1 } }]);
 
-    const pid = await getProjectIdForConnection(connId, "token", "antigravity");
+    const pid = await getProjectIdForConnection(connId, "token", "gemini-cli");
 
     expect(pid).toBeNull();
     // 1 loadCodeAssist + 1 onboardUser attempt (no retries)
@@ -104,7 +104,7 @@ describe("onboardUser project-id extraction (contract-drift hardening)", () => {
       { done: true, projectId: "proj-late" },
     ]);
 
-    const pid = await getProjectIdForConnection(connId, "token", "antigravity");
+    const pid = await getProjectIdForConnection(connId, "token", "gemini-cli");
     expect(pid).toBe("proj-late");
   });
 });
