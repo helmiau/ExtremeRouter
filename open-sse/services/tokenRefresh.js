@@ -13,6 +13,7 @@ import {
   refreshCopilotToken,
   refreshCodebuddyToken,
   refreshZedLlmToken,
+  refreshClineToken,
   classifyOAuthRefreshError,
 } from "./tokenRefresh/providers.js";
 
@@ -28,6 +29,7 @@ export {
   refreshGitHubToken,
   refreshCopilotToken,
   refreshCodebuddyToken,
+  refreshClineToken,
   classifyOAuthRefreshError,
 };
 
@@ -134,6 +136,8 @@ const REFRESH_HANDLERS = {
   "codebuddy-intl": (c, log) => refreshCodebuddyToken(c.refreshToken, log, "codebuddy-intl"),
   workbuddy: (c, log) => refreshCodebuddyToken(c.refreshToken, log, "workbuddy"),
   zed: (c, log) => refreshZedLlmToken(c.refreshToken, c.providerSpecificData, log),
+  cline: (c, log) => refreshClineToken(c.refreshToken, log, "cline"),
+  clinepass: (c, log) => refreshClineToken(c.refreshToken, log, "clinepass"),
   vertex: vertexRefreshHandler,
   "vertex-partner": vertexRefreshHandler
 };

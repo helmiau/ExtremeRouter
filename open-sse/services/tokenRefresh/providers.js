@@ -142,6 +142,42 @@ export async function refreshClaudeOAuthToken(refreshToken, log) {
   }, log);
 }
 
+export async function refreshClineToken(refreshToken, log, providerId = "cline") {
+  if (!refreshToken) return null;
+  return dedupRefresh(`cline:${providerId}`, refreshToken, async () => {
+    const refreshUrl = PROVIDERS[providerId]?.refreshUrl || PROVIDERS.cline?.refreshUrl;
+    if (!refreshUrl) {
+      log?.warn?.("TOKEN_REFRESH", `No refreshUrl configured for provider: ${providerId}`);
+      return null;
+    }
+    try {
+      const response = await _refreshFetch(refreshUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ refreshToken, grantType: "refresh_token", clientType: "extension" }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        log?.error?.("TOKEN_REFRESH", `Failed to refresh token for ${providerId}`, { status: response.status, error: errorText });
+        return null;
+      }
+      const payload = await response.json();
+      const data = payload?.data || payload;
+      const expiresAtIso = data?.expiresAt;
+      const expiresIn = expiresAtIso ? Math.max(1, Math.floor((new Date(expiresAtIso).getTime() - Date.now()) / 1000)) : undefined;
+      let accessToken = data?.accessToken;
+      if (accessToken && !accessToken.startsWith("workos:")) {
+        accessToken = `workos:${accessToken}`;
+      }
+      log?.info?.("TOKEN_REFRESH", `Successfully refreshed ${providerId} token`, { hasNewAccessToken: !!accessToken, expiresIn });
+      return { accessToken, refreshToken: data?.refreshToken || refreshToken, expiresIn };
+    } catch (error) {
+      log?.error?.("TOKEN_REFRESH", `Network error refreshing ${providerId} token: ${error.message}`);
+      return null;
+    }
+  }, log);
+}
+
 export async function refreshGoogleToken(refreshToken, clientId, clientSecret, log) {
   if (!refreshToken) return null;
   return dedupRefresh(`google:${clientId}`, refreshToken, async () => {
