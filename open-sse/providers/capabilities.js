@@ -380,6 +380,13 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*grok*",          caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 256000 } },
 
   // ── Qwen (3.5+ = native vision/video; coder & max = text-only; QwQ = thinking-only) ─
+  // TokenRouter qwen family (provider-qualified, must precede the generic
+  // patterns below): the backing endpoint only accepts reasoning_effort
+  // low|medium — high/max/none/auto are rejected by the validator and xhigh
+  // 422s upstream. Thinking is always on by default, so "none"/"auto" must not
+  // reach it as an invalid enum: clamp every request to low|medium and
+  // disable-requests to low (minimal).
+  { provider: "tokenrouter", pattern: "*qwen*", caps: { vision: true, reasoning: true, thinkingFormat: "openai", thinkingLevels: ["low", "medium"], thinkingCanDisable: false, thinkingMaxEffort: false, contextWindow: 262144, maxOutput: 65536 } },
   { pattern: "*qwen*vl*",       caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
   { pattern: "*qwen*omni*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144, maxOutput: 65536 } },
   { pattern: "*qwen*coder*",    caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 } },
@@ -494,8 +501,11 @@ export function getCapabilitiesForModel(provider, model) {
   if (MODEL_CAPABILITIES[baseModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[baseModel] };
   if (MODEL_CAPABILITIES[model]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[model] };
 
-  // 3. Pattern match (first match wins)
-  for (const { pattern, caps } of PATTERN_CAPABILITIES) {
+  // 3. Pattern match (first match wins). Entries may carry an optional
+  // `provider` qualifier so a glob only applies under one provider (e.g.
+  // tokenrouter's qwen backend clamps reasoning_effort to low|medium).
+  for (const { pattern, caps, provider: patternProvider } of PATTERN_CAPABILITIES) {
+    if (patternProvider && patternProvider !== provider) continue;
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
       return { ...DEFAULT_CAPABILITIES, ...caps };
     }
