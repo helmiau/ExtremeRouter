@@ -105,6 +105,12 @@ startCacheCleanup();
 export async function getProjectIdForConnection(connectionId, accessToken, provider = "gemini-cli") {
     if (!connectionId || !accessToken) return null;
 
+    // Antigravity uses daily-cloudcode-pa endpoint which doesn't support
+    // onboardUser provisioning. Its executor generates random project IDs,
+    // so we skip the fetch entirely to avoid the 10s onboardUser burn per
+    // connection on every token refresh.
+    if (provider === "antigravity") return null;
+
     // Return cached value if still fresh
     const cached = projectIdCache.get(connectionId);
     if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
