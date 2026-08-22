@@ -1,8 +1,5 @@
 // Canonical token-budget resolver — single source of truth for effective output tokens.
 //
-// Replaces scattered `Math.min(maxTokens, DEFAULT_MAX_TOKENS)` and per-provider
-// ceiling logic with one deterministic clamp chain.
-//
 // Semantics (per ExtremeRouter token-budget spec):
 //
 //   effective = min(
@@ -12,32 +9,37 @@
 //     routerMaxOutputTokens  // global router safety limit
 //   )
 //
-// where:
-//   - defaultOutputTokens: used ONLY when client sends no explicit value (not a hard ceiling)
-//   - model.maxOutput: per-model cap from capabilities (may exceed default)
-//   - routerMaxOutputTokens: explicit safety ceiling; null = no router-level cap
-//   - inputTokens: estimated via conservative heuristic (no tokenizer in repo)
-//   - reservedTokens: headroom reserved for system/tooling overhead (default 0)
+// Hard constraints MUST always dominate soft constraints/heuristics.
+// Heuristics (tool defaults, reasoning requirements) may INFLUENCE the desired
+// budget but CANNOT override a previously established hard ceiling.
 //
-// The old DEFAULT_MAX_TOKENS (64000) was used as BOTH default AND hard ceiling.
-// This refactor separates the two:
-//   - defaultOutputTokens = 64000 (fallback when client omits max_tokens)
-//   - routerMaxOutputTokens = 128000 (explicit safety ceiling)
+// When hard constraints make a request infeasible, the resolver returns
+// feasible: false with effective: 0 instead of fabricating tokens.
 
-import { DEFAULT_MAX_TOKENS } from "../config/runtimeConfig.js";
+import { DEFAULT_MAX_TOKENS, ROUTER_MAX_OUTPUT_TOKENS } from "../config/runtimeConfig.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { estimateInputTokens, extractThinkingBudgetTokens } from "../utils/tokenEstimate.js";
 
 /**
+ * @typedef {Object} TokenBudgetConstraints
+ * @property {number|null} modelMaxOutput
+ * @property {number|null} providerMaxOutput
+ * @property {number|null} routerMaxOutput
+ * @property {number|null} contextWindow
+ * @property {number} inputTokens
+ * @property {number} reservedTokens
+ * @property {number} availableContext
+ */
+
+/**
  * @typedef {Object} TokenBudgetResult
- * @property {number} requested     — what the client asked for (post-default)
- * @property {number} effective     — clamped output token budget to send upstream
- * @property {number} modelMaxOutput — model.maxOutput from capabilities (or null)
- * @property {number} contextWindow  — model contextWindow (or null)
- * @property {number} inputTokens    — estimated input tokens
- * @property {number} reservedTokens — reserved headroom
- * @property {number} routerMax      — router-level safety ceiling (or null)
- * @property {string} limitingFactor — which clamp won: "model_max_output" | "context_window" | "router_max" | "default" | "none"
+ * @property {number} requestedOutputTokens — what the client explicitly asked for (null if not provided)
+ * @property {number} desiredOutputTokens — requested OR default (what we'd like to send)
+ * @property {number} hardMaxOutputTokens — min of all known hard ceilings
+ * @property {number} effectiveOutputTokens — final clamped value to send upstream (0 if infeasible)
+ * @property {boolean} feasible — whether the request can produce valid output
+ * @property {string} limitingFactor — which constraint determined the effective value
+ * @property {TokenBudgetConstraints} constraints — all constraint values for debugging
  */
 
 /**
@@ -52,7 +54,7 @@ import { estimateInputTokens, extractThinkingBudgetTokens } from "../utils/token
  * @param {number} [opts.reservedTokens=0] — headroom reserved from contextWindow for overhead
  * @param {number} [opts.defaultOutputTokens=64000] — fallback when client omits output limit
  * @param {number} [opts.routerMaxOutputTokens=128000] — router-level safety ceiling (null = no cap)
- * @param {boolean} [opts.enforceReasoningInvariant=true] — ensure effective > thinking budget
+ * @param {boolean} [opts.enforceReasoningInvariant=true] — ensure effective > thinking budget (but never violate hard ceilings)
  * @returns {TokenBudgetResult}
  */
 export function resolveOutputBudget(opts) {
@@ -64,14 +66,13 @@ export function resolveOutputBudget(opts) {
     exactInputTokens,
     reservedTokens = 0,
     defaultOutputTokens = DEFAULT_MAX_TOKENS,
-    routerMaxOutputTokens = 128000,
+    routerMaxOutputTokens = ROUTER_MAX_OUTPUT_TOKENS,
     enforceReasoningInvariant = true,
   } = opts;
 
-  // 1. Requested: client value or default (NOT a ceiling)
-  const requested = (requestedOutputTokens != null && requestedOutputTokens > 0)
-    ? Math.floor(requestedOutputTokens)
-    : defaultOutputTokens;
+  // 1. Requested: what client explicitly asked for (null = not provided)
+  const hasExplicitRequest = (requestedOutputTokens != null && requestedOutputTokens > 0);
+  const requested = hasExplicitRequest ? Math.floor(requestedOutputTokens) : null;
 
   // 2. Resolve model capabilities
   const caps = (provider && model) ? getCapabilitiesForModel(provider, model) : null;
@@ -81,75 +82,110 @@ export function resolveOutputBudget(opts) {
   // 3. Estimate input tokens (conservative)
   const inputTokens = estimateInputTokens(body, exactInputTokens != null ? { exactInputTokens } : {});
 
-  // 4. Start with requested, apply clamps in order of specificity:
-  //    model.maxOutput < contextWindow < router safety ceiling
-  let effective = requested;
-  let limitingFactor = "default";
+  // 3b. Calculate available context (can be negative)
+  let availableContext = null;
+  if (contextWindow != null && inputTokens >= 0) {
+    availableContext = contextWindow - inputTokens - reservedTokens;
+  }
 
-  if (effective === defaultOutputTokens && requestedOutputTokens == null) {
+  // 4. Desired budget: explicit request OR default (NOT a ceiling)
+  const desired = requested ?? defaultOutputTokens;
+
+  // 5. Compute HARD maximum from all known hard ceilings
+  // These are ABSOLUTE — no heuristic may increase effective beyond these
+  const hardCeilings = [];
+  if (modelMaxOutput != null) hardCeilings.push(modelMaxOutput);
+  if (routerMaxOutputTokens != null && routerMaxOutputTokens > 0) hardCeilings.push(routerMaxOutputTokens);
+  if (availableContext != null) hardCeilings.push(availableContext);
+  // Provider-specific max would go here if/when available
+
+  const hardMax = hardCeilings.length > 0 ? Math.min(...hardCeilings) : null;
+
+  // 6. Effective = min(desired, hardMax) — but never negative
+  // If hardMax is null (no known ceilings), effective = desired
+  let effective = hardMax != null ? Math.min(desired, hardMax) : desired;
+  if (effective < 0) effective = 0;
+
+  // 7. Determine limiting factor (for debugging)
+  // The limiting factor is what actually constrained the effective value
+  let limitingFactor = "none";
+  if (effective < desired) {
+    // Something clamped us below desired
+    if (effective === modelMaxOutput) limitingFactor = "model_max_output";
+    else if (effective === routerMaxOutputTokens) limitingFactor = "router_max_output";
+    else if (effective === availableContext) limitingFactor = "context_window";
+    else if (effective === hardMax && hardMax === modelMaxOutput) limitingFactor = "model_max_output";
+    else if (effective === hardMax && hardMax === routerMaxOutputTokens) limitingFactor = "router_max_output";
+    else if (effective === hardMax && hardMax === availableContext) limitingFactor = "context_window";
+  } else if (!hasExplicitRequest) {
     limitingFactor = "default";
   }
 
-  // 4a. Clamp to model.maxOutput
-  if (modelMaxOutput != null && effective > modelMaxOutput) {
-    effective = modelMaxOutput;
-    limitingFactor = "model_max_output";
-  }
-
-  // 4b. Clamp to context safety: effective ≤ contextWindow − input − reserved
-  if (contextWindow != null && inputTokens > 0) {
-    const available = contextWindow - inputTokens - reservedTokens;
-    if (effective > available) {
-      effective = available;
-      limitingFactor = "context_window";
-    }
-  }
-
-  // 4c. Clamp to router-level safety ceiling (null = no ceiling, 0 = disabled)
-  if (routerMaxOutputTokens != null && routerMaxOutputTokens > 0 && effective > routerMaxOutputTokens) {
-    effective = routerMaxOutputTokens;
-    limitingFactor = "router_max";
-  }
-
-  // 4d. Reasoning/thinking invariant: effective must be strictly greater than the
-  //     thinking budget tokens (Claude API requirement). Some providers (OpenAI,
-  //     Gemini) share the output budget with thinking — if thinkingBudget >= effective,
-  //     there would be 0 tokens left for the actual completion.
-  if (enforceReasoningInvariant) {
+  // 8. Apply reasoning/thinking invariant — BUT NEVER EXCEED HARD CEILINGS
+  // If thinking budget requires more than hardMax allows, the request is INFEASIBLE
+  // for that reasoning configuration. We do NOT silently violate hardMax.
+  let reasoningFeasible = true;
+  if (enforceReasoningInvariant && body) {
     const thinkingBudget = extractThinkingBudgetTokens(body);
-    const MIN_COMPLETION_TOKENS = 1024; // minimum non-thinking completion tokens
+    const MIN_COMPLETION_TOKENS = 1024;
     if (thinkingBudget > 0 && Number.isFinite(thinkingBudget)) {
-      const required = thinkingBudget + MIN_COMPLETION_TOKENS;
-      if (effective < required) {
-        const before = effective;
-        effective = required;
-        limitingFactor = "reasoning_budget";
+      const requiredForReasoning = thinkingBudget + MIN_COMPLETION_TOKENS;
+      if (effective < requiredForReasoning) {
+        // Reasoning requirement exceeds what hard constraints allow
+        reasoningFeasible = false;
+        limitingFactor = "reasoning_exceeds_hard_ceiling";
+        // DO NOT increase effective — hard ceiling wins
+        // The caller can decide to fail or reduce thinking budget
       }
     }
   }
 
-  // 5. Floor: never send 0 or negative (would error or produce empty response)
-  if (effective < 1) {
-    effective = 1;
-    if (limitingFactor === "default") limitingFactor = "none";
-  }
+  // 9. Feasibility determination
+  // Context exhausted = no room for ANY completion tokens
+  const contextExhausted = (availableContext != null && availableContext <= 0);
+  // Hard max exhausted = hard ceiling is 0 or negative
+  const hardMaxExhausted = (hardMax != null && hardMax <= 0);
+
+  // Feasible = we can allocate at least 1 token AND reasoning can be satisfied
+  // Note: effective keeps the hard ceiling value even if reasoning is infeasible
+  // Only context/hardMax exhaustion forces effective to 0
+  const feasible = effective >= 1 && reasoningFeasible && !contextExhausted && !hardMaxExhausted;
+
+  // 10. If context/hardMax exhausted, effective is 0 (not 1)
+  // But if only reasoning is infeasible, effective keeps the hard ceiling value
+  // (caller sees effective=hardMax, feasible=false, limitingFactor=reasoning_exceeds_hard_ceiling)
+  const finalEffective = (contextExhausted || hardMaxExhausted) ? 0 : Math.max(1, effective);
 
   return {
-    requested,
-    effective: Math.max(1, effective),
-    modelMaxOutput,
-    contextWindow,
-    inputTokens,
-    reservedTokens,
-    routerMax: routerMaxOutputTokens,
+    requestedOutputTokens: requested,
+    desiredOutputTokens: desired,
+    hardMaxOutputTokens: hardMax,
+    effectiveOutputTokens: finalEffective,
+    feasible,
     limitingFactor,
+    constraints: {
+      modelMaxOutput,
+      providerMaxOutput: null, // reserved for future provider-specific limits
+      routerMaxOutput: routerMaxOutputTokens,
+      contextWindow,
+      inputTokens,
+      reservedTokens,
+      availableContext,
+    },
   };
 }
 
 /**
  * Convenience: just get the clamped effective number.
- * Most call sites only need the final value.
+ * Returns 0 if infeasible.
  */
 export function clampOutputTokens(opts) {
-  return resolveOutputBudget(opts).effective;
+  return resolveOutputBudget(opts).effectiveOutputTokens;
+}
+
+/**
+ * Check feasibility without computing full budget (lighter weight).
+ */
+export function checkFeasibility(opts) {
+  return resolveOutputBudget(opts).feasible;
 }
