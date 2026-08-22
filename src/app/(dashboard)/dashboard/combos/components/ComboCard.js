@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Card, Badge, Select, ModelSelectModal, CapacityBadges } from "@/shared/components";
-import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers";
 import { classifyComboThinking } from "@/shared/utils/comboThinking";
 import { STRATEGY_OPTIONS, getStrategyMeta, getStrategyLabel } from "./helpers";
 
@@ -52,7 +52,8 @@ const resolveBudgetUsd = (strategy) => {
  * Web cookie providers lack toolUse + fileAccess and are blocked from these roles.
  */
 function canServeControlRole(providerId) {
-  const caps = AI_PROVIDERS[providerId]?.capabilities;
+  const pid = resolveProviderId(providerId);
+  const caps = AI_PROVIDERS[pid]?.capabilities;
   if (!caps) return true; // unknown provider — allow (don't over-block)
   return caps.toolUse !== false && caps.fileAccess !== false;
 }

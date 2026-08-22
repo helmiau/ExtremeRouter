@@ -121,8 +121,8 @@ describe("getThinkingLevels for explicit thinkingLevels caps", () => {
   it("kimi-k3 → low/high/max only", () => {
     expect(getThinkingLevels("moonshot", "kimi-k3")).toEqual(["low", "high", "max"]);
   });
-  it("laguna-s-2.1 → low/medium/high only", () => {
-    expect(getThinkingLevels("cline", "poolside/laguna-s-2.1:free")).toEqual(["low", "medium", "high"]);
+  it("laguna-s-2.1 → low/medium/high/xhigh", () => {
+    expect(getThinkingLevels("cline", "poolside/laguna-s-2.1:free")).toEqual(["low", "medium", "high", "xhigh"]);
   });
   it("step-3.7 → low/medium/high only", () => {
     expect(getThinkingLevels("stepfun", "step-3.7-flash")).toEqual(["low", "medium", "high"]);

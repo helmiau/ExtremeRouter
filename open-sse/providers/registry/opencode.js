@@ -19,7 +19,10 @@ export default {
     },
     noAuth: true,
   },
-  models: [],
+  models: [
+    { id: "x-preview-f-free", name: "x Preview F Free" },
+    { id: "laguna-s-2.1-free", name: "Laguna S 2.1 Free" },
+  ],
   modelsFetcher: { url: "https://opencode.ai/zen/v1/models", type: "opencode-free" },
   passthroughModels: true,
 };

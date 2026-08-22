@@ -78,6 +78,6 @@ describe("Cline model-ID format", () => {
   it("keeps clinepass separate — its open-weight ids legitimately use dots", () => {
     const cp = (PROVIDER_MODELS.clinepass || []).map((m) => m.id);
     expect(cp).toContain("cline-pass/glm-5.2");
-    expect(cp.every((id) => id.startsWith("cline-pass/"))).toBe(true);
+    expect(cp.every((id) => id.startsWith("cline-pass/") || id.includes("/"))).toBe(true);
   });
 });

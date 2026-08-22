@@ -22,6 +22,10 @@ export default {
     { id: "poolside/laguna-s-2.1", name: "Laguna S 2.1" },
   ],
   passthroughModels: true,
+  thinkingConfig: {
+    options: ["auto", "none", "low", "medium", "high", "xhigh"],
+    defaultMode: "auto",
+  },
   hasFree: true,
   freeNote: "Laguna S 2.1 and XS 2.1 are free during Preview; no public numeric quota is published.",
 };

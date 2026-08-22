@@ -97,6 +97,8 @@ export default {
     { id: "deepseek/deepseek-chat", name: "DeepSeek Chat", upstreamModelId: "deepseek/deepseek-chat" },
     { id: "minimax/minimax-m2.5", name: "MiniMax M2.5 (Free)", upstreamModelId: "minimax/minimax-m2.5" },
     { id: "kwaipilot/kat-coder-pro", name: "KAT Coder Pro", upstreamModelId: "kwaipilot/kat-coder-pro" },
+    { id: "stealth/ox-alpha", name: "0x-Alpha", upstreamModelId: "stealth/ox-alpha" },
+  
   ],
   // Cline rotates its free/promo lineup and exposes no public model-catalog
   // endpoint (`/api/v1/models` is auth-gated), so the list above can never be

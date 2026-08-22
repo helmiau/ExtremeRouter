@@ -24,5 +24,7 @@ export default {
     { id: "ling-3.0-flash-free", name: "Ling-3.0-flash Free" },
     { id: "laguna-s-2.1-free", name: "Laguna S 2.1 Free" },
     { id: "nemotron-3.5-lightning-free", name: "Nemotron 3.5 Lightning Free" },
+    { id: "x-preview-f-free", name: "x Preview F Free" },
+  
   ],
 };

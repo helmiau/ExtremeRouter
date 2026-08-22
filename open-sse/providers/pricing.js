@@ -269,6 +269,13 @@ export const PROVIDER_PRICING = {
   github: {
     "gpt-5.3-codex": { input: 1.75, output: 14.00, cached: 0.175, reasoning: 14.00, cache_creation: 1.75 },
   },
+  // cline / clinepass — 0x-Alpha stealth tier (free/promo)
+  cline: {
+    "stealth/ox-alpha": { input: 0, output: 0, cached: 0 },
+  },
+  clinepass: {
+    "stealth/ox-alpha": { input: 0, output: 0, cached: 0 },
+  },
   // xAI (xai) — official console.x.ai rates (pre-200k). ≥200k context bills 2x.
   // Mirrors MODEL_PRICING so provider-scoped lookups don't fall through to the
   // old $0.50/$2.00 grok-* pattern for unknown aliases.
@@ -718,6 +725,7 @@ export const PROVIDER_PRICING = {
     "ling-3.0-flash-free": { input: 0, output: 0, cached: 0 },
     "laguna-s-2.1-free": { input: 0, output: 0, cached: 0 },
     "nemotron-3.5-lightning-free": { input: 0, output: 0, cached: 0 },
+    "x-preview-f-free": { input: 0, output: 0, cached: 0 },
   },
   "kenari": {
     "claude-opus-4-7": { input: 0, output: 0 },

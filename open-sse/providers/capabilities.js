@@ -466,7 +466,13 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*perplexity*",    caps: { search: true, contextWindow: 128000 } },
 
   // ── Others ───────────────────────────────────────────────────────
-  { pattern: "*laguna-s-2.1*",  caps: { reasoning: true, thinkingFormat: "openai", thinkingLevels: ["low", "medium", "high"], contextWindow: 1048576, maxOutput: 131072 } },
+  // Laguna S 2.1 family (incl. :free / -free variants): OpenAI-compatible thinking.
+  { pattern: "*laguna*",       caps: { reasoning: true, thinkingFormat: "openai", thinkingLevels: ["low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 } },
+  // 0x-Alpha family (covers bare, slashed, stealth prefix, and -free forms).
+  // Must be before *x-preview* so stealth/ox-alpha doesn't fall through.
+  { pattern: "*ox-alpha*",     caps: { reasoning: true, thinkingFormat: "openai", thinkingLevels: ["low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "*0x*alpha*",     caps: { reasoning: true, thinkingFormat: "openai", thinkingLevels: ["low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "*x-preview*",    caps: { reasoning: true, thinkingFormat: "openai", thinkingLevels: ["low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*step-3.7*",      caps: { reasoning: true, thinkingFormat: "step", thinkingLevels: ["low", "medium", "high"], contextWindow: 256000, maxOutput: 256000 } },
   { pattern: "*hunyuan*",       caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "hy3*",            caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },

@@ -171,14 +171,14 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "kimi-k3", { reasoning_effort: "none" }, "moonshot");
     expect(out.reasoning_effort).toBe("low");
   });
-  // ── Laguna S 2.1: OpenAI-compatible, native tiers low/medium/high ──
+  // ── Laguna S 2.1: OpenAI-compatible, native tiers low/medium/high/xhigh ──
   it("Laguna low → low", () => {
     const out = apply("openai", "poolside/laguna-s-2.1:free", { reasoning_effort: "low" }, "cline");
     expect(out.reasoning_effort).toBe("low");
   });
-  it("Laguna max → high (no max on wire)", () => {
+  it("Laguna max → xhigh", () => {
     const out = apply("openai", "poolside/laguna-s-2.1:free", { reasoning_effort: "max" }, "cline");
-    expect(out.reasoning_effort).toBe("high");
+    expect(out.reasoning_effort).toBe("xhigh");
   });
   it("Laguna medium → medium (pass-through)", () => {
     const out = apply("openai", "poolside/laguna-s-2.1:free", { reasoning_effort: "medium" }, "cline");
