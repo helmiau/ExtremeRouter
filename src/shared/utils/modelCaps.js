@@ -10,6 +10,7 @@
 //   • thinkingCanDisable defaults to true → omitted when true
 //   • thinkingFormat / thinkingLevels omitted when absent
 //   • maxOutput emitted whenever the model has a real output cap (> 0)
+//   • known emitted only when false (unverified DEFAULT floor); absent ⇒ verified
 
 /**
  * Build the client-facing caps object from the full runtime capabilities.
@@ -29,6 +30,9 @@ export function toClientCaps(c) {
     videoInput: !!c.videoInput,
   };
   if (typeof c.maxOutput === "number" && c.maxOutput > 0) caps.maxOutput = c.maxOutput;
+  // Only surfaced when the result came from the unverified DEFAULT floor, so the
+  // dashboard can present those limits as assumptions rather than model facts.
+  if (c.known === false) caps.known = false;
   if (c.thinkingMaxEffort) caps.thinkingMaxEffort = true;
   if (Array.isArray(c.thinkingLevels) && c.thinkingLevels.length > 0) {
     caps.thinkingLevels = c.thinkingLevels;

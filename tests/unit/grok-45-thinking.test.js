@@ -41,7 +41,9 @@ describe("grok-4.6 thinking capabilities + pricing", () => {
     expect(caps.search).toBe(true);
     expect(caps.thinkingFormat).toBe("openai");
     expect(caps.thinkingLevels).toEqual(["low", "medium", "high", "xhigh"]);
-    expect(caps.thinkingMaxEffort).toBe(true);
+    // "max" is not one of the four supported levels, so thinkingMaxEffort must
+    // stay false — otherwise the picker offers an effort the endpoint rejects.
+    expect(caps.thinkingMaxEffort).toBe(false);
   });
 
   it("is priced at $2/$6 with $0.50 cached (official xAI rate)", () => {

@@ -23,11 +23,17 @@
 // 2.0+, Grok, Perplexity). Verify with: curl -s https://models.dev/api.json
 
 import { matchPattern } from "./pricing.js";
+import { getRegistryLimits } from "./registryLimits.js";
 import { resolveProviderAlias } from "../services/model.js";
 
 /**
- * Safe floor — every resolved result is merged over this so consumers
- * never need null-checks. Most modern LLMs meet these limits.
+ * Unverified safety floor — every resolved result is merged over this so
+ * consumers never need null-checks. These are NOT verified capabilities: a
+ * result carrying `known: false` reached this floor without any model-specific
+ * evidence, and the numbers are a conservative assumption chosen so Token
+ * Budget still has a ceiling to enforce (a null ceiling would mean
+ * "unconstrained", which is the unsafe direction). Diagnostics and UI should
+ * use `known` to distinguish verified limits from this fallback.
  */
 export const DEFAULT_CAPABILITIES = {
   // input modalities
@@ -222,7 +228,11 @@ export const PROVIDER_CAPABILITIES = {
     "qwen/qwen3.8-27b-free":           { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 65536, maxOutput: 65536 },
     "qwen/qwen3.8-27b":                { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 65536, maxOutput: 65536 },
     "qwen/qwen3.7-max":                { vision: false, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 64000 },
-    "qwen/qwen3.5-27b":                { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 32768, maxOutput: 65536 },
+    // Live card reports a 32k window. The 65536 output value this entry
+    // originally carried was copied from the qwen3.8-27b sibling (65536/65536)
+    // and exceeded the window, handing Token Budget an unreachable ceiling.
+    // Clamped to the window pending a model-specific output figure.
+    "qwen/qwen3.5-27b":                { vision: true, videoInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 32768, maxOutput: 32768 },
     "deepseek/deepseek-v4-pro":        { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1048576, maxOutput: 384000 },
     "deepseek/deepseek-v4-pro-free":   { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1048576, maxOutput: 384000 },
     "deepseek/deepseek-v4-flash":      { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1048576, maxOutput: 384000 },
@@ -372,7 +382,10 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*grok*image*",    caps: { imageOutput: true } },
   { pattern: "*grok-code*",     caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 256000 } },
   // Grok 4.6: 500k context + effort levels low/medium/high/xhigh (docs.x.ai 2026-08).
-  { pattern: "*grok-4.6*",      caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, thinkingLevels: ["low", "medium", "high", "xhigh"], thinkingMaxEffort: true } },
+  // thinkingMaxEffort stays false: "max" is not in the level list, and setting
+  // it would make ThinkingLevelPicker / ComboCard offer an effort the endpoint
+  // rejects. thinkingLevels is the authoritative list for this family.
+  { pattern: "*grok-4.6*",      caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, thinkingLevels: ["low", "medium", "high", "xhigh"] } },
   // Grok 4.5: 500k context + effort levels low/medium/high only (no minimal).
   { pattern: "*grok-4.5*",      caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, thinkingLevels: ["low", "medium", "high"] } },
   { pattern: "*grok-4*",        caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 256000 } },
@@ -482,30 +495,61 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*ling-*",         caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },
 ];
 
+// Merge a resolved tier with any registry-declared limits.
+//
+// The overlay can narrow only one side of the pair — forge declares a 1M window
+// for kimi-k3 while the *kimi-k3* pattern declares a 1,048,576 output — which
+// would leave the merged result claiming more output than its window holds.
+// Clamping here keeps every resolved result self-consistent, so Token Budget
+// never receives an unreachable ceiling.
+function withLimits(base, limits) {
+  const merged = { ...base, ...limits };
+  if (merged.maxOutput > merged.contextWindow) merged.maxOutput = merged.contextWindow;
+  return merged;
+}
+
 /**
- * Resolve capabilities for a model using the 4-step fallback chain,
- * merged over DEFAULT_CAPABILITIES so the result is always complete.
+ * Resolve capabilities for a model.
+ *
+ * Tiers, most specific first. Each returns immediately, so an earlier tier can
+ * never be widened by a later one:
+ *   1. PROVIDER_CAPABILITIES[provider][model] — provider-specific override
+ *   2. MODEL_CAPABILITIES[model]              — canonical exact id
+ *   3. PATTERN_CAPABILITIES                   — glob, ordered specific -> generic
+ *   4. DEFAULT_CAPABILITIES                   — unverified safety floor
+ *
+ * Registry-declared limits (registryLimits.js) are overlaid on tiers 2-4. They
+ * are provider+model specific evidence for contextWindow / maxOutput only, so
+ * they outrank a family wildcard but not an explicit provider override.
+ *
+ * `known` reports whether the result rests on model-specific evidence (tiers
+ * 1-3, or a registry limit) or is the bare floor. A `known: false` result must
+ * not be treated as verified capability data.
  *
  * @param {string} provider
  * @param {string} model
  * @returns {object} full capabilities object
  */
 export function getCapabilitiesForModel(provider, model) {
-  if (!model) return { ...DEFAULT_CAPABILITIES };
+  if (!model) return { ...DEFAULT_CAPABILITIES, known: false };
   // Providers arrive as registry ids at runtime (parseModel → resolveProviderAlias)
   // but as aliases from UI call sites (AI_MODELS, /api/models, useModelCaps,
   // StatsBar). Normalize alias → id here so both keys resolve the same table.
   provider = resolveProviderAlias(provider);
 
-  // 1. Provider-specific override
+  // 1. Provider-specific override — the most specific statement available about
+  // this provider serving this model, so registry limits must not override it.
   if (provider && PROVIDER_CAPABILITIES[provider]?.[model]) {
-    return { ...DEFAULT_CAPABILITIES, ...PROVIDER_CAPABILITIES[provider][model] };
+    return { ...DEFAULT_CAPABILITIES, ...PROVIDER_CAPABILITIES[provider][model], known: true };
   }
+
+  // Registry limits are provider+model scoped, so they win over tiers 2-4.
+  const limits = getRegistryLimits(provider, model);
 
   // 2. Canonical exact (strip vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7")
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
-  if (MODEL_CAPABILITIES[baseModel]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[baseModel] };
-  if (MODEL_CAPABILITIES[model]) return { ...DEFAULT_CAPABILITIES, ...MODEL_CAPABILITIES[model] };
+  const exact = MODEL_CAPABILITIES[baseModel] ?? MODEL_CAPABILITIES[model];
+  if (exact) return withLimits({ ...DEFAULT_CAPABILITIES, ...exact, known: true }, limits);
 
   // 3. Pattern match (first match wins). Entries may carry an optional
   // `provider` qualifier so a glob only applies under one provider (e.g.
@@ -513,10 +557,11 @@ export function getCapabilitiesForModel(provider, model) {
   for (const { pattern, caps, provider: patternProvider } of PATTERN_CAPABILITIES) {
     if (patternProvider && patternProvider !== provider) continue;
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return { ...DEFAULT_CAPABILITIES, ...caps };
+      return withLimits({ ...DEFAULT_CAPABILITIES, ...caps, known: true }, limits);
     }
   }
 
-  // 4. Floor
-  return { ...DEFAULT_CAPABILITIES };
+  // 4. Floor. Registry limits still count as evidence for the two fields they
+  // cover; everything else remains an unverified assumption.
+  return withLimits({ ...DEFAULT_CAPABILITIES, known: !!limits }, limits);
 }
