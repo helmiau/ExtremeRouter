@@ -171,6 +171,7 @@ exports[`GOLDEN request: OpenAI → Gemini > full body (system/image/tool/tool_r
     },
   ],
   "generationConfig": {
+    "maxOutputTokens": 32000,
     "temperature": 0.7,
   },
   "model": "gemini-3-pro",
@@ -309,6 +310,7 @@ What's in this image?",
     ],
   },
   "inferenceConfig": {
+    "maxTokens": 32000,
     "temperature": 0.7,
   },
   "profileArn": "arn:aws:codewhisperer:us-east-1:638616132270:profile/AAAACCCCXXXX",

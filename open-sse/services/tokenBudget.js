@@ -117,21 +117,21 @@ export function resolveOutputBudget(opts) {
   let effective = hardMax != null ? Math.min(desired, hardMax) : desired;
   if (effective < 0) effective = 0;
 
-  // 7. Determine limiting factor (for debugging)
-  // The limiting factor is what actually constrained the effective value
-  let limitingFactor = "none";
+  // 7. Determine limiting factor(s) (for debugging)
+  // Track ALL active constraints, not just the first match.
+  // Primary limiter = the constraint that determined effective value
+  // Co-limiters = other constraints with equal value
+  const activeLimiters = [];
   if (effective < desired) {
-    // Something clamped us below desired
-    if (effective === modelMaxOutput) limitingFactor = "model_max_output";
-    else if (effective === routerMaxOutputTokens) limitingFactor = "router_max_output";
-    else if (effective === availableContext) limitingFactor = "context_window";
-    else if (effective === hardMax && hardMax === modelMaxOutput) limitingFactor = "model_max_output";
-    else if (effective === hardMax && hardMax === routerMaxOutputTokens) limitingFactor = "router_max_output";
-    else if (effective === hardMax && hardMax === availableContext) limitingFactor = "context_window";
+    if (modelMaxOutput != null && effective === modelMaxOutput) activeLimiters.push("model_max_output");
+    if (routerMaxOutputTokens != null && effective === routerMaxOutputTokens) activeLimiters.push("router_max_output");
+    if (availableContext != null && effective === availableContext) activeLimiters.push("context_window");
   } else if (!hasExplicitRequest) {
-    limitingFactor = "default";
+    activeLimiters.push("default");
   }
 
+  // Primary limiter: first active limiter (deterministic precedence order)
+  // Co-limiters: remaining active limiters
   // 8. Apply reasoning/thinking invariant — BUT NEVER EXCEED HARD CEILINGS
   // If thinking budget requires more than hardMax allows, the request is INFEASIBLE
   // for that reasoning configuration. We do NOT silently violate hardMax.
@@ -144,12 +144,19 @@ export function resolveOutputBudget(opts) {
       if (effective < requiredForReasoning) {
         // Reasoning requirement exceeds what hard constraints allow
         reasoningFeasible = false;
-        limitingFactor = "reasoning_exceeds_hard_ceiling";
+        // When reasoning infeasibility is the PRIMARY cause of infeasibility,
+        // make it the primary limiter (moves to front of activeLimiters)
+        activeLimiters.unshift("reasoning_exceeds_hard_ceiling");
         // DO NOT increase effective — hard ceiling wins
         // The caller can decide to fail or reduce thinking budget
       }
     }
   }
+
+  // 7b. Determine limiting factor(s) AFTER reasoning check
+  // The limiting factor is what actually constrained the effective value
+  const limitingFactor = activeLimiters[0] ?? "none";
+  const limitingFactors = activeLimiters;
 
   // 9. Feasibility determination
   // Context exhausted = no room for ANY completion tokens
@@ -173,7 +180,8 @@ export function resolveOutputBudget(opts) {
     hardMaxOutputTokens: hardMax,
     effectiveOutputTokens: finalEffective,
     feasible,
-    limitingFactor,
+    limitingFactor, // primary limiter for backward compatibility
+    limitingFactors, // all active constraints
     constraints: {
       modelMaxOutput,
       providerMaxOutput: null, // reserved for future provider-specific limits

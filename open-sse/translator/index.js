@@ -56,8 +56,8 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 
   // Normalize max_tokens / max_output_tokens / max_completion_tokens → canonical max_tokens.
   // Canonical representation is established BEFORE the translation pipeline so every
-  // path (OpenAI fast-path, translated paths, Claude format) goes through the same
-  // resolver. Downstream translators only read result.max_tokens.
+  // path (OpenAI fast-path, translated paths, Claude format, direct translators like claude→kiro)
+  // goes through the same resolver. Downstream translators only read result.max_tokens.
   if (result?.max_tokens === undefined) {
     if (result?.max_completion_tokens !== undefined) result.max_tokens = result.max_completion_tokens;
     else if (result?.max_output_tokens !== undefined) result.max_tokens = result.max_output_tokens;
@@ -65,6 +65,12 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Clean up aliases — prevent leakage of unknown fields to upstream
   delete result?.max_output_tokens;
   delete result?.max_completion_tokens;
+
+  // Apply canonical token budget BEFORE any translator (including direct routes).
+  // This ensures direct paths like claude→kiro receive pre-clamped max_tokens.
+  // adjustMaxTokens handles missing max_tokens by applying defaults (64K or 32K tool-aware).
+  const tmpForBudget = { max_tokens: result?.max_tokens, thinking: result?.thinking, tools: result?.tools };
+  result.max_tokens = adjustMaxTokens(tmpForBudget, provider, model);
 
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);
