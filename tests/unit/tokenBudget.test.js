@@ -366,43 +366,327 @@ describe("Thinking Budget Extraction", () => {
   });
 });
 
-describe("Invariant Properties (Property-based style)", () => {
-  const testCases = [
-    { requested: 4096, modelMax: 16384, routerMax: 128000, input: 1000, ctx: 128000 },
-    { requested: 100000, modelMax: 16384, routerMax: 128000, input: 1000, ctx: 128000 },
-    { requested: 50000, modelMax: 128000, routerMax: 64000, input: 1000, ctx: 200000 },
-    { requested: null, modelMax: 64000, routerMax: 128000, input: 50000, ctx: 128000 },
-    { requested: 2000, modelMax: 64000, routerMax: 128000, input: 120000, ctx: 128000 }, // context exhausted
+describe("Invariant Properties (deterministic sweep)", () => {
+  // Deterministic cross-product instead of hand-picked examples. "test/test" is
+  // an unknown model, so capability lookup yields DEFAULT_CAPABILITIES
+  // (maxOutput 64000, contextWindow 200000).
+  const DEFAULT_MODEL_MAX = 64000;
+  const DEFAULT_CTX = 200000;
+
+  const requestedValues = [null, 1, 2048, 64000, 100000, 1000000];
+  const routerValues = [1000, 64000, 128000, 500000];
+  const inputValues = [0, 1000, 150000, 199999, DEFAULT_CTX, 250000];
+  const reservedValues = [0, 4096];
+
+  for (const requested of requestedValues) {
+    for (const routerMax of routerValues) {
+      for (const input of inputValues) {
+        for (const reserved of reservedValues) {
+          const label = `requested=${requested} router=${routerMax} input=${input} reserved=${reserved}`;
+          it(`invariant: ${label}`, () => {
+            const r = resolveOutputBudget({
+              requestedOutputTokens: requested,
+              provider: "test",
+              model: "test",
+              exactInputTokens: input,
+              reservedTokens: reserved,
+              routerMaxOutputTokens: routerMax,
+            });
+            const e = r.effectiveOutputTokens;
+            const c = r.constraints;
+
+            // Always non-negative and integral.
+            expect(e).toBeGreaterThanOrEqual(0);
+            expect(Number.isInteger(e)).toBe(true);
+
+            // Never above the desired budget.
+            expect(e).toBeLessThanOrEqual(r.desiredOutputTokens);
+
+            // Never above any known hard ceiling.
+            expect(e).toBeLessThanOrEqual(DEFAULT_MODEL_MAX);
+            expect(e).toBeLessThanOrEqual(c.modelMaxOutput);
+            expect(e).toBeLessThanOrEqual(routerMax);
+            if (c.providerMaxOutput != null) expect(e).toBeLessThanOrEqual(c.providerMaxOutput);
+
+            // Explicit client limits are never increased.
+            if (requested != null) expect(e).toBeLessThanOrEqual(requested);
+
+            // Context invariant — no +1 slack permitted. Only meaningful when
+            // the input itself fits: once input alone overruns the window no
+            // output value can satisfy the sum, so the resolver's only correct
+            // move is effective=0 + infeasible (asserted below).
+            expect(c.contextWindow).toBe(DEFAULT_CTX);
+            expect(c.inputTokens).toBe(input);
+            expect(c.reservedTokens).toBe(reserved);
+            if (c.availableContext > 0) {
+              expect(c.inputTokens + c.reservedTokens + e).toBeLessThanOrEqual(c.contextWindow);
+            }
+
+            // Exhausted context yields exactly 0, never a token of fiction.
+            if (c.availableContext <= 0) {
+              expect(e).toBe(0);
+              expect(r.feasible).toBe(false);
+              expect(r.limitingFactor).toBe("context_window");
+            } else {
+              expect(e).toBeGreaterThanOrEqual(1);
+              expect(r.feasible).toBe(true);
+            }
+          });
+        }
+      }
+    }
+  }
+});
+
+describe("Idempotency: re-resolving an already-resolved budget is stable", () => {
+  // Translators may invoke the resolver more than once (canonical entry plus a
+  // provider-specific mapping). Re-resolution must not drift.
+  const scenarios = [
+    {
+      name: "normal request",
+      opts: { requestedOutputTokens: 4096, provider: "openai", model: "gpt-4o", exactInputTokens: 1000 },
+    },
+    {
+      name: "request above model max",
+      opts: { requestedOutputTokens: 100000, provider: "openai", model: "gpt-4o", exactInputTokens: 1000 },
+    },
+    {
+      name: "no explicit limit (default applies)",
+      opts: { requestedOutputTokens: null, provider: "openai", model: "gpt-4o", exactInputTokens: 1000 },
+    },
+    {
+      name: "tool request without explicit limit",
+      opts: {
+        requestedOutputTokens: null,
+        body: { tools: [{ type: "function", function: { name: "f", parameters: {} } }] },
+        provider: "anthropic",
+        model: "claude-opus-4-7",
+        exactInputTokens: 1000,
+        toolAwareDefaultOutputTokens: 32000,
+      },
+    },
+    {
+      name: "context-limited request",
+      opts: { requestedOutputTokens: 64000, provider: "openai", model: "gpt-4o", exactInputTokens: 124000 },
+    },
+    {
+      name: "near-context-limit request",
+      opts: { requestedOutputTokens: 64000, provider: "openai", model: "gpt-4o", exactInputTokens: 127999 },
+    },
+    {
+      name: "context-exhausted request",
+      opts: { requestedOutputTokens: 4096, provider: "openai", model: "gpt-4o", exactInputTokens: 128000 },
+    },
+    {
+      name: "reasoning within limits",
+      opts: {
+        requestedOutputTokens: 64000,
+        body: { thinking: { budget_tokens: 8000 } },
+        provider: "anthropic",
+        model: "claude-opus-4-7",
+        exactInputTokens: 1000,
+      },
+    },
+    {
+      name: "reasoning above model ceiling",
+      opts: {
+        requestedOutputTokens: 64000,
+        body: { thinking: { budget_tokens: 20000 } },
+        provider: "openai",
+        model: "gpt-4o",
+        exactInputTokens: 1000,
+      },
+    },
+    {
+      name: "router-limited request",
+      opts: {
+        requestedOutputTokens: 128000,
+        provider: "anthropic",
+        model: "claude-opus-4-7",
+        exactInputTokens: 1000,
+        routerMaxOutputTokens: 64000,
+      },
+    },
   ];
 
-  for (const tc of testCases) {
-    it(`invariant: requested=${tc.requested} modelMax=${tc.modelMax} routerMax=${tc.routerMax} input=${tc.input}`, () => {
-      const r = resolveOutputBudget({
-        requestedOutputTokens: tc.requested,
-        provider: "test",
-        model: "test",
-        exactInputTokens: tc.input,
-        routerMaxOutputTokens: tc.routerMax,
-      });
-      // Override capabilities for test
-      // (In real usage, capabilities come from registry)
+  for (const { name, opts } of scenarios) {
+    it(`${name}: resolve(resolve(x)) === resolve(x)`, () => {
+      const first = resolveOutputBudget(opts);
+      // Second pass: the resolved budget is now the client's requested value,
+      // which is what a translator re-invoking the resolver would supply.
+      const second = resolveOutputBudget({ ...opts, requestedOutputTokens: first.effectiveOutputTokens });
+      expect(second.effectiveOutputTokens).toBe(first.effectiveOutputTokens);
 
-      if (r.feasible) {
-        expect(r.effectiveOutputTokens).toBeGreaterThanOrEqual(1);
-        if (r.constraints.modelMaxOutput != null) {
-          expect(r.effectiveOutputTokens).toBeLessThanOrEqual(r.constraints.modelMaxOutput);
-        }
-        if (r.constraints.routerMaxOutput != null) {
-          expect(r.effectiveOutputTokens).toBeLessThanOrEqual(r.constraints.routerMaxOutput);
-        }
-        if (r.constraints.availableContext != null) {
-          expect(r.constraints.inputTokens + r.effectiveOutputTokens).toBeLessThanOrEqual(r.constraints.contextWindow + 1);
-        }
-      } else {
-        expect(r.effectiveOutputTokens).toBe(0);
-      }
+      // Third pass proves it is a fixed point, not merely a single stable step.
+      const third = resolveOutputBudget({ ...opts, requestedOutputTokens: second.effectiveOutputTokens });
+      expect(third.effectiveOutputTokens).toBe(first.effectiveOutputTokens);
     });
   }
+});
+
+describe("Context boundary semantics", () => {
+  // gpt-4o: contextWindow 128000, maxOutput 16384.
+  it("input + output exactly equal to the context window is allowed", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 16384,
+      provider: "openai",
+      model: "gpt-4o",
+      exactInputTokens: 128000 - 16384,
+    });
+    expect(r.feasible).toBe(true);
+    expect(r.effectiveOutputTokens).toBe(16384);
+    expect(r.constraints.inputTokens + r.effectiveOutputTokens).toBe(128000);
+  });
+
+  it("a request that would overflow the context window is clamped, not allowed", () => {
+    const input = 128000 - 16384 + 1; // one token less headroom than the model max
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 16384,
+      provider: "openai",
+      model: "gpt-4o",
+      exactInputTokens: input,
+    });
+    expect(r.effectiveOutputTokens).toBe(16383);
+    expect(r.constraints.inputTokens + r.effectiveOutputTokens).toBe(128000);
+    expect(r.limitingFactor).toBe("context_window");
+  });
+
+  it("one token of headroom yields exactly one output token", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 4096,
+      provider: "openai",
+      model: "gpt-4o",
+      exactInputTokens: 127999,
+    });
+    expect(r.feasible).toBe(true);
+    expect(r.effectiveOutputTokens).toBe(1);
+  });
+
+  it("input exactly equal to the context window is infeasible", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 4096,
+      provider: "openai",
+      model: "gpt-4o",
+      exactInputTokens: 128000,
+    });
+    expect(r.feasible).toBe(false);
+    expect(r.effectiveOutputTokens).toBe(0);
+    expect(r.limitingFactor).toBe("context_window");
+  });
+
+  it("reservedTokens consume context headroom", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 16384,
+      provider: "openai",
+      model: "gpt-4o",
+      exactInputTokens: 120000,
+      reservedTokens: 4096,
+    });
+    expect(r.effectiveOutputTokens).toBe(128000 - 120000 - 4096);
+    expect(r.constraints.reservedTokens).toBe(4096);
+  });
+});
+
+describe("Zero and negative requested-output semantics", () => {
+  it("requested 0 is treated as not provided", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 0,
+      provider: "openai",
+      model: "gpt-4o",
+      exactInputTokens: 1000,
+    });
+    expect(r.requestedOutputTokens).toBe(null);
+    expect(r.desiredOutputTokens).toBe(DEFAULT_MAX);
+    expect(r.effectiveOutputTokens).toBe(16384); // clamped by model max
+  });
+
+  it("negative requested is treated as not provided", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: -500,
+      provider: "openai",
+      model: "gpt-4o",
+      exactInputTokens: 1000,
+    });
+    expect(r.requestedOutputTokens).toBe(null);
+    expect(r.effectiveOutputTokens).toBe(16384);
+  });
+
+  it("undefined and null behave identically", () => {
+    const base = { provider: "openai", model: "gpt-4o", exactInputTokens: 1000 };
+    const rNull = resolveOutputBudget({ ...base, requestedOutputTokens: null });
+    const rUndef = resolveOutputBudget({ ...base, requestedOutputTokens: undefined });
+    expect(rUndef.effectiveOutputTokens).toBe(rNull.effectiveOutputTokens);
+    expect(rUndef.desiredOutputTokens).toBe(rNull.desiredOutputTokens);
+  });
+
+  it("fractional requested is floored, never rounded up", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 4096.9,
+      provider: "openai",
+      model: "gpt-4o",
+      exactInputTokens: 1000,
+    });
+    expect(r.effectiveOutputTokens).toBe(4096);
+  });
+});
+
+describe("Provider-level output ceiling", () => {
+  // PROVIDER_MAX_OUTPUT_TOKENS: antigravity 16384, codex 128000.
+  it("provider ceiling clamps below the model ceiling", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 64000,
+      provider: "antigravity",
+      model: "claude-opus-4-7", // modelMax 128000, ctx 1000000
+      exactInputTokens: 1000,
+    });
+    expect(r.constraints.providerMaxOutput).toBe(16384);
+    expect(r.effectiveOutputTokens).toBe(16384);
+    expect(r.limitingFactor).toBe("provider_max_output");
+  });
+
+  it("model ceiling still wins when it is the smaller of the two", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 200000,
+      provider: "codex", // providerMax 128000
+      model: "gpt-4o",   // modelMax 16384
+      exactInputTokens: 1000,
+    });
+    expect(r.effectiveOutputTokens).toBe(16384);
+    expect(r.limitingFactor).toBe("model_max_output");
+  });
+
+  it("providers with no known ceiling report null and are unconstrained by it", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 64000,
+      provider: "anthropic",
+      model: "claude-opus-4-7",
+      exactInputTokens: 1000,
+    });
+    expect(r.constraints.providerMaxOutput).toBe(null);
+    expect(r.effectiveOutputTokens).toBe(64000);
+  });
+
+  it("provider ceiling is not fabricated for an unknown provider", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 64000,
+      provider: "definitely-not-a-real-provider",
+      model: "claude-opus-4-7",
+      exactInputTokens: 1000,
+    });
+    expect(r.constraints.providerMaxOutput).toBe(null);
+  });
+
+  it("provider ceiling survives re-resolution (idempotent)", () => {
+    const opts = {
+      requestedOutputTokens: 64000,
+      provider: "antigravity",
+      model: "claude-opus-4-7",
+      exactInputTokens: 1000,
+    };
+    const first = resolveOutputBudget(opts);
+    const second = resolveOutputBudget({ ...opts, requestedOutputTokens: first.effectiveOutputTokens });
+    expect(second.effectiveOutputTokens).toBe(first.effectiveOutputTokens);
+  });
 });
 
 describe("Limiting factor diagnostics", () => {

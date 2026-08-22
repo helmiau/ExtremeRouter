@@ -3,6 +3,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, INTERNAL_REQUEST_HEADER, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { PROVIDER_MAX_OUTPUT_TOKENS } from "../config/providerOutputLimits.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
@@ -19,7 +20,7 @@ function sanitizeFunctionName(name) {
 
 const MAX_RETRY_AFTER_MS = 10000;
 const ANTIGRAVITY_TRANSIENT_RETRY_MAX_MS = 15000;
-const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 16384;
+const MAX_ANTIGRAVITY_OUTPUT_TOKENS = PROVIDER_MAX_OUTPUT_TOKENS.antigravity;
 const SYSTEM_INSTRUCTION_CHAR_LIMIT = 4000;
 
 const ANTIGRAVITY_TRANSIENT_ERROR_PATTERNS = [

@@ -2,22 +2,42 @@
 //
 // Semantics (per ExtremeRouter token-budget spec):
 //
-//   effective = min(
-//     requestedOutput,       // client-requested (or default if absent)
-//     model.maxOutput,       // model-declared output ceiling
-//     contextWindow − inputTokens − reservedTokens,  // context safety
-//     routerMaxOutputTokens  // global router safety limit
-//   )
+//   desired  = explicit client limit
+//              OR tool-aware default (tools present, no explicit limit)
+//              OR normal default
+//
+//   hardMax  = min(model.maxOutput, provider.maxOutput,
+//                  routerMaxOutputTokens,
+//                  contextWindow − inputTokens − reservedTokens)
+//
+//   effective = min(desired, hardMax)
 //
 // Hard constraints MUST always dominate soft constraints/heuristics.
 // Heuristics (tool defaults, reasoning requirements) may INFLUENCE the desired
 // budget but CANNOT override a previously established hard ceiling.
 //
 // When hard constraints make a request infeasible, the resolver returns
-// feasible: false with effective: 0 instead of fabricating tokens.
+// feasible: false with effective: 0 instead of fabricating tokens. Detecting
+// infeasibility is where this layer stops — it does not compress context,
+// choose another model, or raise HTTP errors. Callers decide.
+//
+// IDEMPOTENCY: feeding a resolved effective value back in as
+// requestedOutputTokens yields the same effective value, so translators that
+// re-invoke the resolver on an already-clamped body cannot drift.
+//
+// ZERO/NEGATIVE SEMANTICS for requestedOutputTokens:
+//   null / undefined → not provided; a default supplies `desired`
+//   0                → treated as NOT provided (a default supplies `desired`).
+//                      Clients in the wild send 0 to mean "unset", and this
+//                      stays idempotent because a request that resolved to 0 did
+//                      so through context exhaustion, which re-derives to 0 on
+//                      the next pass regardless of the requested value.
+//   negative         → invalid; treated as not provided
 
 import { DEFAULT_MAX_TOKENS, ROUTER_MAX_OUTPUT_TOKENS } from "../config/runtimeConfig.js";
+import { getProviderMaxOutputTokens } from "../config/providerOutputLimits.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
+import { resolveProviderAlias } from "./model.js";
 import { estimateInputTokens, extractThinkingBudgetTokens } from "../utils/tokenEstimate.js";
 
 /**
@@ -38,7 +58,8 @@ import { estimateInputTokens, extractThinkingBudgetTokens } from "../utils/token
  * @property {number} hardMaxOutputTokens — min of all known hard ceilings
  * @property {number} effectiveOutputTokens — final clamped value to send upstream (0 if infeasible)
  * @property {boolean} feasible — whether the request can produce valid output
- * @property {string} limitingFactor — which constraint determined the effective value
+ * @property {string} limitingFactor — primary constraint that determined the effective value
+ * @property {string[]} limitingFactors — every active constraint; [0] is the primary limiter
  * @property {TokenBudgetConstraints} constraints — all constraint values for debugging
  */
 
@@ -81,6 +102,10 @@ export function resolveOutputBudget(opts) {
   const modelMaxOutput = caps?.maxOutput ?? null;
   const contextWindow = caps?.contextWindow ?? null;
 
+  // 2b. Provider-level ceiling (null when the provider has no known cap).
+  // Aliases are normalized the same way capability lookup does it.
+  const providerMaxOutput = provider ? getProviderMaxOutputTokens(resolveProviderAlias(provider)) : null;
+
   // 3. Estimate input tokens (conservative)
   const inputTokens = estimateInputTokens(body, exactInputTokens != null ? { exactInputTokens } : {});
 
@@ -106,9 +131,9 @@ export function resolveOutputBudget(opts) {
   // These are ABSOLUTE — no heuristic may increase effective beyond these
   const hardCeilings = [];
   if (modelMaxOutput != null) hardCeilings.push(modelMaxOutput);
+  if (providerMaxOutput != null && providerMaxOutput > 0) hardCeilings.push(providerMaxOutput);
   if (routerMaxOutputTokens != null && routerMaxOutputTokens > 0) hardCeilings.push(routerMaxOutputTokens);
   if (availableContext != null) hardCeilings.push(availableContext);
-  // Provider-specific max would go here if/when available
 
   const hardMax = hardCeilings.length > 0 ? Math.min(...hardCeilings) : null;
 
@@ -118,9 +143,10 @@ export function resolveOutputBudget(opts) {
   if (effective < 0) effective = 0;
 
   // 7. Determine limiting factor(s) (for debugging)
-  // Track ALL active constraints, not just the first match.
-  // Primary limiter = the constraint that determined effective value
-  // Co-limiters = other constraints with equal value
+  // Track ALL active constraints, not just the first match, so equal ceilings
+  // (e.g. model 128K and router 128K) both surface. activeLimiters[0] is the
+  // primary limiter; the rest are co-limiters. Order is deterministic:
+  // context-exhausted → model → provider → router → context.
   const activeLimiters = [];
   if (availableContext != null && availableContext <= 0) {
     // Context exhausted: effective was clamped to 0, which may not equal a
@@ -128,14 +154,13 @@ export function resolveOutputBudget(opts) {
     activeLimiters.push("context_window");
   } else if (effective < desired) {
     if (modelMaxOutput != null && effective === modelMaxOutput) activeLimiters.push("model_max_output");
+    if (providerMaxOutput != null && effective === providerMaxOutput) activeLimiters.push("provider_max_output");
     if (routerMaxOutputTokens != null && effective === routerMaxOutputTokens) activeLimiters.push("router_max_output");
     if (availableContext != null && effective === availableContext) activeLimiters.push("context_window");
   } else if (!hasExplicitRequest) {
     activeLimiters.push("default");
   }
 
-  // Primary limiter: first active limiter (deterministic precedence order)
-  // Co-limiters: remaining active limiters
   // 8. Apply reasoning/thinking invariant — BUT NEVER EXCEED HARD CEILINGS
   // If thinking budget requires more than hardMax allows, the request is INFEASIBLE
   // for that reasoning configuration. We do NOT silently violate hardMax.
@@ -159,8 +184,6 @@ export function resolveOutputBudget(opts) {
     }
   }
 
-  // 7b. Determine limiting factor(s) AFTER reasoning check
-  // The limiting factor is what actually constrained the effective value
   const limitingFactor = activeLimiters[0] ?? "none";
   const limitingFactors = activeLimiters;
 
@@ -190,7 +213,7 @@ export function resolveOutputBudget(opts) {
     limitingFactors, // all active constraints
     constraints: {
       modelMaxOutput,
-      providerMaxOutput: null, // reserved for future provider-specific limits
+      providerMaxOutput,
       routerMaxOutput: routerMaxOutputTokens,
       contextWindow,
       inputTokens,

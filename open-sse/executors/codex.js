@@ -9,6 +9,7 @@ import { normalizeResponsesInput } from "../translator/formats/responsesApi.js";
 import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { DEFAULT_RETRY_CONFIG, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { PROVIDER_MAX_OUTPUT_TOKENS } from "../config/providerOutputLimits.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
@@ -39,8 +40,9 @@ const RESPONSES_API_ALLOWLIST = new Set([
 ]);
 
 // Ceiling applied when deriving a default max_output_tokens for codex models
-// whose capability table doesn't advertise an output limit.
-const CODEX_MAX_OUTPUT_TOKENS_CEILING = 128000;
+// whose capability table doesn't advertise an output limit. Same value the
+// canonical token budget uses as this provider's hard ceiling.
+const CODEX_MAX_OUTPUT_TOKENS_CEILING = PROVIDER_MAX_OUTPUT_TOKENS.codex;
 
 // Convert role=system → role=developer in body.input (keeps content in cacheable prefix)
 function convertSystemToDeveloperRole(body) {
