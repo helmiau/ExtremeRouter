@@ -52,7 +52,8 @@ import { estimateInputTokens, extractThinkingBudgetTokens } from "../utils/token
  * @param {string} [opts.model] — model id for capability lookup
  * @param {number} [opts.exactInputTokens] — known input token count (prefer over estimation)
  * @param {number} [opts.reservedTokens=0] — headroom reserved from contextWindow for overhead
- * @param {number} [opts.defaultOutputTokens=64000] — fallback when client omits output limit
+ * @param {number} [opts.defaultOutputTokens=64000] — fallback when client omits output limit AND no tools
+ * @param {number} [opts.toolAwareDefaultOutputTokens] — fallback when client omits output limit AND tools present
  * @param {number} [opts.routerMaxOutputTokens=128000] — router-level safety ceiling (null = no cap)
  * @param {boolean} [opts.enforceReasoningInvariant=true] — ensure effective > thinking budget (but never violate hard ceilings)
  * @returns {TokenBudgetResult}
@@ -66,6 +67,7 @@ export function resolveOutputBudget(opts) {
     exactInputTokens,
     reservedTokens = 0,
     defaultOutputTokens = DEFAULT_MAX_TOKENS,
+    toolAwareDefaultOutputTokens,
     routerMaxOutputTokens = ROUTER_MAX_OUTPUT_TOKENS,
     enforceReasoningInvariant = true,
   } = opts;
@@ -88,8 +90,17 @@ export function resolveOutputBudget(opts) {
     availableContext = contextWindow - inputTokens - reservedTokens;
   }
 
-  // 4. Desired budget: explicit request OR default (NOT a ceiling)
-  const desired = requested ?? defaultOutputTokens;
+  // 4. Desired budget: explicit request OR tool-aware default (if tools present) OR normal default
+  // This is the ONLY place where "desired" is determined — no post-resolution bumps allowed
+  let desired;
+  if (requested != null) {
+    desired = requested; // explicit client limit always wins as desired
+  } else {
+    const hasTools = body && Array.isArray(body.tools) && body.tools.length > 0;
+    desired = hasTools && toolAwareDefaultOutputTokens != null
+      ? toolAwareDefaultOutputTokens
+      : defaultOutputTokens;
+  }
 
   // 5. Compute HARD maximum from all known hard ceilings
   // These are ABSOLUTE — no heuristic may increase effective beyond these

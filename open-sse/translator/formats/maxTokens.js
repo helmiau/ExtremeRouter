@@ -6,7 +6,7 @@
 // while delegating to the single source-of-truth clamp chain.
 
 import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS, ROUTER_MAX_OUTPUT_TOKENS } from "../../config/runtimeConfig.js";
-import { resolveOutputBudget, clampOutputTokens } from "../../services/tokenBudget.js";
+import { resolveOutputBudget, clampOutputTokens, checkFeasibility } from "../../services/tokenBudget.js";
 
 /**
  * Adjust max_tokens based on request context and model capabilities.
@@ -14,7 +14,7 @@ import { resolveOutputBudget, clampOutputTokens } from "../../services/tokenBudg
  *
  * KEY SEMANTICS:
  * - If user EXPLICITLY provides max_tokens: respect it (clamp only to hard ceilings)
- * - If user does NOT provide max_tokens: use default (64K), then apply tool-aware default if tools present
+ * - If user does NOT provide max_tokens: use default (64K), or tool-aware default (32K) if tools present
  * - Hard ceilings (model.maxOutput, routerMax, context) ALWAYS win
  * - Returns 0 if request is infeasible (context exhausted)
  *
@@ -33,27 +33,12 @@ export function adjustMaxTokens(body, provider = null, model = null) {
     provider,
     model,
     defaultOutputTokens: DEFAULT_MAX_TOKENS,
+    toolAwareDefaultOutputTokens: DEFAULT_MIN_TOKENS,
     routerMaxOutputTokens: ROUTER_MAX_OUTPUT_TOKENS,
     enforceReasoningInvariant: true,
   });
 
-  let effective = result.effectiveOutputTokens;
-
-  // Tool-calling default: ONLY applies when user did NOT specify max_tokens
-  // If user explicitly set max_tokens=4096, we respect it — even if tools are present
-  // The provider may return truncation/tool failure, but we don't silently override the user
-  if (!hasExplicitMaxTokens && body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
-    // User didn't specify → we can choose a tool-aware default
-    // But it must still obey hard ceilings (already enforced by resolver)
-    const toolDefault = DEFAULT_MIN_TOKENS;
-    effective = Math.max(effective, toolDefault);
-    // Re-clamp to router ceiling (though resolver already did this)
-    if (ROUTER_MAX_OUTPUT_TOKENS != null && effective > ROUTER_MAX_OUTPUT_TOKENS) {
-      effective = ROUTER_MAX_OUTPUT_TOKENS;
-    }
-  }
-
-  return effective;
+  return result.effectiveOutputTokens;
 }
 
 // Re-export the canonical resolver for providers that need full detail

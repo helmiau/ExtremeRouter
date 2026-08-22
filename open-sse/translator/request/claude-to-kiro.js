@@ -371,7 +371,7 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   let messages = Array.isArray(body.messages) ? body.messages : [];
   const tools = Array.isArray(body.tools) ? body.tools : [];
   const clientProvidedTools = tools.length > 0;
-  const maxTokens = body.max_tokens || 32000;
+  const maxTokens = body.max_tokens;
   const temperature = body.temperature;
   const topP = body.top_p;
 

@@ -516,7 +516,7 @@ function convertMessages(messages, tools, model) {
 export function openaiToKiroRequest(model, body, stream, credentials) {
   const messages = body.messages || [];
   const tools = body.tools || [];
-  const maxTokens = body.max_tokens || 32000;
+  const maxTokens = body.max_tokens;
   const temperature = body.temperature;
   const topP = body.top_p;
 
