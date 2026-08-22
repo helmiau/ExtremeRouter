@@ -10,7 +10,8 @@
 //   • thinkingCanDisable defaults to true → omitted when true
 //   • thinkingFormat / thinkingLevels omitted when absent
 //   • maxOutput emitted whenever the model has a real output cap (> 0)
-//   • known emitted only when false (unverified DEFAULT floor); absent ⇒ verified
+//   • confidence emitted only when NOT "verified"; absent ⇒ verified
+//   • known emitted only when false (unknown/default floor); absent ⇒ known
 
 /**
  * Build the client-facing caps object from the full runtime capabilities.
@@ -30,8 +31,11 @@ export function toClientCaps(c) {
     videoInput: !!c.videoInput,
   };
   if (typeof c.maxOutput === "number" && c.maxOutput > 0) caps.maxOutput = c.maxOutput;
-  // Only surfaced when the result came from the unverified DEFAULT floor, so the
-  // dashboard can present those limits as assumptions rather than model facts.
+  // Provenance. Absent `confidence` ⇒ "verified" (the omit-defaults convention
+  // above), so only inferred/unknown results pay for the field. `known` is
+  // emitted only when false and is redundant with confidence === "unknown";
+  // it stays for consumers that only need the boolean.
+  if (c.confidence && c.confidence !== "verified") caps.confidence = c.confidence;
   if (c.known === false) caps.known = false;
   if (c.thinkingMaxEffort) caps.thinkingMaxEffort = true;
   if (Array.isArray(c.thinkingLevels) && c.thinkingLevels.length > 0) {

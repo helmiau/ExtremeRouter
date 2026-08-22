@@ -10,17 +10,43 @@ Verified against the tree at `13fbb6a`. Structural invariants are enforced by
 
 ## Confidence vocabulary
 
-| Term | Meaning |
-| --- | --- |
-| verified | provider or vendor documentation names this model and this value |
-| inferred | derived from a family sibling or a provider catalog listing, not a model-specific source |
-| unverified | no model-specific evidence; the result carries `known: false` and rests on `DEFAULT_CAPABILITIES` |
+Every resolved capability object carries three provenance fields.
 
-`known` is part of the resolved capability object. It is `true` when the result
-came from a provider entry, an exact model entry, a family pattern, or a
-registry-declared limit; `false` only when nothing but the floor applied.
-`toClientCaps` forwards `known: false` to the dashboard and omits the key when
-verified, so a fallback can never be displayed as a model fact.
+| Field | Values | Meaning |
+| --- | --- | --- |
+| `sourceType` | see table below | which tier supplied the runtime-critical limits |
+| `confidence` | `verified` / `inferred` / `unknown` | how much weight the result carries |
+| `known` | boolean | derived: `confidence !== "unknown"` |
+
+| `sourceType` | `confidence` | Origin |
+| --- | --- | --- |
+| `provider-model` | verified | `PROVIDER_CAPABILITIES[provider][model]` — exact provider + exact model |
+| `model-exact` | verified | `MODEL_CAPABILITIES[model]` — canonical exact id |
+| `provider-registry` | inferred | `registryLimits.js` — provider catalog, provider + model scoped |
+| `family-pattern` | inferred | `PATTERN_CAPABILITIES` — verified family rule applied by glob |
+| `default-floor` | unknown | `DEFAULT_CAPABILITIES` — no evidence, a conservative assumption |
+
+`known: true` means **some evidence applied**, not that the data is confirmed.
+It spans verified and inferred alike, so a consumer that needs confirmed data
+must test `confidence === "verified"`. The boolean exists for consumers that
+only need "is this a guess", and it is derived from `confidence` through a single
+expression so the two cannot drift apart.
+
+`sourceType` describes the origin of `contextWindow` / `maxOutput` specifically,
+because a result can draw features from one tier and limits from another. A
+model matching an exact entry whose ceiling is overridden by a provider catalog
+reports `provider-registry` / `inferred` — the enforced number came from the
+catalog, and claiming `verified` would overstate it. Features from the exact
+entry survive; only the provenance label follows the limits.
+
+`toClientCaps` forwards `confidence` when it is not `verified` and `known` when
+it is `false`, following the file's omit-defaults convention. An absent field
+therefore reads as verified/known, which keeps older cached payloads from
+suddenly reporting everything as unknown.
+
+Enforced by `tests/unit/capability-confidence-semantics.test.js` across all 1842
+registry models: every result has a recognised `sourceType` and `confidence`,
+and `known === (confidence !== "unknown")` holds without exception.
 
 ## Resolution precedence
 
@@ -127,10 +153,15 @@ self-consistent regardless of which tiers combined.
 
 | Tier | Entries resolved |
 | --- | --- |
-| provider exact | 81 |
-| model exact | 59 |
-| pattern | 1300 |
-| floor (`known: false`) | 402 total, 140 of them `llm` |
+| provider exact (`provider-model`, verified) | 81 |
+| model exact (`model-exact`, verified) | 59 |
+| pattern (`family-pattern`, inferred) | 1300 |
+| floor (`default-floor`, unknown) | 402 total, 140 of them `llm` |
+
+Counts are by matching tier. The reported `sourceType` differs for the models
+where a provider catalog overlays the limits — those report
+`provider-registry` / `inferred` regardless of which tier supplied their
+features.
 
 The 140 unverified LLM models are concentrated in web-scraped and
 reverse-engineered providers where no model documentation exists:
@@ -141,8 +172,10 @@ plus opaque aliases such as `cu/default`, `tr/auto`, `qd/qmodel_latest` and
 
 These keep the floor's numeric pair deliberately. A null ceiling would mean
 "unconstrained" to the Token Budget resolver, which is the unsafe direction; a
-conservative 200000/64000 assumption still bounds the request. The `known: false`
-flag is what prevents the assumption from being mistaken for research.
+conservative 200000/64000 assumption still bounds the request. The
+`confidence: "unknown"` / `known: false` pair is what prevents the assumption
+from being mistaken for research. A test snapshots the count at 140 and fails if
+it grows, so a model can lose evidence only deliberately.
 
 ## Wildcards retained
 
@@ -195,15 +228,37 @@ models differing only in `maxOutput` produce different effective ceilings; two
 differing only in `contextWindow` produce different feasibility verdicts under
 the same 300k prompt.
 
+## Frozen baseline
+
+The registry is a frozen baseline as of this document. The contract future work
+must preserve:
+
+- `known === (confidence !== "unknown")`, always.
+- `sourceType` determines `confidence` through the single `CONFIDENCE_BY_SOURCE`
+  mapping, never per entry. Adding a source means deciding its trust level once.
+- `verified` is reserved for sources that name the exact model. Family rules and
+  provider catalogs are `inferred` no matter how precise their numbers look.
+- The default floor is always `unknown`, never promoted by any later tier.
+- Precedence stays exact provider+model > provider catalog (limits only) >
+  exact model id > family pattern > floor.
+- Every resolved limit pair satisfies `maxOutput <= contextWindow`.
+
+Changing any of these is a breaking change to consumers, not a refactor. The
+three capability test files fail on violation.
+
 ## Known gaps
 
 - The 59 registry limits are provider-catalog sourced, not per-model vendor
-  documentation. Better evidence would outrank them.
+  documentation. Better evidence would outrank them, and they are labelled
+  `inferred` to say so.
 - 140 LLM models have no capability evidence at all. They are enumerated by
-  tier in the coverage table and flagged at runtime via `known: false`.
+  tier in the coverage table and carry `confidence: "unknown"` at runtime.
 - `providerMaxOutput` covers two providers. Others may have real backend caps
   that are simply unknown, and unknown means unconstrained at that tier.
-- No provenance is recorded per entry inside `capabilities.js`. Source notes
-  live in comments beside the entries that have them; this document is the
-  aggregate view. A structured `verifiedAt` field was not added because nothing
-  consumes it and it would grow every entry.
+- `confidence` describes the limits, not each feature independently. A model
+  whose `vision` flag comes from a family rule while its ceiling comes from a
+  catalog reports one label for the whole object. Per-field provenance was not
+  added because no consumer needs that resolution.
+- No `verifiedAt` timestamp. Source notes live in comments beside the entries
+  that have them and this document is the aggregate; a per-entry date would grow
+  ~1500 entries with nothing reading it.

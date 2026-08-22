@@ -495,6 +495,61 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*ling-*",         caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },
 ];
 
+/**
+ * Where the runtime-critical limits in a resolved result came from.
+ *
+ * Ordered most specific first. `sourceType` names the origin of
+ * contextWindow/maxOutput — the two fields Token Budget enforces — because a
+ * result can draw features from one tier and limits from another (a family
+ * pattern supplying `reasoning` while a provider catalog supplies the ceiling).
+ */
+export const CAPABILITY_SOURCE = {
+  /** PROVIDER_CAPABILITIES[provider][model] — exact provider + exact model. */
+  PROVIDER_MODEL: "provider-model",
+  /** registryLimits.js — provider catalog entry, provider + model scoped. */
+  PROVIDER_REGISTRY: "provider-registry",
+  /** MODEL_CAPABILITIES[model] — canonical exact model id. */
+  MODEL_EXACT: "model-exact",
+  /** PATTERN_CAPABILITIES — verified family rule, applied by glob. */
+  FAMILY_PATTERN: "family-pattern",
+  /** DEFAULT_CAPABILITIES — no evidence; a conservative assumption. */
+  DEFAULT_FLOOR: "default-floor",
+};
+
+/**
+ * How much weight a resolved result carries.
+ *
+ *   verified  a source names this exact model (provider entry or exact id)
+ *   inferred  a family rule or a provider catalog listing, not model-specific
+ *   unknown   nothing matched; the numbers are the safety floor's assumption
+ *
+ * `known` is derived from this (`confidence !== "unknown"`) so the two can never
+ * disagree. Note that `known: true` spans BOTH verified and inferred — it means
+ * "some evidence applied", never "this is confirmed". Consumers that need
+ * confirmed data must test `confidence === "verified"`.
+ */
+export const CAPABILITY_CONFIDENCE = {
+  VERIFIED: "verified",
+  INFERRED: "inferred",
+  UNKNOWN: "unknown",
+};
+
+// sourceType -> confidence. Single mapping so a new source cannot be introduced
+// without deciding how much it is trusted.
+const CONFIDENCE_BY_SOURCE = {
+  [CAPABILITY_SOURCE.PROVIDER_MODEL]: CAPABILITY_CONFIDENCE.VERIFIED,
+  [CAPABILITY_SOURCE.MODEL_EXACT]: CAPABILITY_CONFIDENCE.VERIFIED,
+  [CAPABILITY_SOURCE.PROVIDER_REGISTRY]: CAPABILITY_CONFIDENCE.INFERRED,
+  [CAPABILITY_SOURCE.FAMILY_PATTERN]: CAPABILITY_CONFIDENCE.INFERRED,
+  [CAPABILITY_SOURCE.DEFAULT_FLOOR]: CAPABILITY_CONFIDENCE.UNKNOWN,
+};
+
+/** Attach provenance to a resolved capability object. */
+function withProvenance(caps, sourceType) {
+  const confidence = CONFIDENCE_BY_SOURCE[sourceType];
+  return { ...caps, sourceType, confidence, known: confidence !== CAPABILITY_CONFIDENCE.UNKNOWN };
+}
+
 // Merge a resolved tier with any registry-declared limits.
 //
 // The overlay can narrow only one side of the pair — forge declares a 1M window
@@ -502,10 +557,15 @@ export const PATTERN_CAPABILITIES = [
 // would leave the merged result claiming more output than its window holds.
 // Clamping here keeps every resolved result self-consistent, so Token Budget
 // never receives an unreachable ceiling.
-function withLimits(base, limits) {
+//
+// When the overlay applies it becomes the source of record for the limits, so
+// an exact-id match whose ceiling actually came from a provider catalog reports
+// `provider-registry` / `inferred` rather than claiming to be verified.
+function withLimits(base, limits, sourceType) {
+  if (!limits) return withProvenance(base, sourceType);
   const merged = { ...base, ...limits };
   if (merged.maxOutput > merged.contextWindow) merged.maxOutput = merged.contextWindow;
-  return merged;
+  return withProvenance(merged, CAPABILITY_SOURCE.PROVIDER_REGISTRY);
 }
 
 /**
@@ -522,16 +582,16 @@ function withLimits(base, limits) {
  * are provider+model specific evidence for contextWindow / maxOutput only, so
  * they outrank a family wildcard but not an explicit provider override.
  *
- * `known` reports whether the result rests on model-specific evidence (tiers
- * 1-3, or a registry limit) or is the bare floor. A `known: false` result must
- * not be treated as verified capability data.
+ * Every result carries `sourceType`, `confidence` and `known` — see
+ * CAPABILITY_SOURCE and CAPABILITY_CONFIDENCE. `known: true` means evidence
+ * applied, NOT that the data is confirmed; inferred results are also `known`.
  *
  * @param {string} provider
  * @param {string} model
  * @returns {object} full capabilities object
  */
 export function getCapabilitiesForModel(provider, model) {
-  if (!model) return { ...DEFAULT_CAPABILITIES, known: false };
+  if (!model) return withProvenance({ ...DEFAULT_CAPABILITIES }, CAPABILITY_SOURCE.DEFAULT_FLOOR);
   // Providers arrive as registry ids at runtime (parseModel → resolveProviderAlias)
   // but as aliases from UI call sites (AI_MODELS, /api/models, useModelCaps,
   // StatsBar). Normalize alias → id here so both keys resolve the same table.
@@ -540,7 +600,10 @@ export function getCapabilitiesForModel(provider, model) {
   // 1. Provider-specific override — the most specific statement available about
   // this provider serving this model, so registry limits must not override it.
   if (provider && PROVIDER_CAPABILITIES[provider]?.[model]) {
-    return { ...DEFAULT_CAPABILITIES, ...PROVIDER_CAPABILITIES[provider][model], known: true };
+    return withProvenance(
+      { ...DEFAULT_CAPABILITIES, ...PROVIDER_CAPABILITIES[provider][model] },
+      CAPABILITY_SOURCE.PROVIDER_MODEL,
+    );
   }
 
   // Registry limits are provider+model scoped, so they win over tiers 2-4.
@@ -549,7 +612,9 @@ export function getCapabilitiesForModel(provider, model) {
   // 2. Canonical exact (strip vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7")
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
   const exact = MODEL_CAPABILITIES[baseModel] ?? MODEL_CAPABILITIES[model];
-  if (exact) return withLimits({ ...DEFAULT_CAPABILITIES, ...exact, known: true }, limits);
+  if (exact) {
+    return withLimits({ ...DEFAULT_CAPABILITIES, ...exact }, limits, CAPABILITY_SOURCE.MODEL_EXACT);
+  }
 
   // 3. Pattern match (first match wins). Entries may carry an optional
   // `provider` qualifier so a glob only applies under one provider (e.g.
@@ -557,11 +622,11 @@ export function getCapabilitiesForModel(provider, model) {
   for (const { pattern, caps, provider: patternProvider } of PATTERN_CAPABILITIES) {
     if (patternProvider && patternProvider !== provider) continue;
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return withLimits({ ...DEFAULT_CAPABILITIES, ...caps, known: true }, limits);
+      return withLimits({ ...DEFAULT_CAPABILITIES, ...caps }, limits, CAPABILITY_SOURCE.FAMILY_PATTERN);
     }
   }
 
   // 4. Floor. Registry limits still count as evidence for the two fields they
   // cover; everything else remains an unverified assumption.
-  return withLimits({ ...DEFAULT_CAPABILITIES, known: !!limits }, limits);
+  return withLimits({ ...DEFAULT_CAPABILITIES }, limits, CAPABILITY_SOURCE.DEFAULT_FLOOR);
 }
