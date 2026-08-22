@@ -405,6 +405,89 @@ describe("Invariant Properties (Property-based style)", () => {
   }
 });
 
+describe("Limiting factor diagnostics", () => {
+  // Real models so capability lookup supplies modelMaxOutput/contextWindow:
+  //   gpt-4o            → maxOutput 16384,  contextWindow 128000
+  //   claude-opus-4-7   → maxOutput 128000, contextWindow 1000000
+  it("model ceiling is the primary limiter", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 64000,
+      provider: "openai",
+      model: "gpt-4o",
+      exactInputTokens: 1000,
+      routerMaxOutputTokens: 128000,
+    });
+    expect(r.effectiveOutputTokens).toBe(16384);
+    expect(r.limitingFactor).toBe("model_max_output");
+    expect(r.limitingFactors).toEqual(["model_max_output"]);
+  });
+
+  it("context window is the primary limiter", () => {
+    // 124000 input on a 128000 window → 4000 available, below the 16384 model max.
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 32000,
+      provider: "openai",
+      model: "gpt-4o",
+      exactInputTokens: 124000,
+    });
+    expect(r.effectiveOutputTokens).toBe(4000);
+    expect(r.limitingFactor).toBe("context_window");
+  });
+
+  it("router ceiling is the primary limiter", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 128000,
+      provider: "anthropic",
+      model: "claude-opus-4-7",
+      exactInputTokens: 1000,
+      routerMaxOutputTokens: 64000,
+    });
+    expect(r.effectiveOutputTokens).toBe(64000);
+    expect(r.limitingFactor).toBe("router_max_output");
+  });
+
+  it("equal model and router ceilings report both, model first", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 200000,
+      provider: "anthropic",
+      model: "claude-opus-4-7", // maxOutput 128000
+      exactInputTokens: 1000,
+      routerMaxOutputTokens: 128000,
+    });
+    expect(r.effectiveOutputTokens).toBe(128000);
+    expect(r.limitingFactor).toBe("model_max_output");
+    expect(r.limitingFactors).toEqual(["model_max_output", "router_max_output"]);
+  });
+
+  it("context exhaustion outranks reasoning as the root cause", () => {
+    // Context is gone, so blaming reasoning would misdirect the caller.
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 4096,
+      body: { thinking: { budget_tokens: 2000 } },
+      provider: "openai",
+      model: "gpt-4o",
+      exactInputTokens: 128000, // == contextWindow → nothing left
+    });
+    expect(r.feasible).toBe(false);
+    expect(r.effectiveOutputTokens).toBe(0);
+    expect(r.limitingFactor).toBe("context_window");
+    expect(r.limitingFactors).toContain("reasoning_exceeds_hard_ceiling");
+  });
+
+  it("reasoning is primary when hard ceilings otherwise permit output", () => {
+    const r = resolveOutputBudget({
+      requestedOutputTokens: 64000,
+      body: { thinking: { budget_tokens: 20000 } },
+      provider: "openai",
+      model: "gpt-4o", // maxOutput 16384 < 20000 + 1024
+      exactInputTokens: 1000,
+    });
+    expect(r.feasible).toBe(false);
+    expect(r.effectiveOutputTokens).toBe(16384); // never bumped past the ceiling
+    expect(r.limitingFactor).toBe("reasoning_exceeds_hard_ceiling");
+  });
+});
+
 describe("Hard vs Soft Constraint Precedence", () => {
   it("explicit client limit > model max > router max > context > default", () => {
     // Explicit request = 1000

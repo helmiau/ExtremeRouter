@@ -67,10 +67,12 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   delete result?.max_completion_tokens;
 
   // Apply canonical token budget BEFORE any translator (including direct routes).
-  // This ensures direct paths like claude→kiro receive pre-clamped max_tokens.
-  // adjustMaxTokens handles missing max_tokens by applying defaults (64K or 32K tool-aware).
-  const tmpForBudget = { max_tokens: result?.max_tokens, thinking: result?.thinking, tools: result?.tools };
-  result.max_tokens = adjustMaxTokens(tmpForBudget, provider, model);
+  // The FULL canonical body is passed — estimateInputTokens() needs messages,
+  // tools, schemas and multimodal blocks to compute available context. Passing a
+  // reduced object here silently zeroes the input estimate and over-allocates output.
+  // This is the single resolution point; downstream translators re-invoke
+  // adjustMaxTokens with the same (already-clamped) body, which is idempotent.
+  result.max_tokens = adjustMaxTokens(result, provider, model);
 
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);
@@ -133,20 +135,6 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     result = filterToOpenAIFormat(result, {
       preserveCacheControl: !!PROVIDERS[provider]?.quirks?.preserveCacheControl,
     });
-    // Clamp output tokens to the model's capabilities when no intermediate
-    // translator adjusted them (e.g. OpenAI→OpenAI passthrough). The
-    // per-provider translators clamp internally via adjustMaxTokens(model);
-    // the direct clamp handles the fast-path and any source→openai gap.
-    if (result?.max_tokens !== undefined) {
-      const tmp = { max_tokens: result.max_tokens, thinking: result.thinking, tools: result.tools };
-      result.max_tokens = adjustMaxTokens(tmp, provider, model);
-    }
-  } else if (result?.max_tokens !== undefined) {
-    // Direct translator paths (e.g. claude→kiro) or non-OpenAI targets don't
-    // get the fast-path clamp above. Clamp here as a final safety net —
-    // adjustMaxTokens is idempotent so already-clamped values are unaffected.
-    const tmp = { max_tokens: result.max_tokens, thinking: result.thinking, tools: result.tools };
-    result.max_tokens = adjustMaxTokens(tmp, provider, model);
   }
 
   // Final step: prepare request for Claude format endpoints

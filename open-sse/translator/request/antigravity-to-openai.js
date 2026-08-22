@@ -20,8 +20,9 @@ export function antigravityToOpenAIRequest(model, body, stream, credentials = nu
   if (req.generationConfig) {
     const config = req.generationConfig;
     if (config.maxOutputTokens) {
-      const tempBody = { max_tokens: config.maxOutputTokens, tools: req.tools };
-      result.max_tokens = adjustMaxTokens(tempBody, provider, model);
+      // Full inner request is passed for context estimation (contents/systemInstruction/tools);
+      // only the output-limit field needs mapping from the Gemini-style shape.
+      result.max_tokens = adjustMaxTokens({ ...req, max_tokens: config.maxOutputTokens }, provider, model);
     }
     if (config.temperature !== undefined) {
       result.temperature = config.temperature;

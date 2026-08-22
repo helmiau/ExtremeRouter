@@ -17,8 +17,9 @@ export function geminiToOpenAIRequest(model, body, stream, credentials = null, p
   if (body.generationConfig) {
     const config = body.generationConfig;
     if (config.maxOutputTokens) {
-      const tempBody = { max_tokens: config.maxOutputTokens, tools: body.tools };
-      result.max_tokens = adjustMaxTokens(tempBody, provider, model);
+      // Full Gemini body is passed for context estimation (contents/systemInstruction/tools);
+      // only the output-limit field needs mapping from the Gemini shape.
+      result.max_tokens = adjustMaxTokens({ ...body, max_tokens: config.maxOutputTokens }, provider, model);
     }
     if (config.temperature !== undefined) {
       result.temperature = config.temperature;

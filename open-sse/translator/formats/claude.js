@@ -265,10 +265,10 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   }
 
   // Clamp max_tokens via the canonical resolver (single source of truth).
-  // Replaces the old duplicate: Math.min(caps.maxOutput, DEFAULT_MAX_TOKENS)
+  // The full body is passed so estimateInputTokens() can see messages, system
+  // blocks and tool schemas — a reduced object would zero the input estimate.
   if (body.max_tokens) {
-    const temp = { max_tokens: body.max_tokens, thinking: body.thinking, tools: body.tools };
-    body.max_tokens = adjustMaxTokens(temp, provider, body.model);
+    body.max_tokens = adjustMaxTokens(body, provider, body.model);
   }
 
   // 1. System: remove all cache_control, add only to last block with ttl 1h

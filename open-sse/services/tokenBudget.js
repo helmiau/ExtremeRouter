@@ -122,7 +122,11 @@ export function resolveOutputBudget(opts) {
   // Primary limiter = the constraint that determined effective value
   // Co-limiters = other constraints with equal value
   const activeLimiters = [];
-  if (effective < desired) {
+  if (availableContext != null && availableContext <= 0) {
+    // Context exhausted: effective was clamped to 0, which may not equal a
+    // negative availableContext, so the equality checks below would miss it.
+    activeLimiters.push("context_window");
+  } else if (effective < desired) {
     if (modelMaxOutput != null && effective === modelMaxOutput) activeLimiters.push("model_max_output");
     if (routerMaxOutputTokens != null && effective === routerMaxOutputTokens) activeLimiters.push("router_max_output");
     if (availableContext != null && effective === availableContext) activeLimiters.push("context_window");
@@ -135,6 +139,7 @@ export function resolveOutputBudget(opts) {
   // 8. Apply reasoning/thinking invariant — BUT NEVER EXCEED HARD CEILINGS
   // If thinking budget requires more than hardMax allows, the request is INFEASIBLE
   // for that reasoning configuration. We do NOT silently violate hardMax.
+  const contextAlreadyExhausted = (availableContext != null && availableContext <= 0);
   let reasoningFeasible = true;
   if (enforceReasoningInvariant && body) {
     const thinkingBudget = extractThinkingBudgetTokens(body);
@@ -144,9 +149,10 @@ export function resolveOutputBudget(opts) {
       if (effective < requiredForReasoning) {
         // Reasoning requirement exceeds what hard constraints allow
         reasoningFeasible = false;
-        // When reasoning infeasibility is the PRIMARY cause of infeasibility,
-        // make it the primary limiter (moves to front of activeLimiters)
-        activeLimiters.unshift("reasoning_exceeds_hard_ceiling");
+        // Reasoning is only the ROOT cause when hard constraints would otherwise
+        // permit output. If context is already exhausted, context_window stays primary.
+        if (contextAlreadyExhausted) activeLimiters.push("reasoning_exceeds_hard_ceiling");
+        else activeLimiters.unshift("reasoning_exceeds_hard_ceiling");
         // DO NOT increase effective — hard ceiling wins
         // The caller can decide to fail or reduce thinking budget
       }

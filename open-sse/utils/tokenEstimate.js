@@ -67,9 +67,36 @@ export function estimateInputTokens(body, hints = {}) {
   // 4. Count system/developer instructions if at top level (some providers)
   if (body.system && typeof body.system === "string") {
     chars += countNonWhitespace(body.system);
+  } else if (Array.isArray(body.system)) {
+    // Claude: system is an array of text blocks
+    for (const block of body.system) {
+      if (typeof block === "string") chars += countNonWhitespace(block);
+      else if (typeof block?.text === "string") chars += countNonWhitespace(block.text);
+    }
   }
   if (body.developer && typeof body.developer === "string") {
     chars += countNonWhitespace(body.developer);
+  }
+
+  // 4b. Gemini/Antigravity shape: contents[].parts[] + systemInstruction.
+  // These bodies have no `messages`, so without this the estimate would be ~0
+  // and the context ceiling would never engage.
+  if (Array.isArray(body.contents)) {
+    for (const content of body.contents) {
+      chars += countGeminiParts(content?.parts);
+    }
+  }
+  if (body.systemInstruction) {
+    chars += countGeminiParts(body.systemInstruction.parts);
+  }
+  // Gemini tools: [{ functionDeclarations: [{ name, description, parameters }] }]
+  if (Array.isArray(body.tools)) {
+    for (const tool of body.tools) {
+      if (!Array.isArray(tool?.functionDeclarations)) continue;
+      for (const fn of tool.functionDeclarations) {
+        chars += countFunctionDefinition(fn);
+      }
+    }
   }
 
   // 5. Count reasoning/thinking config (small but non-zero)
@@ -165,6 +192,22 @@ function countFunctionDefinition(fn) {
 function countJsonSchema(schema) {
   if (!schema || typeof schema !== "object") return 0;
   return countNonWhitespace(JSON.stringify(schema)) + 50;
+}
+
+// Gemini/Antigravity parts[]: { text } | { inlineData } | { fileData } |
+// { functionCall } | { functionResponse }
+function countGeminiParts(parts) {
+  if (!Array.isArray(parts)) return 0;
+  let chars = 0;
+  for (const part of parts) {
+    if (!part || typeof part !== "object") continue;
+    if (typeof part.text === "string") chars += countNonWhitespace(part.text);
+    if (part.functionCall?.args) chars += countNonWhitespace(JSON.stringify(part.functionCall.args));
+    if (part.functionResponse?.response) chars += countNonWhitespace(JSON.stringify(part.functionResponse.response));
+    // Binary media is not text; charge the same flat overhead used for images.
+    if (part.inlineData || part.fileData) chars += 500;
+  }
+  return chars;
 }
 
 function countNonWhitespace(str) {
