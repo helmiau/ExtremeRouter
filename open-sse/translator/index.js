@@ -8,6 +8,7 @@ import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
 import { captureSessionId } from "../utils/sessionManager.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 import { PROVIDERS } from "../providers/index.js";
+import { adjustMaxTokens } from "./formats/maxTokens.js";
 
 // Registry for translators. Lazy-init guards against circular-import order:
 // translator modules call register() (side-effect) before this module's body runs.
@@ -87,7 +88,7 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
       if (sourceFormat !== FORMATS.OPENAI) {
         const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
         if (toOpenAI) {
-          result = toOpenAI(model, result, stream, credentials);
+          result = toOpenAI(model, result, stream, credentials, provider);
           // Log OpenAI intermediate format
           reqLogger?.logOpenAIRequest?.(result);
         }
@@ -109,9 +110,26 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Always normalize to clean OpenAI format when target is OpenAI
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
   if (targetFormat === FORMATS.OPENAI) {
+    // Cheap early normalization: callers may send Responses-only max_output_tokens
+    // instead of Chat max_tokens. Map it before the clamp/filter so the model cap applies.
+    if (result?.max_output_tokens !== undefined && result?.max_tokens === undefined) {
+      result.max_tokens = result.max_output_tokens;
+    }
+    // Also allow max_completion_tokens (OpenAI SDK quirk) — map similarly.
+    if (result?.max_completion_tokens !== undefined && result?.max_tokens === undefined) {
+      result.max_tokens = result.max_completion_tokens;
+    }
     result = filterToOpenAIFormat(result, {
       preserveCacheControl: !!PROVIDERS[provider]?.quirks?.preserveCacheControl,
     });
+    // Clamp output tokens to the model's capabilities when no intermediate
+    // translator adjusted them (e.g. OpenAI→OpenAI passthrough). The
+    // per-provider translators clamp internally via adjustMaxTokens(model);
+    // the direct clamp handles the fast-path and any source→openai gap.
+    if (result?.max_tokens !== undefined) {
+      const tmp = { max_tokens: result.max_tokens, thinking: result.thinking, tools: result.tools };
+      result.max_tokens = adjustMaxTokens(tmp, provider, model);
+    }
   }
 
   // Final step: prepare request for Claude format endpoints

@@ -6,7 +6,7 @@ import { collapseTextParts } from "../concerns/message.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK } from "../schema/index.js";
 
 // Convert Gemini request to OpenAI format
-export function geminiToOpenAIRequest(model, body, stream) {
+export function geminiToOpenAIRequest(model, body, stream, credentials = null, provider = null) {
   const result = {
     model: model,
     messages: [],
@@ -18,7 +18,7 @@ export function geminiToOpenAIRequest(model, body, stream) {
     const config = body.generationConfig;
     if (config.maxOutputTokens) {
       const tempBody = { max_tokens: config.maxOutputTokens, tools: body.tools };
-      result.max_tokens = adjustMaxTokens(tempBody);
+      result.max_tokens = adjustMaxTokens(tempBody, provider, model);
     }
     if (config.temperature !== undefined) {
       result.temperature = config.temperature;

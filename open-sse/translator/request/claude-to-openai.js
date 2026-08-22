@@ -11,7 +11,7 @@ function stripAnthropicBillingHeader(text) {
 }
 
 // Convert Claude request to OpenAI format
-export function claudeToOpenAIRequest(model, body, stream) {
+export function claudeToOpenAIRequest(model, body, stream, credentials = null, provider = null) {
   const result = {
     model: model,
     messages: [],
@@ -20,7 +20,7 @@ export function claudeToOpenAIRequest(model, body, stream) {
 
   // Max tokens
   if (body.max_tokens) {
-    result.max_tokens = adjustMaxTokens(body);
+    result.max_tokens = adjustMaxTokens(body, provider, model);
   }
 
   // Temperature

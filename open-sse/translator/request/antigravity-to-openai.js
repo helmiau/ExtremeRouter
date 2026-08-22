@@ -8,7 +8,7 @@ import { collapseTextParts } from "../concerns/message.js";
 
 // Convert Antigravity request to OpenAI format
 // Antigravity body: { project, model, userAgent, requestType, requestId, request: { contents, systemInstruction, tools, toolConfig, generationConfig, sessionId } }
-export function antigravityToOpenAIRequest(model, body, stream) {
+export function antigravityToOpenAIRequest(model, body, stream, credentials = null, provider = null) {
   const req = body.request || body;
   const result = {
     model: model,
@@ -21,7 +21,7 @@ export function antigravityToOpenAIRequest(model, body, stream) {
     const config = req.generationConfig;
     if (config.maxOutputTokens) {
       const tempBody = { max_tokens: config.maxOutputTokens, tools: req.tools };
-      result.max_tokens = adjustMaxTokens(tempBody);
+      result.max_tokens = adjustMaxTokens(tempBody, provider, model);
     }
     if (config.temperature !== undefined) {
       result.temperature = config.temperature;
