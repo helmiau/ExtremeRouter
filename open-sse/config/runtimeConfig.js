@@ -53,8 +53,20 @@ export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 
 // Default token limits
+// DEFAULT_MAX_TOKENS is now a *default fallback* (when client omits max_tokens),
+// NOT a universal ceiling. Use ROUTER_MAX_OUTPUT_TOKENS for the safety ceiling.
 export const DEFAULT_MAX_TOKENS = 64000;
 export const DEFAULT_MIN_TOKENS = 32000;
+
+// Router-level safety ceiling for output tokens. Models with maxOutput > 128K
+// will still be capped here to prevent runaway generation. Set to 0 via env
+// to disable (NOT recommended).
+export const ROUTER_MAX_OUTPUT_TOKENS = (() => {
+  const raw = process.env.ROUTER_MAX_OUTPUT_TOKENS;
+  if (raw == null || raw === "") return 128000;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : 128000;
+})();
 
 // Retry config for 429 responses (legacy - kept for backward compatibility)
 export const RETRY_CONFIG = {

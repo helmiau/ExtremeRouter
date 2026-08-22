@@ -54,6 +54,18 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   ensureInitialized();
   let result = body;
 
+  // Normalize max_tokens / max_output_tokens / max_completion_tokens → canonical max_tokens.
+  // Canonical representation is established BEFORE the translation pipeline so every
+  // path (OpenAI fast-path, translated paths, Claude format) goes through the same
+  // resolver. Downstream translators only read result.max_tokens.
+  if (result?.max_tokens === undefined) {
+    if (result?.max_completion_tokens !== undefined) result.max_tokens = result.max_completion_tokens;
+    else if (result?.max_output_tokens !== undefined) result.max_tokens = result.max_output_tokens;
+  }
+  // Clean up aliases — prevent leakage of unknown fields to upstream
+  delete result?.max_output_tokens;
+  delete result?.max_completion_tokens;
+
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);
 
@@ -109,16 +121,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 
   // Always normalize to clean OpenAI format when target is OpenAI
   // This handles hybrid requests (e.g., OpenAI messages + Claude tools)
+  // Param aliases already normalized at the top of translateRequest — here we
+  // just apply the canonical clamp + final format filtering.
   if (targetFormat === FORMATS.OPENAI) {
-    // Cheap early normalization: callers may send Responses-only max_output_tokens
-    // instead of Chat max_tokens. Map it before the clamp/filter so the model cap applies.
-    if (result?.max_output_tokens !== undefined && result?.max_tokens === undefined) {
-      result.max_tokens = result.max_output_tokens;
-    }
-    // Also allow max_completion_tokens (OpenAI SDK quirk) — map similarly.
-    if (result?.max_completion_tokens !== undefined && result?.max_tokens === undefined) {
-      result.max_tokens = result.max_completion_tokens;
-    }
     result = filterToOpenAIFormat(result, {
       preserveCacheControl: !!PROVIDERS[provider]?.quirks?.preserveCacheControl,
     });
@@ -130,6 +135,12 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
       const tmp = { max_tokens: result.max_tokens, thinking: result.thinking, tools: result.tools };
       result.max_tokens = adjustMaxTokens(tmp, provider, model);
     }
+  } else if (result?.max_tokens !== undefined) {
+    // Direct translator paths (e.g. claude→kiro) or non-OpenAI targets don't
+    // get the fast-path clamp above. Clamp here as a final safety net —
+    // adjustMaxTokens is idempotent so already-clamped values are unaffected.
+    const tmp = { max_tokens: result.max_tokens, thinking: result.thinking, tools: result.tools };
+    result.max_tokens = adjustMaxTokens(tmp, provider, model);
   }
 
   // Final step: prepare request for Claude format endpoints

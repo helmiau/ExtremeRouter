@@ -37,8 +37,8 @@ describe("OpenAI → Cursor", () => {
   });
 
   // openai-to-cursor.js:179 — max_tokens hardcoded to 32000
-  // KNOWN BUG
-  it.fails("respects client max_tokens", () => {
+  // FIXED: now respects client max_tokens via adjustMaxTokens
+  it("respects client max_tokens", () => {
     const out = O2C({ max_tokens: 200, messages: [{ role: "user", content: "hi" }] });
     expect(out.max_tokens).toBe(200);
   });

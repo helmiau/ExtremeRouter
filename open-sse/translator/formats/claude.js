@@ -265,10 +265,11 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     delete body.output_config;
   }
 
-  // Clamp max_tokens to the model output ceiling (never above DEFAULT_MAX_TOKENS)
+  // Clamp max_tokens via the canonical resolver (single source of truth).
+  // Replaces the old duplicate: Math.min(caps.maxOutput, DEFAULT_MAX_TOKENS)
   if (body.max_tokens) {
-    const ceiling = Math.min(getCapabilitiesForModel(provider, body.model).maxOutput, DEFAULT_MAX_TOKENS);
-    if (body.max_tokens > ceiling) body.max_tokens = ceiling;
+    const temp = { max_tokens: body.max_tokens, thinking: body.thinking, tools: body.tools };
+    body.max_tokens = adjustMaxTokens(temp, provider, body.model);
   }
 
   // 1. System: remove all cache_control, add only to last block with ttl 1h
