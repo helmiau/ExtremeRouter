@@ -66,7 +66,16 @@ export function createSSEStream(options = {}) {
   let ttftAt = null;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
+  let eventLines = 0;
+  let dataLines = 0;
   const eventTypeCounts = {};
+
+  // Single helper for ALL downstream emissions — increments sseEmittedCount
+  // exactly once per actual enqueue, regardless of mode (PASSTHROUGH/TRANSLATE).
+  const enqueueTracked = (controller, data) => {
+    controller.enqueue(data);
+    sseEmittedCount++;
+  };
 
   // Track Responses API event framing for same-format passthrough (codex)
   let currentOpenAIResponsesEvent = null;
@@ -87,13 +96,17 @@ export function createSSEStream(options = {}) {
 
       for (const line of lines) {
         const trimmed = line.trim();
-        if (isDebugEnabled && trimmed) {
-          sseLineCount++;
-          if (trimmed.startsWith("event:")) {
-            const evt = trimmed.slice(6).trim();
-            eventTypeCounts[evt] = (eventTypeCounts[evt] || 0) + 1;
-          }
+      if (isDebugEnabled && trimmed) {
+        sseLineCount++;
+        if (trimmed.startsWith("event:")) {
+          eventLines++;
+          const evt = trimmed.slice(6).trim();
+          eventTypeCounts[evt] = (eventTypeCounts[evt] || 0) + 1;
         }
+        if (trimmed.startsWith("data:")) {
+          dataLines++;
+        }
+      }
 
         // Capture Responses API event name to preserve framing in same-format passthrough
         if (mode === STREAM_MODE.TRANSLATE && targetFormat === FORMATS.OPENAI_RESPONSES && trimmed.startsWith("event:")) {
@@ -200,7 +213,13 @@ export function createSSEStream(options = {}) {
           }
 
           reqLogger?.appendConvertedChunk?.(output);
-          controller.enqueue(sharedEncoder.encode(output));
+          // Count only actual SSE events (data:/event: payloads), not
+          // blank-line framing that SSE split produces on "\n".
+          if (output && output.trim()) {
+            enqueueTracked(controller, sharedEncoder.encode(output));
+          } else {
+            controller.enqueue(sharedEncoder.encode(output));
+          }
           continue;
         }
 
@@ -228,15 +247,14 @@ export function createSSEStream(options = {}) {
           if (keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
             const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
             reqLogger?.appendConvertedChunk?.(failedOutput);
-            controller.enqueue(sharedEncoder.encode(failedOutput));
-            openAIResponsesTerminalSeen = true;
-            sseEmittedCount++;
+            enqueueTracked(controller, sharedEncoder.encode(failedOutput));
+            openAIResponsesTerminalSent = true;
           }
 
           if (keepsOpenAIResponsesFormat && !streamDoneSent) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
-            controller.enqueue(sharedEncoder.encode(doneOutput));
+            enqueueTracked(controller, sharedEncoder.encode(doneOutput));
           }
           streamDoneSent = true;
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
@@ -288,9 +306,8 @@ export function createSSEStream(options = {}) {
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
           const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
           reqLogger?.appendConvertedChunk?.(output);
-          controller.enqueue(sharedEncoder.encode(output));
+          enqueueTracked(controller, sharedEncoder.encode(output));
           currentOpenAIResponsesEvent = null;
-          sseEmittedCount++;
           continue;
         }
 
@@ -312,7 +329,7 @@ export function createSSEStream(options = {}) {
             // `data: {"error":...}` frame for OpenAI clients.
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            enqueueTracked(controller, sharedEncoder.encode(output));
           }
           break;
         }
@@ -347,16 +364,15 @@ export function createSSEStream(options = {}) {
 
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
-            sseEmittedCount++;
+            enqueueTracked(controller, sharedEncoder.encode(output));
           }
         }
       }
     },
 
     flush(controller) {
-      const evtSummary = Object.entries(eventTypeCounts).map(([k, v]) => `${k}=${v}`).join(",") || "none";
-      dbg("SSE", `flush | provider=${provider} | model=${model} | recvLines=${sseLineCount} | emitted=${sseEmittedCount} | events=[${evtSummary}]`);
+      // Moved debug log to finally block so it reflects the FINAL emission
+      // count (including flush-phase emissions like synthesized [DONE]).
       trackPendingRequest(model, provider, connectionId, false);
       try {
         const remaining = decoder.decode();
@@ -369,7 +385,7 @@ export function createSSEStream(options = {}) {
               output = "data: " + buffer.slice(5);
             }
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            enqueueTracked(controller, sharedEncoder.encode(output));
           }
 
           if (!hasValidUsage(usage) && totalContentLength > 0) {
@@ -391,7 +407,8 @@ export function createSSEStream(options = {}) {
           if (!errorSent && !streamDoneSent && !isGeminiFamily) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
-            controller.enqueue(sharedEncoder.encode(doneOutput));
+            enqueueTracked(controller, sharedEncoder.encode(doneOutput));
+            streamDoneSent = true;
           }
 
           if (onStreamComplete) {
@@ -420,7 +437,7 @@ export function createSSEStream(options = {}) {
                 if (item === null || item === undefined) continue;
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
-                controller.enqueue(sharedEncoder.encode(output));
+                enqueueTracked(controller, sharedEncoder.encode(output));
               }
             }
           }
@@ -440,7 +457,7 @@ export function createSSEStream(options = {}) {
             if (item === null || item === undefined) continue;
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            enqueueTracked(controller, sharedEncoder.encode(output));
           }
         }
 
@@ -449,14 +466,14 @@ export function createSSEStream(options = {}) {
         if (!errorSent && keepsOpenAIResponsesFormat && !openAIResponsesTerminalSeen) {
           const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
           reqLogger?.appendConvertedChunk?.(failedOutput);
-          controller.enqueue(sharedEncoder.encode(failedOutput));
+          enqueueTracked(controller, sharedEncoder.encode(failedOutput));
           openAIResponsesTerminalSeen = true;
         }
 
         if (!errorSent && keepsOpenAIResponsesFormat && !openAIResponsesDoneSent && !streamDoneSent) {
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
-          controller.enqueue(sharedEncoder.encode(doneOutput));
+          enqueueTracked(controller, sharedEncoder.encode(doneOutput));
           openAIResponsesDoneSent = true;
           streamDoneSent = true;
         }
@@ -479,6 +496,9 @@ export function createSSEStream(options = {}) {
         }
       } catch (error) {
         console.log("Error in flush:", error);
+      } finally {
+        const evtSummary = Object.entries(eventTypeCounts).map(([k, v]) => `${k}=${v}`).join(",") || "none";
+        dbg("SSE", `flush | provider=${provider} | model=${model} | recvLines=${sseLineCount} | dataLines=${dataLines} | eventLines=${eventLines} | emitted=${sseEmittedCount} | events=[${evtSummary}]`);
       }
     }
   });
