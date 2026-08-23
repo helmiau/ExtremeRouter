@@ -14,6 +14,7 @@ import { getSettings, getApiKeyByKey, getComboByName } from "@/lib/localDb";
 import { assertModelAllowed } from "../utils/modelAccess.js";
 import { getModelInfo } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
+import { resolveOpenCodeIdentity } from "open-sse/utils/openCodeIdentity.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getPxpipeDir } from "@/lib/pxpipe/manager.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -438,6 +439,19 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // request is also cheaper than re-reading the DB on every fallback attempt.
   const chatSettings = await getSettings();
 
+  // OpenCode identity: resolved ONCE per logical request (first account
+  // attempt wins) so account fallback, executor retries, alternate transports
+  // and the stream all share the same sessionId + requestId. Identity travels
+  // as request data via handleChatCore → executor.execute — never stored on
+  // the singleton executor. Non-OpenCode providers are untouched.
+  const opencodeIdentity = provider === "opencode"
+    ? resolveOpenCodeIdentity({
+        headers: clientRawRequest?.headers || {},
+        body,
+        connectionId: "noauth",
+      })
+    : null;
+
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
@@ -528,6 +542,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // in-flight provider calls when quorum grace expires, hard timeout fires,
       // or the client disconnects.
       externalSignal: opts.signal,
+      // OpenCode identity resolved once per logical request (see above) —
+      // carried as data through the executor, never stored on singletons.
+      opencodeIdentity,
       // Combo observability: which combo/strategy/role/trafficClass produced
       // this provider call (undefined for plain single-model requests).
       comboContext: opts.comboContext,
