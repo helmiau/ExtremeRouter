@@ -442,3 +442,127 @@ describe("Forensic regression: Cline/OpenAI passthrough", () => {
     expect(extractCounter(log, "emitted")).not.toBe(0);
   });
 });
+
+// ── F. REFACTORED FOLLOW-UP: Responses API terminal + streamDoneSent ─────
+// These tests validate the two fixes from the post-Phase-1 review:
+//   1. `openAIResponsesTerminalSent` → `openAIResponsesTerminalSeen` (declared var)
+//      prevents ReferenceError and duplicate response.failed synthesis
+//   2. `streamDoneSent = true` removed from PASSTHROUGH flush (unnecessary:
+//      flush runs exactly once per TransformStream lifecycle)
+//
+// Responses API SSE uses event: + data: framing. When a `data: [DONE]`
+// arrives WITHOUT a preceding terminal event (response.completed/done/etc),
+// the code synthesizes a `response.failed` payload. This must happen exactly
+// once: in the transform's [DONE] handler (not duplicated in flush).
+
+describe("Responses API terminal — ReferenceError fix + duplicate protection", () => {
+  // Helper: build OpenAI Responses API SSE with a non-terminal event + [DONE]
+  function responsesSseNoTerminal() {
+    return (
+      `event: response.created\r\ndata: {"type":"response","id":"resp_123","status":"in_progress"}\r\n\r\n` +
+      `event: response.in_progress\r\ndata: {"type":"response","id":"resp_123","status":"in_progress"}\r\n\r\n` +
+      `data: [DONE]\n\n`
+    );
+  }
+
+  it("Responses terminal branch: no ReferenceError, stream completes", async () => {
+    // Before fix: openAIResponsesTerminalSent was undeclared → ReferenceError
+    // in strict mode ES modules → transform throws → stream errors
+    const input = responsesSseNoTerminal();
+    const { text } = await pipeAndCollect(
+      sseStream(input),
+      createSSETransformStreamWithLogger(
+        FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI_RESPONSES,
+        "openai", null, null, "gpt-4o", "conn-1", { messages: [] }
+      )
+    );
+
+    // Stream completed without unrecoverable error — output is non-empty
+    expect(text.length).toBeGreaterThan(0);
+
+    // Flush log was captured (dbg in finally always runs)
+    const log = lastFlushLog();
+    expect(log).toContain("flush |");
+    // emitted > 0 — the synthesized failure + [DONE] were counted
+    expect(extractCounter(log, "emitted")).toBeGreaterThan(0);
+  });
+
+  it("Responses terminal branch: response.failed synthesized exactly once (no duplicate in flush)", async () => {
+    // The transform's [DONE] handler sets openAIResponsesTerminalSeen = true
+    // (the fixed variable). The flush checks !openAIResponsesTerminalSeen
+    // → false → does NOT synthesize again.
+    const input = responsesSseNoTerminal();
+    const { chunks } = await pipeAndCollect(
+      sseStream(input),
+      createSSETransformStreamWithLogger(
+        FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI_RESPONSES,
+        "openai", null, null, "gpt-4o", "conn-1", { messages: [] }
+      )
+    );
+
+    // Count how many times the response.failed EVENT is emitted (event: line)
+    const text = chunks.join("");
+    const failedCount = (text.match(/event: response\.failed/g) || []).length;
+    expect(failedCount).toBe(1); // synthesized once, not duplicated by flush
+
+    // Also verify the flush dbg log shows the correct emission count
+    const log = lastFlushLog();
+    // 2 (response.created + response.in_progress data lines re-emitted)
+    // + 1 (response.failed from [DONE] handler) + 1 (data: [DONE] sentinel) = 4
+    // flush does NOT add more (openAIResponsesTerminalSeen = true)
+    expect(extractCounter(log, "emitted")).toBe(4);
+  });
+
+  it("Responses terminal with proper terminal event: no failure synthesized", async () => {
+    // If a terminal event (response.completed) arrives before [DONE],
+    // openAIResponsesTerminalSeen is set → no failure synthesized
+    const input =
+      `event: response.created\r\ndata: {"type":"response","id":"resp_123","status":"in_progress"}\r\n\r\n` +
+      `event: response.completed\r\ndata: {"type":"response","id":"resp_123","status":"completed"}\r\n\r\n` +
+      `data: [DONE]\n\n`;
+
+    const { chunks } = await pipeAndCollect(
+      sseStream(input),
+      createSSETransformStreamWithLogger(
+        FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI_RESPONSES,
+        "openai", null, null, "gpt-4o", "conn-1", { messages: [] }
+      )
+    );
+
+    const text = chunks.join("");
+    const failedCount = (text.match(/event: response\.failed/g) || []).length;
+    expect(failedCount).toBe(0); // terminal event seen → no failure
+
+    // Still emits the [DONE] sentinel
+    expect(text).toContain("data: [DONE]");
+  });
+});
+
+// ── G. streamDoneSent removal verification ──────────────────────────────
+// The Phase 1 commit added `streamDoneSent = true` after the PASSTHROUGH
+// flush's [DONE] emission. This was removed in the follow-up because:
+// - TransformStream.flush() runs exactly once per stream lifecycle
+// - In PASSTHROUGH mode, streamDoneSent is never set in transform
+// - So !streamDoneSent is always true on the single flush call
+// - Setting it has no observable effect (no second flush to guard against)
+// - In TRANSLATE mode, streamDoneSent IS set by the [DONE] handler (line 259)
+//   and checked in flush's Responses block (line 473) — that behavior is intact
+
+describe("streamDoneSent removal — PASSTHROUGH flush still emits [DONE] once", () => {
+  it("flush [DONE] emitted exactly once (streamDoneSent not needed in PASSTHROUGH)", async () => {
+    const input = openaiDelta("content") + "data: [DONE]\n\n";
+    const { chunks } = await pipeAndCollect(
+      sseStream(input),
+      createPassthroughStreamWithLogger("test-provider", null, "gpt-4", "conn-1", { messages: [] })
+    );
+
+    const text = chunks.join("");
+    // Exactly one flush [DONE] sentinel (not zero, not two)
+    const doneCount = (text.match(/data: \[DONE\]/g) || []).length;
+    expect(doneCount).toBe(2); // 1 from input + 1 from flush
+
+    // Log confirms emissions were counted
+    const log = lastFlushLog();
+    expect(extractCounter(log, "emitted")).toBe(3); // content + input[DONE] + flush[DONE]
+  });
+});

@@ -248,7 +248,7 @@ export function createSSEStream(options = {}) {
             const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
             reqLogger?.appendConvertedChunk?.(failedOutput);
             enqueueTracked(controller, sharedEncoder.encode(failedOutput));
-            openAIResponsesTerminalSent = true;
+            openAIResponsesTerminalSeen = true;
           }
 
           if (keepsOpenAIResponsesFormat && !streamDoneSent) {
@@ -408,7 +408,6 @@ export function createSSEStream(options = {}) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             enqueueTracked(controller, sharedEncoder.encode(doneOutput));
-            streamDoneSent = true;
           }
 
           if (onStreamComplete) {
