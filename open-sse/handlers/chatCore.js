@@ -79,7 +79,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       } catch { /* non-fatal: return the cached response without savings */ }
 
       const cachedResponse = cached.response.clone ? cached.response.clone() : cached.response;
-      return { response: cachedResponse, url: "(cache)", headers: {}, transformedBody: body, fromCache: true, cacheSimilarity: cached.similarity };
+      return { success: true, response: cachedResponse, url: "(cache)", headers: {}, transformedBody: body, fromCache: true, cacheSimilarity: cached.similarity };
     }
   }
 
