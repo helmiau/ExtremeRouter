@@ -117,4 +117,24 @@ describe("handleChatCore cache-hit result contract", () => {
     expect(result.cacheSimilarity).toBe(0.92);
     expect(result.url).toBe("(cache)");
   });
+
+  // Bypass paths (warmup/skip/naming) must also carry success:true so the
+  // single-model health/telemetry logic never misreads a synthetic response
+  // as a failure (the same class of bug as the cache-hit regression).
+  it("returns success:true for a bypass (warmup)", async () => {
+    const result = await handleChatCore({
+      body: { model: "claude-sonnet-4", stream: false, messages: [{ role: "user", content: "Warmup" }] },
+      modelInfo: { provider: "claude", model: "claude-sonnet-4" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      connectionId: "test-conn",
+      userAgent: "claude-cli/1.0",
+      clientRawRequest: { endpoint: "/v1/chat/completions", body: {}, headers: { accept: "application/json" } },
+      sourceFormatOverride: "claude",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.response).toBeInstanceOf(Response);
+    expect(executeMock).not.toHaveBeenCalled();
+  });
 });

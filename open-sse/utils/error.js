@@ -99,20 +99,59 @@ export async function parseUpstreamError(response, executor = null) {
 }
 
 /**
+ * Normalized internal result envelope returned by handleChatCore. A single
+ * source of truth for "did the provider call produce a logical response" so
+ * callers (handleSingleModelChat) branch on one contract instead of mixing
+ * Response.ok and a custom success boolean.
+ *
+ * Success paths carry { success:true, response } plus optional metadata
+ * (fromCache / url / headers / transformedBody / cacheSimilarity).
+ * Error paths carry { success:false, status, error, response, resetsAtMs? }.
+ *
+ * @typedef {Object} ChatResult
+ * @property {boolean} success - logical success (true for a usable response, false for an error)
+ * @property {Response} response - HTTP Response to stream back to the client
+ * @property {number} [status] - provider HTTP status code (error path)
+ * @property {string} [error] - human-readable error message (error path)
+ * @property {number} [resetsAtMs] - precise cooldown expiry (quota errors)
+ * @property {boolean} [fromCache] - true if served from semantic cache
+ * @property {string} [url] - provider URL ("(cache)" for cache hits)
+ * @property {object} [headers] - provider response headers
+ * @property {*} [transformedBody] - request body after translation
+ * @property {number} [cacheSimilarity] - jaccard similarity for cache near-hits
+ */
+
+/**
+ * Construct a ChatResult envelope. Centralizes the result shape so every
+ * return path of handleChatCore (and the sub-handlers it delegates to) carries
+ * an explicit `success` boolean — the gap that let cache-hit results be
+ * misread as failures (fixed in P1). Use this for success returns;
+ * createErrorResult covers the failure side.
+ * @param {Object} opts
+ * @param {boolean} opts.success
+ * @param {Response} opts.response
+ * @param {Object} [rest] - additional metadata (fromCache, url, headers, …)
+ * @returns {ChatResult}
+ */
+export function buildChatResult({ success, response, ...rest }) {
+  return { success, response, ...rest };
+}
+
+/**
  * Create error result for chatCore handler
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
- * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
+ * @returns {ChatResult}
  */
 export function createErrorResult(statusCode, message, resetsAtMs) {
-  return {
+  return buildChatResult({
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
-    response: errorResponse(statusCode, message)
-  };
+    response: errorResponse(statusCode, message),
+  });
 }
 
 /**
