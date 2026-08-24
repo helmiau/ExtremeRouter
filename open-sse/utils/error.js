@@ -138,6 +138,19 @@ export function buildChatResult({ success, response, ...rest }) {
 }
 
 /**
+ * Encode a bare HTTP error Response as a ChatResult. Wave 1B compatibility
+ * boundary: bounds where a caller already produced a `Response` (e.g. the
+ * nested-combo path inside handleSingleModelChat) can be adapted to the
+ * envelope without constructing a new error Response.
+ * @param {Response} response - existing error Response (non-2xx)
+ * @returns {ChatResult}
+ */
+export function chatResultFromErrorResponse(response, status) {
+  const effective = status ?? response?.status ?? 500;
+  return buildChatResult({ success: false, status: effective, response, error: `HTTP ${effective}` });
+}
+
+/**
  * Create error result for chatCore handler
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message

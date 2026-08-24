@@ -17,7 +17,7 @@ import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { resolveOpenCodeIdentity } from "open-sse/utils/openCodeIdentity.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getPxpipeDir } from "@/lib/pxpipe/manager.js";
-import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
+import { errorResponse, unavailableResponse, chatResultFromErrorResponse } from "open-sse/utils/error.js";
 import { handleComboChat, handleFusionChat, handleSwarmChat, handleCascadeChat, handleSmartRoutingChat, detectRequiredCapabilities, applyCapabilityAdapter, DEFAULT_CAPABILITY_FALLBACK_MODEL } from "open-sse/services/combo.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -230,7 +230,11 @@ export async function handleChat(request, clientRawRequest = null) {
   // ACL: enforce per-key model access via shared helper
   const denied = assertModelAllowed(keyObj, modelStr);
   if (denied) return denied;
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  // Wave 1B compatibility boundary: HTTP handlers consume result.response —
+  // the envelope is preserved all the way through handleSingleModelChat, but
+  // the route boundary still requires a bare Response.
+  const singleModelResult = await handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return singleModelResult.response;
 }
 
 /**
@@ -280,7 +284,7 @@ async function dispatchResolvedCombo({ body, graph, clientRawRequest, request, a
   // The signal is threaded through so the run-level AbortController can cancel
   // in-flight provider calls when quorum grace expires, hard timeout fires, or
   // the client disconnects (CS-02).
-  const handleSingleModel = (b, m, callOpts = {}) => {
+  const handleSingleModel = async (b, m, callOpts = {}) => {
     // Normalize: support both boolean (legacy swarm/combo call style) and
     // object (new abortable-task call style) callOpts.
     const opts = typeof callOpts === "boolean" ? { isPanel: callOpts } : callOpts;
@@ -290,7 +294,7 @@ async function dispatchResolvedCombo({ body, graph, clientRawRequest, request, a
       const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
       cleanRawReq = { ...clientRawRequest, body: cleanBody };
     }
-    return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, {
+    const result = await handleSingleModelChat(b, m, cleanRawReq, request, apiKey, {
       skipBreaker: opts.isPanel,
       signal: opts.signal,
       trafficClass: opts.trafficClass || (opts.isPanel ? "panel" : "user"),
@@ -305,6 +309,10 @@ async function dispatchResolvedCombo({ body, graph, clientRawRequest, request, a
         trafficClass: opts.trafficClass || (opts.isPanel ? "panel" : "user"),
       },
     });
+    // Wave 1B compatibility boundary: the combo engine still consumes a bare
+    // Response today (Response.ok / status / clone at combo.js). Wave 1C
+    // migrates it to ChatResult.success.
+    return result.response;
   };
 
   if (strategy === "fusion") {
@@ -392,7 +400,17 @@ async function dispatchResolvedCombo({ body, graph, clientRawRequest, request, a
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, opts = {}) {
+/**
+ * Execute one provider model attempt with account fallback, preserving the
+ * full ChatResult envelope from handleChatCore.
+ *
+ * Wave 1B: every return path carries the complete ChatResult
+ * ({ success, response, status?, error?, fromCache?, … }) — callers that still
+ * need a bare Response consume `result.response` at their own boundary.
+ *
+ * @returns {Promise<import("open-sse/utils/error.js").ChatResult>}
+ */
+export async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, opts = {}) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name (e.g. a nested combo whose
@@ -410,9 +428,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       keyObj: opts.keyObj || null,          // panel workers: null (already authorized at top level)
       rateLimitKey: opts.principalId || opts.rateLimitKey || "local",
     });
-    if (gated) return gated;
+    if (gated) {
+      // Wave 1B compatibility boundary: dispatchComboByName returns a bare
+      // Response from a nested combo graph — which can be a 2xx success or an
+      // error. Derive the envelope from Response.ok, the same criterion the
+      // combo layer uses today.
+      return gated.ok
+        ? { success: true, response: gated }
+        : chatResultFromErrorResponse(gated);
+    }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
+    return { success: false, status: HTTP_STATUS.BAD_REQUEST, error: "Invalid model format", response: errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format") };
   }
 
   const { provider, model } = modelInfo;
@@ -470,7 +496,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         // auth.js:94). This path returns BEFORE handleChatCore, so release the
         // slot explicitly or the breaker wedges at half-open capacity forever.
         releaseBreakerProbe(provider);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return { success: false, status, error: `[${provider}/${model}] ${errorMsg}`, response: unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman) };
       }
       if (excludeConnectionIds.size === 0) {
         log.warn("AUTH", `No active credentials for provider: ${provider}`);
@@ -479,14 +505,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         // P0 probe-leak fix: release any half-open slot claimed during credential
         // resolution (free no-auth provider path) before this early return.
         releaseBreakerProbe(provider);
-        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+        return { success: false, status: HTTP_STATUS.NOT_FOUND, error: `No active credentials for provider: ${provider}`, response: errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`) };
       }
       log.warn("CHAT", "No more accounts available", { provider });
       // C3 fix: record failure sample.
       recordHealthSample(provider, { success: false, latencyMs: 0, status: lastStatus || 503 }, chatSettings);
       // P0 probe-leak fix: same as above — guarantee the claimed slot is released.
       releaseBreakerProbe(provider);
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      return { success: false, status: lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, error: lastError || "All accounts unavailable", response: errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable") };
     }
 
     // Log account selection
@@ -579,7 +605,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       // final user-facing call (judge/synthesis/direct) affects breaker state.
       if (!opts.skipBreaker) recordBreakerSuccess(provider, chatSettings, breakerKeyVal);
       recordHealthSample(provider, { success: true, latencyMs }, chatSettings);
-      return result.response;
+      return result;
     }
 
     // Freebuff free-tier CLI gate: upstream 403s chat with
@@ -589,7 +615,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // rate limit, and fallback accounts would hit the same wall. Surface the
     // executor's clear message and stop here.
     if (provider === "freebuff" && result.status === 403 && /restricted to the official CLI|free_mode_cli_required/i.test(result.error || "")) {
-      return result.response;
+      return result;
     }
 
     // Mark account unavailable (auto-calculates cooldown with exponential backoff, or precise resetsAtMs)
@@ -624,6 +650,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       continue;
     }
 
-    return result.response;
+    return result;
   }
 }
