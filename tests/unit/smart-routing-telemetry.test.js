@@ -278,10 +278,15 @@ describe("buildIntentResolver onIntent reporting", () => {
           llmClassifierFallback: { enabled: true, model: "kr/claude-haiku-4.5" },
         },
       },
+      // Wave 1C ChatResult envelope around the bare transport Response.
       handleSingleModel: async () => ({
-        ok: true,
+        success: true,
         status: 200,
-        clone: () => ({ json: async () => ({ choices: [{ message: { content: "research" } }] }) }),
+        response: {
+          ok: true,
+          status: 200,
+          clone: () => ({ json: async () => ({ choices: [{ message: { content: "research" } }] }) }),
+        },
       }),
       onIntent: (d) => reports.push(d),
     });

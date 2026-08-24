@@ -54,8 +54,10 @@ describe("smart-routing persistence e2e", () => {
         stream: false,
       },
       models: ["kr/claude-opus-4-7", "felo-web/deepseek-v4-flash", "glm/glm-5.1"],
+      // Wave 1C ChatResult envelope around the bare transport Response.
       handleSingleModel: async () => ({
-        ok: true, status: 200, statusText: "OK", headers: new Headers(), body: null, clone: () => null,
+        success: true, status: 200,
+        response: { ok: true, status: 200, statusText: "OK", headers: new Headers(), body: null, clone: () => null },
       }),
       log: { info: () => {}, warn: () => {} },
       comboName: "ai-researcher",

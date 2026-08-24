@@ -207,10 +207,16 @@ describe("buildSmartRoutingOrder", () => {
 });
 
 describe("buildIntentResolver (LLM classifier fallback)", () => {
+  // Wave 1C: the classifier consumes ChatResult — success on the envelope,
+  // transport surface on .response.
   const okResponse = (content) => ({
-    ok: true,
+    success: true,
     status: 200,
-    clone: () => ({ json: async () => ({ choices: [{ message: { content } }] }) }),
+    response: {
+      ok: true,
+      status: 200,
+      clone: () => ({ json: async () => ({ choices: [{ message: { content } }] }) }),
+    },
   });
   const config = {
     intentDetection: {

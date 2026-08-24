@@ -4,17 +4,20 @@ import { handleFusionChat } from "../../open-sse/services/combo.js";
 
 const log = { info: () => {}, warn: () => {}, debug: () => {} };
 
-// Minimal OpenAI-chat Response stub with the .ok + .clone().json() surface the engine uses.
+// Minimal OpenAI-chat stub wrapped in the ChatResult envelope the engine
+// consumes since Wave 1C (application success via .success, transport via
+// .response). The response stub keeps the .clone()/.json() surface.
 function okResponse(content, { delayMs = 0 } = {}) {
   const json = { choices: [{ message: { role: "assistant", content } }] };
   const make = () => ({ ok: true, status: 200, clone: make, json: async () => json });
   const res = make();
-  return delayMs > 0 ? new Promise((r) => setTimeout(() => r(res), delayMs)) : res;
+  const envelope = { success: true, status: 200, response: res };
+  return delayMs > 0 ? new Promise((r) => setTimeout(() => r(envelope), delayMs)) : envelope;
 }
 
 function errResponse(status = 500) {
   const make = () => ({ ok: false, status, clone: make, json: async () => ({ error: { message: "boom" } }) });
-  return make();
+  return { success: false, status, response: make() };
 }
 
 describe("fusion combo", () => {
