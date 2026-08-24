@@ -24,13 +24,16 @@ const INCOMPLETE_FINISH_REASONS = new Set(["length", "max_tokens"]);
 const FAILURE_FINISH_REASONS = new Set(["content_filter"]);
 
 // Responses API lifecycle events → normalized terminal observation.
+// response.cancelled is a DISTINCT terminal value ('cancelled') — the provider
+// explicitly cancelled the run. It is not ordinary incompleteness (that is
+// 'incomplete'), and it is separate from client-initiated abort evidence
+// (abortSeen lives on the lifecycle axis, not here).
 const RESPONSES_TERMINALS = {
   "response.completed": "success",
   "response.done": "success",
   "response.failed": "failure",
   "response.incomplete": "incomplete",
-  // Client/provider cancellation: the run did not produce its full output.
-  "response.cancelled": "incomplete",
+  "response.cancelled": "cancelled",
 };
 
 export function createStreamState() {
@@ -123,9 +126,16 @@ export function observeParsedEvent(state, parsed, opts = {}) {
   const geminiFinish = parsed.candidates?.[0]?.finishReason || parsed.candidates?.[0]?.finish_reason;
   if (geminiFinish) applyFinishReason(state, geminiFinish);
 
-  // OpenAI Responses API lifecycle (event name from `event:` framing or payload type)
+  // OpenAI Responses API lifecycle (event name from `event:` framing or payload
+  // type). Direct event-name default: some Responses streams carry ONLY the
+  // `event:` framing (no type field or a type on a nested object), so if no
+  // terminal was observed and the event name is a known lifecycle event, treat
+  // it as authoritative. Guards against accidental matches on content events.
   const evName = opts.eventName || (typeof parsed.type === "string" ? parsed.type : null);
   if (evName && RESPONSES_TERMINALS[evName]) setTerminal(state, RESPONSES_TERMINALS[evName], evName);
+  else if (evName && !state.terminalSeen && ["response.completed", "response.done", "response.failed", "response.incomplete", "response.cancelled"].includes(evName)) {
+    setTerminal(state, RESPONSES_TERMINALS[evName], evName);
+  }
   if (evName === "response.output_text.delta" && parsed.delta) state.hasText = true;
   if ((evName === "response.reasoning_text.delta" || evName === "response.reasoning_summary_text.delta") && parsed.delta) state.hasReasoning = true;
   if (evName === "response.function_call_arguments.delta") state.hasToolCall = true;

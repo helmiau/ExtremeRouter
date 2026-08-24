@@ -103,10 +103,13 @@ describe("deriveAttemptOutcome", () => {
     aborted.abortSeen = true;
     expect(deriveAttemptOutcome(aborted)).toBe("cancelled");
   });
-  it("failure beats abort beats incomplete (check order)", () => {
+  it("Commit A: failure evidence and abort are separate axes — abort+error resolves to cancelled (abort axis wins), error alone resolves to failure", () => {
     const both = stateFrom(openaiContent("a"), { type: "error", error: {} });
     both.abortSeen = true;
-    expect(deriveAttemptOutcome(both)).toBe("failure");
+    expect(deriveAttemptOutcome(both)).toBe("cancelled");
+
+    const errorOnly = stateFrom(openaiContent("a"), { type: "error", error: {} });
+    expect(deriveAttemptOutcome(errorOnly)).toBe("failure");
   });
   it("finish_reason=length → incomplete", () => {
     expect(deriveAttemptOutcome(stateFrom(openaiContent("partial"), openaiFinish("length")))).toBe("incomplete");
@@ -168,14 +171,19 @@ describe("provider terminal matrix (derivation consistency)", () => {
     const s = stateFrom({ type: "content_block_delta", delta: { text: "hello" } }, { type: "message_stop" });
     expect(deriveLogicalSuccess(s)).toBe(true);
   });
-  it("Responses completed/done → success; failed; incomplete; cancelled", () => {
+  it("Responses completed/done → success; failed → failure; incomplete → incomplete", () => {
     expect(deriveLogicalSuccess(stateFrom({ type: "response.output_text.delta", delta: "hi" }, { type: "response.completed" }))).toBe(true);
     expect(deriveLogicalSuccess(stateFrom({ type: "response.output_text.delta", delta: "hi" }, { type: "response.done" }))).toBe(true);
     expect(deriveAttemptOutcome(stateFrom({ type: "response.output_text.delta", delta: "hi" }, { type: "response.failed" }))).toBe("failure");
     expect(deriveAttemptOutcome(stateFrom({ type: "response.output_text.delta", delta: "hi" }, { type: "response.incomplete" }))).toBe("incomplete");
+  });
+
+  it("Commit A: response.cancelled → terminalState=cancelled, outcome=cancelled, abortSeen NOT implied", () => {
     const cancelled = stateFrom({ type: "response.output_text.delta", delta: "hi" }, { type: "response.cancelled" });
-    cancelled.abortSeen = true;
+    expect(cancelled.terminalState).toBe("cancelled");
+    expect(cancelled.abortSeen).toBe(false); // provider cancellation ≠ client abort
     expect(deriveAttemptOutcome(cancelled)).toBe("cancelled");
+    expect(deriveLogicalSuccess(cancelled)).toBe(false);
   });
   it("Ollama done=true with payload → success", () => {
     const s = stateFrom({ done: true, message: { role: "assistant", content: "" }, total_duration: 1 });

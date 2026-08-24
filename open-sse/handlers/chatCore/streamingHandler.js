@@ -7,7 +7,7 @@ import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
 import { createResponsesAccumulator } from "../../translator/concerns/responsesAccumulator.js";
 import { createStreamState } from "../../utils/streamState.js";
-import { deriveUsableOutput, deriveLogicalSuccess, deriveAttemptOutcome, createCanonicalAttempt } from "../../utils/streamSemantics.js";
+import { createCanonicalAttempt, deriveUsableOutput } from "../../utils/canonicalAttempt.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
@@ -162,8 +162,8 @@ function pickStreamObservability(state) {
     errorSeen: !!state.errorSeen,
     abortSeen: !!state.abortSeen,
     usableOutput: deriveUsableOutput(state),
-    logicalSuccess: deriveLogicalSuccess(state),
-    outcome: deriveAttemptOutcome(state),
+    logicalSuccess: createCanonicalAttempt(state).logicalSuccess,
+    outcome: createCanonicalAttempt(state).outcome,
   };
 }
 
@@ -185,9 +185,10 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const observability = pickStreamObservability(streamState);
     // Canonical attempt: pure derivation composed with transport status at
     // the integration boundary (status only — body never touched). This is
-    // informational; nothing in production consumes it.
+    // informational; nothing in production consumes it. source='provider' —
+    // this IS a live upstream attempt.
     const canonicalAttempt = streamState
-      ? createCanonicalAttempt(streamState, { status: transportStatus })
+      ? createCanonicalAttempt(streamState, { status: transportStatus, source: "provider" })
       : null;
 
     saveRequestDetail(buildRequestDetail({
