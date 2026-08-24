@@ -4,6 +4,7 @@ import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
+import { createStreamState, observeParsedEvent, observeRawSseLine } from "./streamState.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -49,7 +50,8 @@ export function createSSEStream(options = {}) {
     body = null,
     onStreamComplete = null,
     apiKey = null,
-    responsesAccumulator = null
+    responsesAccumulator = null,
+    streamState = null
   } = options;
 
   let buffer = "";
@@ -59,6 +61,11 @@ export function createSSEStream(options = {}) {
   const decoder = new TextDecoder("utf-8", { fatal: false });
 
   const state = mode === STREAM_MODE.TRANSLATE ? { ...initState(sourceFormat), provider, toolNameMap, model, ...(responsesAccumulator ? { acc: responsesAccumulator } : {}) } : null;
+
+  // Wave 2: observational state machine — one instance per stream. Callers may
+  // hand in their own instance (streamingHandler threads it to telemetry);
+  // otherwise one is created here so the transform is always observable.
+  const observed = streamState || createStreamState();
 
   let totalContentLength = 0;
   let accumulatedContent = "";
@@ -87,6 +94,9 @@ export function createSSEStream(options = {}) {
   return new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
+      // Wave 2: streamStarted = first provider chunk observed (TTFT event) —
+      // explicitly not the HTTP 200.
+      if (!observed.streamStarted) observed.streamStarted = true;
       const text = decoder.decode(chunk, { stream: true });
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
@@ -118,9 +128,14 @@ export function createSSEStream(options = {}) {
           let output;
           let injectedUsage = false;
 
+          // Wave 2: observational state — raw-line pass first (covers event:
+          // framing, [DONE], non-JSON lines), then precise parsed observation.
+          observeRawSseLine(observed, line);
+
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
+              observeParsedEvent(observed, parsed);
 
               const idFixed = fixInvalidId(parsed);
 
@@ -240,6 +255,10 @@ export function createSSEStream(options = {}) {
           openAIResponsesTerminalSeen = true;
         }
 
+        // Wave 2: observe the event BEFORE any emission behavior — state
+        // tracking must never alter classification/emission order.
+        observeParsedEvent(observed, parsed, { eventName: openAIResponsesEventName });
+
         // For Ollama: done=true is the final chunk with finish_reason/usage, must translate
         // For other formats: done=true is the [DONE] sentinel, skip
         if (parsed && parsed.done && targetFormat !== FORMATS.OLLAMA) {
@@ -322,6 +341,7 @@ export function createSSEStream(options = {}) {
         // leaving the client hanging with no terminal event.
         if (translated && Array.isArray(translated) && translated.some((i) => i && i.error && typeof i.error === "object")) {
           errorSent = true;
+          observed.errorSeen = true;
           for (const item of translated) {
             if (!item || !item.error) continue;
             // Emit in the client's native framing: formatSSE(item, sourceFormat)
@@ -371,6 +391,10 @@ export function createSSEStream(options = {}) {
     },
 
     flush(controller) {
+      // Wave 2: the transform flush fires when the provider side of the stream
+      // closes — that is upstream EOF. EOF alone is not success; it only
+      // records that the reader reached done.
+      observed.eofSeen = true;
       // Moved debug log to finally block so it reflects the FINAL emission
       // count (including flush-phase emissions like synthesized [DONE]).
       trackPendingRequest(model, provider, connectionId, false);
@@ -414,7 +438,7 @@ export function createSSEStream(options = {}) {
             onStreamComplete({
               content: accumulatedContent,
               thinking: accumulatedThinking
-            }, usage, ttftAt);
+            }, usage, ttftAt, observed);
           }
           return;
         }
@@ -491,9 +515,10 @@ export function createSSEStream(options = {}) {
           onStreamComplete({
             content: accumulatedContent,
             thinking: accumulatedThinking
-          }, state?.usage, ttftAt);
+          }, state?.usage, ttftAt, observed);
         }
       } catch (error) {
+        observed.errorSeen = true;
         console.log("Error in flush:", error);
       } finally {
         const evtSummary = Object.entries(eventTypeCounts).map(([k, v]) => `${k}=${v}`).join(",") || "none";
@@ -503,7 +528,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, responsesAccumulator = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, responsesAccumulator = null, streamState = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -516,11 +541,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     body,
     onStreamComplete,
     apiKey,
-    responsesAccumulator
+    responsesAccumulator,
+    streamState
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, streamState = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -529,6 +555,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    streamState
   });
 }

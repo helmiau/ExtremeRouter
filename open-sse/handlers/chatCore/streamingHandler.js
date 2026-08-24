@@ -6,6 +6,7 @@ import { PROVIDERS } from "../../config/providers.js";
 import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
 import { createResponsesAccumulator } from "../../translator/concerns/responsesAccumulator.js";
+import { createStreamState } from "../../utils/streamState.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
@@ -24,7 +25,7 @@ const CODEX_SOURCE_TO_TARGET = {
 /**
  * Determine which SSE transform stream to use based on provider/format.
  */
-function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, responsesAccumulator }) {
+function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, responsesAccumulator, streamState }) {
   const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
   // Responses-API providers (e.g. codex) emit Responses SSE → translate into client format
   const isResponsesProvider = PROVIDERS[provider]?.format === FORMATS.OPENAI_RESPONSES;
@@ -32,14 +33,14 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 
   if (needsCodexTranslation) {
     const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;
-    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, responsesAccumulator);
+    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, responsesAccumulator, streamState);
   }
 
   if (needsTranslation(targetFormat, sourceFormat)) {
-    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, responsesAccumulator);
+    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, responsesAccumulator, streamState);
   }
 
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey);
+  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, streamState);
 }
 
 /**
@@ -88,7 +89,17 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     ? createResponsesAccumulator({ model })
     : null;
 
-  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, responsesAccumulator });
+  // Wave 2: stream-scoped observational state. Owned by THIS request; handed
+  // to the transform stream and appended to onStreamComplete for telemetry.
+  // Purely observational — nothing downstream reads it for behavior decisions.
+  const streamState = createStreamState();
+  // The completion callback is built upstream (chatCore) before this function
+  // runs, so wrap it: existing positional args preserved, state appended 4th.
+  const onStreamCompleteWithState = onStreamComplete
+    ? (contentObj, usage, ttftAt) => onStreamComplete(contentObj, usage, ttftAt, streamState)
+    : null;
+
+  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete: onStreamCompleteWithState, apiKey, responsesAccumulator, streamState });
 
   // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
@@ -98,7 +109,12 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     ? () => buildAbortedResponsesTerminalBytes(responsesAccumulator)
     : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  // Wave 2 observational wiring: disconnect/cancel → abortSeen (client-side,
+  // NOT a provider failure); upstream read errors → errorSeen. No behavior.
+  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, {
+    onAbort: () => { streamState.abortSeen = true; },
+    onError: () => { streamState.errorSeen = true; },
+  });
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
@@ -121,18 +137,43 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 }
 
 /**
+ * Observational stream-state fields safe to persist: booleans + short enums
+ * only. Never content, prompts, keys, or raw provider payloads.
+ */
+function pickStreamObservability(state) {
+  if (!state) return undefined;
+  return {
+    streamStarted: !!state.streamStarted,
+    hasText: !!state.hasText,
+    hasReasoning: !!state.hasReasoning,
+    hasToolCall: !!state.hasToolCall,
+    hasUsage: !!state.hasUsage,
+    terminalSeen: !!state.terminalSeen,
+    terminalState: state.terminalState ?? null,
+    terminalType: state.terminalType ?? null,
+    finishReason: state.finishReason ?? null,
+    eofSeen: !!state.eofSeen,
+    errorSeen: !!state.errorSeen,
+    abortSeen: !!state.abortSeen,
+  };
+}
+
+/**
  * Build onStreamComplete callback for streaming usage tracking.
  */
 export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, savedTokens, savedTokensByMechanism, savedBytesByMechanism, cavemanActive, ponytailActive, retryCount, combo }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt) => {
+  // Wave 2: the transform appends the observational streamState as the 4th
+  // argument when available; absent for legacy callers — telemetry omits it.
+  const onStreamComplete = (contentObj, usage, ttftAt, streamState) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
+    const observability = pickStreamObservability(streamState);
 
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -144,7 +185,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       status: "success",
       combo
-    }, { id: streamDetailId })).catch(err => {
+    }, { id: streamDetailId, ...(observability ? { streamObservability: observability } : {}) })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
 
