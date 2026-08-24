@@ -7,6 +7,7 @@ import { STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
 import { createResponsesAccumulator } from "../../translator/concerns/responsesAccumulator.js";
 import { createStreamState } from "../../utils/streamState.js";
+import { deriveUsableOutput, deriveLogicalSuccess, deriveAttemptOutcome, createCanonicalAttempt } from "../../utils/streamSemantics.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
@@ -95,8 +96,11 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   const streamState = createStreamState();
   // The completion callback is built upstream (chatCore) before this function
   // runs, so wrap it: existing positional args preserved, state appended 4th.
+  // Wave 2/2: append the observational stream state (4th) and the provider HTTP
+// status (5th, for transport metadata in canonicalAttempt). Status is read
+// without touching the stream body. Existing positional args preserved.
   const onStreamCompleteWithState = onStreamComplete
-    ? (contentObj, usage, ttftAt) => onStreamComplete(contentObj, usage, ttftAt, streamState)
+    ? (contentObj, usage, ttftAt) => onStreamComplete(contentObj, usage, ttftAt, streamState, providerResponse.status)
     : null;
 
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete: onStreamCompleteWithState, apiKey, responsesAccumulator, streamState });
@@ -139,6 +143,8 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 /**
  * Observational stream-state fields safe to persist: booleans + short enums
  * only. Never content, prompts, keys, or raw provider payloads.
+ * Wave 2/2 adds the derived semantic fields (usableOutput / logicalSuccess /
+ * outcome) — informational, consulted by no production behavior.
  */
 function pickStreamObservability(state) {
   if (!state) return undefined;
@@ -155,6 +161,9 @@ function pickStreamObservability(state) {
     eofSeen: !!state.eofSeen,
     errorSeen: !!state.errorSeen,
     abortSeen: !!state.abortSeen,
+    usableOutput: deriveUsableOutput(state),
+    logicalSuccess: deriveLogicalSuccess(state),
+    outcome: deriveAttemptOutcome(state),
   };
 }
 
@@ -166,7 +175,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
 
   // Wave 2: the transform appends the observational streamState as the 4th
   // argument when available; absent for legacy callers — telemetry omits it.
-  const onStreamComplete = (contentObj, usage, ttftAt, streamState) => {
+  const onStreamComplete = (contentObj, usage, ttftAt, streamState, transportStatus) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
@@ -174,6 +183,12 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
     const observability = pickStreamObservability(streamState);
+    // Canonical attempt: pure derivation composed with transport status at
+    // the integration boundary (status only — body never touched). This is
+    // informational; nothing in production consumes it.
+    const canonicalAttempt = streamState
+      ? createCanonicalAttempt(streamState, { status: transportStatus })
+      : null;
 
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -185,7 +200,11 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       status: "success",
       combo
-    }, { id: streamDetailId, ...(observability ? { streamObservability: observability } : {}) })).catch(err => {
+    }, {
+      id: streamDetailId,
+      ...(observability ? { streamObservability: observability } : {}),
+      ...(canonicalAttempt ? { canonicalAttempt } : {}),
+    })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
 
