@@ -126,13 +126,12 @@ describe("createCanonicalAttempt (universal schema + factory)", () => {
     expect(ca.outcome).toBe("success");
   });
 
-  it("null stream evidence → stream-specific fields null, not false", () => {
-    const ca = createCanonicalAttempt(null, { status: 200, source: "cache" });
-    expect(ca.source).toBe("cache");
+  it("null evidence + provider source → unknown completion, null stream fields", () => {
+    const ca = createCanonicalAttempt(null, { status: 200, source: "provider" });
     expect(ca.streamStarted).toBe(null);
     expect(ca.eofSeen).toBe(null);
     expect(ca.terminalState).toBe(null);
-    expect(ca.completionState).toBe("unknown");
+    expect(ca.completionState).toBe("unknown"); // no evidence, provider path
     expect(ca.transportOk).toBe(true);
     expect(ca.usableOutput).toBe(false);
   });
@@ -160,5 +159,80 @@ describe("createCanonicalAttempt (universal schema + factory)", () => {
     const failed = stateFrom(openaiContent("x"), { type: "response.failed" }, { done: true });
     expect(failed.terminalState).toBe("failure");
     expect(deriveOutcome(failed)).toBe("failure");
+  });
+});
+
+describe("HARDENING: transportOk explicit 3-state contract", () => {
+  it("status 200 → transportOk true", () => {
+    expect(createCanonicalAttempt(null, { status: 200, source: "provider" }).transportOk).toBe(true);
+  });
+  it("status 500 → transportOk false", () => {
+    expect(createCanonicalAttempt(null, { status: 500, source: "provider" }).transportOk).toBe(false);
+    expect(createCanonicalAttempt(null, { status: 503, source: "provider" }).transportOk).toBe(false);
+  });
+  it("status undefined → transportOk null (NOT false)", () => {
+    expect(createCanonicalAttempt(null, { source: "provider" }).transportOk).toBe(null);
+    expect(createCanonicalAttempt(null, { status: null, source: "provider" }).transportOk).toBe(null);
+  });
+  it("transportOk stays independent from body-derived logicalSuccess", () => {
+    const s = stateFrom(openaiContent("a"), openaiFinish("stop"));
+    expect(createCanonicalAttempt(s, { status: 500, source: "provider" }).transportOk).toBe(false);
+    expect(createCanonicalAttempt(s, { status: 500, source: "provider" }).logicalSuccess).toBe(true); // semantics independent of transport
+  });
+});
+
+describe("HARDENING: source=cache synthetic semantics", () => {
+  it("valid cache hit (2xx, no stream state) → completionState success, logicalSuccess true, stream fields null", () => {
+    const ca = createCanonicalAttempt(null, { status: 200, source: "cache" });
+    expect(ca.source).toBe("cache");
+    expect(ca.transportOk).toBe(true);
+    expect(ca.completionState).toBe("success");
+    expect(ca.completionType).toBe("cache");
+    expect(ca.usableOutput).toBe(true);
+    expect(ca.logicalSuccess).toBe(true);
+    expect(ca.outcome).toBe("success");
+    expect(ca.streamStarted).toBe(null);
+    expect(ca.eofSeen).toBe(null);
+    expect(ca.terminalState).toBe(null);
+    // No fabricated output-category evidence.
+    expect(ca.hasText).toBe(false);
+    expect(ca.hasReasoning).toBe(false);
+    expect(ca.hasToolCall).toBe(false);
+    expect(ca.hasStructuredOutput).toBe(false);
+  });
+  it("cache failure (non-2xx) → completionState failure, logicalSuccess false", () => {
+    const ca = createCanonicalAttempt(null, { status: 502, source: "cache" });
+    expect(ca.completionState).toBe("failure");
+    expect(ca.logicalSuccess).toBe(false);
+    expect(ca.outcome).toBe("failure");
+    expect(ca.usableOutput).toBe(false);
+  });
+});
+
+describe("HARDENING: source=bypass synthetic semantics", () => {
+  it("valid bypass → completionState success, logicalSuccess true, stream evidence not fabricated", () => {
+    const ca = createCanonicalAttempt(null, { status: 200, source: "bypass" });
+    expect(ca.source).toBe("bypass");
+    expect(ca.completionState).toBe("success");
+    expect(ca.completionType).toBe("bypass");
+    expect(ca.logicalSuccess).toBe(true);
+    expect(ca.outcome).toBe("success");
+    expect(ca.streamStarted).toBe(null); // NOT fabricated to true
+    expect(ca.eofSeen).toBe(null);
+    expect(ca.terminalState).toBe(null);
+    expect(ca.hasText).toBe(false);
+  });
+  it("bypass error (non-2xx) → not fake success", () => {
+    const ca = createCanonicalAttempt(null, { status: 500, source: "bypass" });
+    expect(ca.completionState).toBe("failure");
+    expect(ca.logicalSuccess).toBe(false);
+  });
+});
+
+describe("HARDENING: no overfit — source!=provider does NOT hard-code success", () => {
+  it("provider path with no evidence stays failure/incomplete (not auto-success)", () => {
+    const ca = createCanonicalAttempt(null, { status: 200, source: "provider" });
+    expect(ca.completionState).toBe("unknown");
+    expect(ca.logicalSuccess).toBe(false);
   });
 });
