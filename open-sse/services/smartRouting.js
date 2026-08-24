@@ -156,8 +156,9 @@ async function classifyWithModel(handleSingleModel, model, prompt) {
     isPanel: true, // skipBreaker: classifier failures must not trip the breaker
     signal: AbortSignal.timeout(CLASSIFIER_TIMEOUT_MS),
   });
-  if (!res?.ok) throw new Error(`classifier returned status ${res?.status}`);
-  const json = await res.clone().json();
+  // Wave 1C: ChatResult.success is the application-success signal.
+  if (!res?.success) throw new Error(`classifier returned status ${res?.status ?? res?.response?.status}`);
+  const json = await res.response.clone().json();
   const content =
     json?.choices?.[0]?.message?.content ??
     json?.choices?.[0]?.text ??

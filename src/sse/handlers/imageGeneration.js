@@ -65,7 +65,12 @@ export async function handleImageGeneration(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId }),
+      // Wave 1C: the combo engine consumes ChatResult — wrap this pipeline's
+      // bare-Response result so success derives from Response.ok as before.
+      handleSingleModel: async (b, m) => {
+        const r = await handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId });
+        return { success: r.ok, status: r.status, response: r };
+      },
       log,
       comboName: modelStr,
       comboStrategy,

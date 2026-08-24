@@ -397,19 +397,23 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
     try {
       const result = await handleSingleModel(body, modelStr, { role: "worker" });
-      if (result.ok) {
+      // Wave 1C: ChatResult.success is the authoritative application-success
+      // signal. Transport data (status/headers/body) stays on result.response.
+      if (result.success) {
         log.info("COMBO", `Model ${modelStr} succeeded`);
         // Combo observability: notify the strategy wrapper which member actually
         // served the request (used by smart-routing telemetry).
         if (typeof onModelServed === "function") onModelServed(modelStr);
-        return result;
+        return result.response;
       }
 
+      const status = result.status ?? result.response?.status;
+
       // Extract error info from response
-      let errorText = result.statusText || "";
+      let errorText = result.error || "";
       let retryAfter = null;
       try {
-        const errorBody = await result.clone().json();
+        const errorBody = await result.response.clone().json();
         errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
         retryAfter = errorBody?.retryAfter || null;
       } catch {
@@ -427,29 +431,29 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       // Check if should fallback to next model
-      const nonRetryableClientError = [400, 405, 406, 413, 415, 422].includes(result.status);
+      const nonRetryableClientError = [400, 405, 406, 413, 415, 422].includes(status);
       const { shouldFallback, cooldownMs } = nonRetryableClientError
         ? { shouldFallback: false, cooldownMs: 0 }
-        : checkFallbackError(result.status, errorText);
+        : checkFallbackError(status, errorText);
 
       if (!shouldFallback) {
-        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-        return result;
+        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status });
+        return result.response;
       }
 
       // For transient errors (503/502/504), wait for cooldown before falling through
       // so a briefly-overloaded provider gets a chance to recover rather than being
       // skipped immediately (fixes: combo falls through on transient 503)
       if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
-        (result.status === 503 || result.status === 502 || result.status === 504)) {
-        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
+        (status === 503 || status === 502 || status === 504)) {
+        log.info("COMBO", `Model ${modelStr} transient ${status}, waiting ${cooldownMs}ms before next`);
         await new Promise(r => setTimeout(r, cooldownMs));
       }
 
       // Fallback to next model
-      lastError = errorText || String(result.status);
-      if (!lastStatus) lastStatus = result.status;
-      log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
+      lastError = errorText || String(status);
+      if (!lastStatus) lastStatus = status;
+      log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
@@ -462,8 +466,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // Use 503 (Service Unavailable) rather than 406 (Not Acceptable) — 406 implies
   // the request itself is invalid, but here the providers are simply unavailable
   // or have no active credentials. 503 is more accurate and retryable by clients.
+  // Wave 1C: a failed candidate can now carry a 2xx transport status
+  // (success=false + response.ok=true). Never synthesize the all-failed error
+  // with a success-range status — clamp to 503 unless a real error status exists.
   const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
-  const status = allDisabled ? 503 : (lastStatus || 503);
+  const lastStatusIsError = lastStatus == null || lastStatus === 0 || lastStatus >= 400;
+  const status = allDisabled ? 503 : (lastStatusIsError ? (lastStatus || 503) : 503);
   const msg = lastError || "All combo models unavailable";
 
   if (earliestRetryAfter) {
@@ -618,7 +626,12 @@ export function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeo
         .catch((e) => { out[i] = { __error: e }; })
         .finally(() => {
           settled++;
-          if (out[i] && out[i].ok) ok++;
+          // Quorum counts application success across heterogeneous leg shapes:
+          // ChatResult legs carry .success (Wave 1C), swarm worker legs use the
+          // internal { ok, text } marker. Neither is a raw Response here.
+          const leg = out[i];
+          const legSucceeded = !!leg && (leg.success === true || (leg.success === undefined && leg.ok === true));
+          if (legSucceeded) ok++;
           if (settled === calls.length) return finish();
           if (ok >= minPanel && !graceTimer) graceTimer = setTimeout(finish, stragglerGraceMs);
         });
@@ -802,7 +815,8 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
 
   // A single-model fusion has nothing to fuse — just answer directly.
   if (panel.length === 1) {
-    return handleSingleModel(body, panel[0], { role: "judge" });
+    const single = await handleSingleModel(body, panel[0], { role: "judge" });
+    return single.response;
   }
 
   // Capability gate: the Judge role requires tool use + file access. Web cookie
@@ -880,9 +894,10 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
     if (!res) { log.warn("FUSION", `Panel ${model} dropped (straggler/timeout)`); continue; }
     if (res.__timeout) { log.warn("FUSION", `Panel ${model} timed out`); continue; }
     if (res.__error) { log.warn("FUSION", `Panel ${model} threw`, { error: res.__error?.message || String(res.__error) }); continue; }
-    if (!res.ok) { log.warn("FUSION", `Panel ${model} failed`, { status: res.status }); continue; }
+    // Wave 1C: application success comes from ChatResult.success.
+    if (!res.success) { log.warn("FUSION", `Panel ${model} failed`, { status: res.status ?? res.response?.status }); continue; }
     try {
-      const json = await res.clone().json();
+      const json = await res.response.clone().json();
       const text = extractPanelText(json);
       if (text) {
         const budgeted = runBudget ? runBudget.clampOutput(text) : text;
@@ -917,12 +932,14 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
     if (wantsStream) {
       log.info("FUSION", `Only ${answers[0].model} succeeded — re-running with stream:true to honor client SSE request (no fusion)`);
       return runTimedLeg(
-        (childSignal) => handleSingleModel(body, answers[0].model, { role: "panel", signal: childSignal, trafficClass: "user" }),
+        // Wave 1C: the closure yields ChatResult — unwrap to the transport
+        // Response so runTimedLeg's contract (and the caller) stay unchanged.
+        (childSignal) => handleSingleModel(body, answers[0].model, { role: "panel", signal: childSignal, trafficClass: "user" }).then((r) => r.response),
         `Re-run ${answers[0].model}`,
       );
     }
     log.info("FUSION", `Only ${answers[0].model} succeeded — returning its response directly (no fusion, no re-run)`);
-    return answers[0].res;
+    return answers[0].res.response;
   }
 
   // 4. Judge analyzes + writes one final answer (streams to client if requested).
@@ -930,7 +947,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   const judgeBody = appendDirective(body, clampText(buildJudgePrompt(answers), maxJudgeChars), format);
   log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
   return runTimedLeg(
-    (childSignal) => handleSingleModel(judgeBody, judge, { role: "judge", signal: childSignal, trafficClass: "user" }),
+    (childSignal) => handleSingleModel(judgeBody, judge, { role: "judge", signal: childSignal, trafficClass: "user" }).then((r) => r.response),
     `Judge ${judge}`,
   );
 }
@@ -1055,9 +1072,10 @@ export async function handleCascadeChat({ body, models, handleSingleModel, log, 
       continue;
     }
 
-    if (!res?.ok) {
-      log.warn("CASCADE", `Stage ${stage + 1} (${model}) returned status ${res?.status}`);
-      if (isFinal) return res;
+    // Wave 1C: application success comes from ChatResult.success.
+    if (!res?.success) {
+      log.warn("CASCADE", `Stage ${stage + 1} (${model}) returned status ${res?.status ?? res?.response?.status}`);
+      if (isFinal) return res.response;
       priorAnswer = null;
       priorModel = model;
       continue;
@@ -1066,13 +1084,13 @@ export async function handleCascadeChat({ body, models, handleSingleModel, log, 
     // Final stage always returns — no confidence check needed.
     if (isFinal) {
       log.info("CASCADE", `Final stage (${model}) returning`);
-      return res;
+      return res.response;
     }
 
     // Extract text + parse confidence.
     let text = "";
     try {
-      const json = await res.clone().json().catch(() => ({}));
+      const json = await res.response.clone().json().catch(() => ({}));
       text = extractPanelText(json);
       // Budget guard: clamp stage output before it feeds the next escalation.
       if (text && runBudget) text = runBudget.clampOutput(text);
@@ -1085,7 +1103,7 @@ export async function handleCascadeChat({ body, models, handleSingleModel, log, 
       // Confident enough — return. The CONFIDENCE marker is a trailing line
       // that most clients will ignore; we don't re-serialize the response.
       log.info("CASCADE", `Stage ${stage + 1} confident (${confidence} ≥ ${cfg.confidenceThreshold}) — returning`);
-      return res;
+      return res.response;
     }
 
     // Below threshold (or unparseable) — escalate with prior answer as context.

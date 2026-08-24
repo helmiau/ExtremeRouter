@@ -309,10 +309,9 @@ async function dispatchResolvedCombo({ body, graph, clientRawRequest, request, a
         trafficClass: opts.trafficClass || (opts.isPanel ? "panel" : "user"),
       },
     });
-    // Wave 1B compatibility boundary: the combo engine still consumes a bare
-    // Response today (Response.ok / status / clone at combo.js). Wave 1C
-    // migrates it to ChatResult.success.
-    return result.response;
+    // Wave 1C: strategies consume ChatResult.success as the authoritative
+    // application-success signal; transport data stays on result.response.
+    return result;
   };
 
   if (strategy === "fusion") {

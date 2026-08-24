@@ -285,7 +285,7 @@ async function runGatekeeper({ runId, body, managerModel, handleSingleModel, cfg
       _trackGatekeeperFailure(managerModel, log);
       return "complex";
     }
-    const text = extractPanelText(await res.clone().json().catch(() => ({})));
+    const text = extractPanelText(await res.response.clone().json().catch(() => ({})));
     const verdict = /VERDICT:\s*SIMPLE/i.test(text) ? "simple" : "complex";
     markStageDone(runId, "gatekeeper", { verdict });
     // Reset failure counter on any successful response (even if verdict is "complex"
@@ -321,7 +321,7 @@ async function runManagerStrategy({ runId, body, managerModel, handleSingleModel
       markStageDone(runId, "manager", { strategy: null });
       return null;
     }
-    const text = extractPanelText(await res.clone().json().catch(() => ({})));
+    const text = extractPanelText(await res.response.clone().json().catch(() => ({})));
     const strategy = parseStrategy(text);
     markStageDone(runId, "manager", { strategy: strategy ? { subtaskCount: strategy.subtasks.length } : null });
     if (!strategy) log?.warn?.("SWARM", "Manager produced unparseable strategy");
@@ -357,12 +357,13 @@ async function dispatchWorkers({ runId, strategy, models, body, handleSingleMode
           markWorkerStatus(runId, i, "error", { model: workerModel });
           return { ok: false, text: "" };
         }
-        // Check HTTP status — a 500/429/503 Response is not a successful worker output.
-        if (!res?.ok) {
-          markWorkerStatus(runId, i, "error", { model: workerModel, status: res?.status });
+        // Wave 1C: application success comes from ChatResult.success — a
+        // non-2xx Response (or any failed leg) is not usable worker output.
+        if (!res?.success) {
+          markWorkerStatus(runId, i, "error", { model: workerModel, status: res?.status ?? res?.response?.status });
           return { ok: false, text: "" };
         }
-        const rawText = extractPanelText(await res.clone().json().catch(() => ({})));
+        const rawText = extractPanelText(await res.response.clone().json().catch(() => ({})));
         // Budget guard: clamp the worker's output so internal fan-out can never
         // exceed the combo's output cap. Over-budget output is dropped (worker fail).
         const text = runBudget ? runBudget.clampOutput(rawText) : rawText;
@@ -417,7 +418,7 @@ async function runStaffAudit({ runId, strategy, workerOutputs, staffModel, audit
       markStageDone(runId, "audit", { skipped: true });
       return null;
     }
-    const text = extractPanelText(await res.clone().json().catch(() => ({})));
+    const text = extractPanelText(await res.response.clone().json().catch(() => ({})));
     markStageDone(runId, "audit", { reportLen: text.length });
     return runBudget ? runBudget.clampOutput(text) : text;
   } catch (e) {
@@ -466,8 +467,10 @@ export async function handleSwarmChat({
   const userPrompt = extractUserPrompt(body);
 
   // Single-model fast path: no point orchestrating a swarm over one model.
+  // Wave 1C: unwrap ChatResult to the transport Response at the return boundary.
   if (panel.length === 1 && !managerModel && !staffModel && !auditModel) {
-    return handleSingleModel(body, panel[0], { role: "manager" });
+    const single = await handleSingleModel(body, panel[0], { role: "manager" });
+    return single.response;
   }
 
   // Capability gate: control roles (Manager/Staff/Audit) require tool use +
@@ -505,7 +508,8 @@ export async function handleSwarmChat({
       // Manager answers directly, streaming to client (original body preserved).
       log?.info?.("SWARM", "Gatekeeper bypass — simple request, direct answer");
       if (runId) markRunComplete(runId, { bypassed: true });
-      return handleSingleModel(body, manager, { role: "manager" });
+      const direct = await handleSingleModel(body, manager, { role: "manager" });
+      return direct.response;
     }
 
     // ── Stage 1: Manager Strategy ──
@@ -517,7 +521,8 @@ export async function handleSwarmChat({
       // Strategy parse failed → fall back to direct answer.
       log?.warn?.("SWARM", "Strategy decomposition failed — falling back to direct answer");
       if (runId) markRunComplete(runId, { fallback: true });
-      return handleSingleModel(body, manager, { role: "manager" });
+      const fallbackAnswer = await handleSingleModel(body, manager, { role: "manager" });
+      return fallbackAnswer.response;
     }
 
 	    // Dynamic worker scaling: autoScale overrides static workerCount when enabled.
@@ -551,9 +556,11 @@ export async function handleSwarmChat({
         // Return the single worker's output directly — include the actual text
         // so the manager has visibility (previously the text was discarded).
         const workerText = workerOutputs[0].text || "";
-        return handleSingleModel(appendUserTurn(body, `The specialist worker produced this answer for the subtask "${workerOutputs[0].subtask?.title || ""}". Output it verbatim to the user, adjusting only for formatting if needed:\n\n${workerText}`), manager, { role: "manager" });
+        const workerAnswer = await handleSingleModel(appendUserTurn(body, `The specialist worker produced this answer for the subtask "${workerOutputs[0].subtask?.title || ""}". Output it verbatim to the user, adjusting only for formatting if needed:\n\n${workerText}`), manager, { role: "manager" });
+        return workerAnswer.response;
       }
-      return handleSingleModel(body, manager, { role: "manager" });
+      const fallbackManager = await handleSingleModel(body, manager, { role: "manager" });
+      return fallbackManager.response;
     }
 
     // ── Stage 4: Staff Audit ──
@@ -576,7 +583,8 @@ export async function handleSwarmChat({
     // completion to fire markStageDone + markRunComplete after the last chunk.
     if (runId) {
       markStageStart(runId, "synthesis", { model: manager });
-      const res = await handleSingleModel(synthBody, manager, { role: "manager" });
+      // Wave 1C: unwrap ChatResult — transport fields come from result.response.
+      const res = (await handleSingleModel(synthBody, manager, { role: "manager" })).response;
       // If the response has a streaming body, wrap it to detect completion.
       if (res?.body) {
         const originalBody = res.body;
@@ -620,12 +628,14 @@ export async function handleSwarmChat({
       return res;
     }
 
-    return handleSingleModel(synthBody, manager, { role: "manager" });
+    const synthNoTelemetry = await handleSingleModel(synthBody, manager, { role: "manager" });
+    return synthNoTelemetry.response;
   } catch (e) {
     log?.error?.("SWARM", `Swarm failed: ${e?.message || e}`);
     if (runId) markRunError(runId, e);
     // Graceful degradation: fall back to direct answer on any uncaught error.
-    return handleSingleModel(body, manager, { role: "manager" });
+    const degraded = await handleSingleModel(body, manager, { role: "manager" });
+    return degraded.response;
   }
 }
 
@@ -637,7 +647,7 @@ async function runGatekeeperNoTelemetry({ body, managerModel, handleSingleModel,
   try {
     const res = await withTimeout(handleSingleModel(directiveBody, managerModel, { isPanel: true, role: "gatekeeper" }), cfg.managerTimeoutMs);
     if (res?.__timeout || res?.__error) return "complex";
-    const text = extractPanelText(await res.clone().json().catch(() => ({})));
+    const text = extractPanelText(await res.response.clone().json().catch(() => ({})));
     return /VERDICT:\s*SIMPLE/i.test(text) ? "simple" : "complex";
   } catch {
     return "complex";
@@ -651,7 +661,7 @@ async function runManagerStrategyNoTelemetry({ body, managerModel, handleSingleM
   try {
     const res = await withTimeout(handleSingleModel(directiveBody, managerModel, { isPanel: true, role: "manager" }), cfg.managerTimeoutMs);
     if (res?.__timeout || res?.__error) return null;
-    const text = extractPanelText(await res.clone().json().catch(() => ({})));
+    const text = extractPanelText(await res.response.clone().json().catch(() => ({})));
     return parseStrategy(text);
   } catch {
     return null;
@@ -663,7 +673,7 @@ async function dispatchWorkersNoTelemetry({ strategy, models, body, handleSingle
   if (workerModels.length === 0) return [];
   // Parse JSON in the parallel .then() (like the telemetry path) instead of
   // serially after collectPanel settles — avoids N×json-parse latency on the
-  // critical path. Also checks res.ok (M1+C3 alignment) and filters empty
+  // critical path. Also checks ChatResult.success (Wave 1C) and filters empty
   // output consistently with the telemetry variant.
   const calls = strategy.subtasks.map((subtask, i) => {
     const workerModel = workerModels[i % workerModels.length];
@@ -671,8 +681,8 @@ async function dispatchWorkersNoTelemetry({ strategy, models, body, handleSingle
     return withTimeout(handleSingleModel(workerBody, workerModel, { isPanel: true, role: "worker" }), cfg.workerHardTimeoutMs)
       .then(async (res) => {
         if (res?.__timeout || res?.__error) return { ok: false, text: "" };
-        if (!res?.ok) return { ok: false, text: "" };
-        const rawText = extractPanelText(await res.clone().json().catch(() => ({})));
+        if (!res?.success) return { ok: false, text: "" };
+        const rawText = extractPanelText(await res.response.clone().json().catch(() => ({})));
         // Budget guard: clamp worker output; drop over-budget output (worker fail).
         const text = runBudget ? runBudget.clampOutput(rawText) : rawText;
         if (rawText && !text) return { ok: false, text: "" };
@@ -707,7 +717,7 @@ async function runStaffAuditNoTelemetry({ strategy, workerOutputs, staffModel, a
   try {
     const res = await withTimeout(handleSingleModel(directiveBody, model, { isPanel: true, role: "audit" }), cfg.managerTimeoutMs);
     if (res?.__timeout || res?.__error) return null;
-    const text = extractPanelText(await res.clone().json().catch(() => ({})));
+    const text = extractPanelText(await res.response.clone().json().catch(() => ({})));
     return runBudget ? runBudget.clampOutput(text) : text;
   } catch {
     return null;

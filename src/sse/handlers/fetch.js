@@ -122,7 +122,12 @@ export async function handleFetch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, apiKey, settings),
+      // Wave 1C: the combo engine consumes ChatResult — wrap this pipeline's
+      // bare-Response result so success derives from Response.ok as before.
+      handleSingleModel: async (b, m) => {
+        const r = await handleSingleProviderFetch(b, m, request, apiKey, settings);
+        return { success: r.ok, status: r.status, response: r };
+      },
       log,
       comboName: providerInput,
       comboStrategy,

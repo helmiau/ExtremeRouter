@@ -75,7 +75,12 @@ export async function handleTts(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, apiKey),
+      // Wave 1C: the combo engine consumes ChatResult — wrap this pipeline's
+      // bare-Response result so success derives from Response.ok as before.
+      handleSingleModel: async (b, m) => {
+        const r = await handleSingleModelTts(b, m, responseFormat, language, apiKey);
+        return { success: r.ok, status: r.status, response: r };
+      },
       log,
       comboName: modelStr,
       comboStrategy,
