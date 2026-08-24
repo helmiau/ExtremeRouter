@@ -331,6 +331,9 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     parsed: translatedResponse || responseBody,
     usage,
     malformed: false,
+    // Explicit structured-output contract: present only when the client asked
+    // for JSON mode (response_format). Same signal the JSON-fence unwrap uses.
+    structuredContract: Boolean(body?.response_format),
   });
 
   saveRequestDetail(buildRequestDetail({

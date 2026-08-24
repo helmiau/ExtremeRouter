@@ -43,8 +43,8 @@ describe("success matrix", () => {
     expect(ca.hasText).toBe(false);
     expect(ca.logicalSuccess).toBe(true);
   });
-  it("200 + structured output (JSON-looking content under response_format) → logicalSuccess=true", () => {
-    const ca = attempt({ parsed: openaiText('{"city":"Paris"}') });
+  it("200 + structured output (explicit response_format contract + valid structured result) → logicalSuccess=true", () => {
+    const ca = attempt({ parsed: openaiText('{"city":"Paris"}'), structuredContract: true });
     expect(ca.hasStructuredOutput).toBe(true);
     expect(ca.usableOutput).toBe(true);
     expect(ca.logicalSuccess).toBe(true);
@@ -153,6 +153,50 @@ describe("no false structured output", () => {
     const ev = extractNonStreamingEvidence({ choices: [{ message: { role: "tool", content: "result" } }] }, null);
     expect(ev.hasToolCall).toBe(false);
     expect(ev.hasText).toBe(false); // tool-result content is not assistant output
+  });
+});
+
+describe("STRUCTURED OUTPUT HARDENING", () => {
+  it("explicit structured contract + valid structured result → hasStructuredOutput=true → logicalSuccess", () => {
+    const ca = attempt({ parsed: openaiText('{"city":"Paris","temp":22}'), structuredContract: true });
+    expect(ca.hasStructuredOutput).toBe(true);
+    expect(ca.usableOutput).toBe(true);
+    expect(ca.logicalSuccess).toBe(true);
+  });
+
+  it.each([
+    ["{hello}", "unbalanced brace"],
+    ["[Note] deployment complete", "bracket-prefixed note"],
+    ["{\n  this is just text\n}", "JSON-looking plain text"],
+    ["[1] ordinary text", "ordered-list prefix"],
+  ])("JSON-looking plain text %p (%s) is NOT structured output, but IS text", (content, _label) => {
+    const ca = attempt({ parsed: openaiText(content), structuredContract: false });
+    expect(ca.hasText).toBe(true); // normal text semantics preserved
+    expect(ca.hasStructuredOutput).toBe(false); // no startsWith({/[) guess
+    expect(ca.usableOutput).toBe(true); // text alone is usable output
+  });
+
+  it("false-positive prevention: JSON-looking text must NEVER become structured output even with a contract but invalid content", () => {
+    const ca = attempt({ parsed: openaiText("{hello}"), structuredContract: true });
+    expect(ca.hasStructuredOutput).toBe(false);
+    expect(ca.hasText).toBe(true);
+  });
+
+  it("usage / error envelope / empty choices / metadata / [DONE] still never structured output", () => {
+    expect(extractNonStreamingEvidence({ usage: { prompt_tokens: 1 } }, usage).hasStructuredOutput).toBe(false);
+    expect(extractNonStreamingEvidence({ error: { message: "x" } }, null).hasStructuredOutput).toBe(false);
+    expect(extractNonStreamingEvidence({ choices: [] }, null).hasStructuredOutput).toBe(false);
+    expect(extractNonStreamingEvidence({ id: "x", model: "m" }, null).hasStructuredOutput).toBe(false);
+    expect(extractNonStreamingEvidence({ done: true }, null).hasStructuredOutput).toBe(false);
+  });
+
+  it("structured output can coexist with hasText=false when normalization places it elsewhere (contract still satisfied)", () => {
+    const ev = extractNonStreamingEvidence(
+      { choices: [{ message: { role: "assistant", content: '{"a":1}' } }] },
+      null,
+      { structuredContract: true },
+    );
+    expect(ev.hasStructuredOutput).toBe(true);
   });
 });
 

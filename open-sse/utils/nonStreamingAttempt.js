@@ -25,11 +25,13 @@
 
 /**
  * Detect semantic output categories from the finalized normalized response.
- * Handles OpenAI-normalized shapes (choices[i].message.*) as well as
- * top-level provider shapes (content/thinking/tool_calls) the normalization
- * may have left in place (e.g. Claude-type or Gemini-type clean pass-throughs).
+ * This adapter consumes the finalized NORMALIZED response shape — the
+ * OpenAI-compatible `choices[i].message.*` representation that
+ * translateNonStreamingResponse produces. It does NOT parse arbitrary
+ * top-level provider dialects; the handler feeds it the same
+ * translatedResponse it sends to the client.
  */
-export function extractNonStreamingEvidence(parsed, usage) {
+export function extractNonStreamingEvidence(parsed, usage, { structuredContract = false } = {}) {
   const evidence = {
     hasText: false,
     hasReasoning: false,
@@ -74,19 +76,28 @@ export function extractNonStreamingEvidence(parsed, usage) {
   const isFunctionCall = msgToolCalls && !Array.isArray(msgToolCalls) && typeof msgToolCalls === "object" && (msgToolCalls.name || msgToolCalls.function);
   if (isToolCallArray || isFunctionCall) evidence.hasToolCall = true;
 
-  // Structured output: only when the finalized normalized response is a
-  // genuinely model-generated structured result. The handler runs the
-  // response_format JSON-fence unwrap BEFORE the adapter, so a content string
-  // that is parseable JSON + a client response_format is real structured
-  // output. Usage/error/metadata envelopes and empty choices are never it.
-  const choiceMessage = choices[0]?.message || choices[0];
-  const contentStr = choiceMessage?.content;
-  if (typeof contentStr === "string" && contentStr.trim().length > 0) {
-    // Heuristic: JSON-looking content under a structured client request is
-    // model structured output (the fence-unwrap already ran). Without a
-    // response_format signal we do not guess.
-    if (contentStr.trim().startsWith("{") || contentStr.trim().startsWith("[")) {
-      evidence.hasStructuredOutput = true;
+  // Structured output: requires EXPLICIT structured-output contract evidence
+  // (structuredContract — the handler's response_format signal) AND content
+  // that is actually valid JSON. A string merely beginning with `{` or `[` is
+  // NOT structured output — e.g. "{hello}" or "[Note] deployment started" are
+  // ordinary text. The handler runs the response_format JSON-fence unwrap
+  // before the adapter, so the finalized content is already fence-free.
+  // Usage/error/metadata envelopes and empty choices are never it.
+  if (structuredContract) {
+    const choiceMessage = choices[0]?.message || choices[0];
+    const contentStr = choiceMessage?.content;
+    if (typeof contentStr === "string" && contentStr.trim().length > 0) {
+      const trimmed = contentStr.trim();
+      if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+        try {
+          const parsedJson = JSON.parse(trimmed);
+          const structureIsValid = (Array.isArray(parsedJson) && parsedJson.length > 0) ||
+            (parsedJson && typeof parsedJson === "object" && !Array.isArray(parsedJson));
+          if (structureIsValid) evidence.hasStructuredOutput = true;
+        } catch {
+          // Not valid JSON — keep hasStructuredOutput=false (plain text).
+        }
+      }
     }
   }
 
@@ -106,10 +117,11 @@ export function extractNonStreamingEvidence(parsed, usage) {
  * @param {boolean} [opts.abortSeen]           - exposed by lifecycle (default false)
  * @returns {object} canonicalAttempt (source=provider)
  */
-export function createCanonicalAttemptFromNonStreaming({ status, parsed, usage = null, malformed = false, abortSeen = false }) {
+export function createCanonicalAttemptFromNonStreaming({ status, parsed, usage = null, malformed = false, abortSeen = false, structuredContract = false }) {
   const transportOk = status == null ? null : status >= 200 && status < 300;
-  const ev = malformed ? { hasText: false, hasReasoning: false, hasToolCall: false, hasStructuredOutput: false, hasUsage: false }
-    : extractNonStreamingEvidence(parsed, usage);
+  const ev = malformed
+    ? { hasText: false, hasReasoning: false, hasToolCall: false, hasStructuredOutput: false, hasUsage: false }
+    : extractNonStreamingEvidence(parsed, usage, { structuredContract });
 
   const usableOutput = ev.hasText || ev.hasReasoning || ev.hasToolCall || ev.hasStructuredOutput;
 
