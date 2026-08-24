@@ -11,6 +11,7 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { augmentWithOutputSaverSavings } from "../../rtk/outputSaver.js";
+import { createCanonicalAttemptFromNonStreaming } from "../../utils/nonStreamingAttempt.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -321,6 +322,17 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     }
   }
 
+  // Commit B: canonical attempt for the normal non-streaming path — built from
+  // the finalized normalized JSON + the already-extracted usage + the real
+  // provider status. Observational only; never touches the response body again
+  // and never changes the constructed client Response or error behavior.
+  const canonicalAttempt = createCanonicalAttemptFromNonStreaming({
+    status: providerResponse.status,
+    parsed: translatedResponse || responseBody,
+    usage,
+    malformed: false,
+  });
+
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
     latency: { ttft: totalLatency, total: totalLatency },
@@ -335,7 +347,10 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     },
     status: "success",
     combo
-  }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
+  }, {
+    endpoint: clientRawRequest?.endpoint || null,
+    canonicalAttempt,
+  })).catch(err => {
     console.error("[RequestDetail] Failed to save:", err.message);
   });
 
