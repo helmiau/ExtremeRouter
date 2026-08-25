@@ -66,10 +66,16 @@ const POLICY = {
     healthAction: Object.freeze({ sample: "failure", availability: "unavailable", reason: "transient" }),
     stopProgression: false,
   }),
-  // Unmatched transport failure — conservative default (treat like transient).
+  // Unmatched transport failure — conservative default (§7 hardening).
+  // G1 maps all ≥500 to http_5xx and 429 to http_429, so this only reaches
+  // unknown 4xx. isRetryableFailure returns false for those → retryable=false.
+  // checkFallbackError default → shouldFallback:true + transient cooldown, and
+  // markAccountUnavailable IS called (transient), so availability:unavailable.
+  // Never retryable without evidence (the executor's resolveRetryEntry would
+  // have no retry config for an unknown status anyway).
   transportDefault: Object.freeze({
     fallbackEligible: true,
-    retryable: true,
+    retryable: false,
     healthAction: Object.freeze({ sample: "failure", availability: "unavailable", reason: "transient" }),
     stopProgression: false,
   }),
@@ -195,7 +201,14 @@ function transportPolicy(reason) {
   // §9: do NOT collapse all transport failures into one policy.
   switch (reason) {
     case "http_400":
+    case "http_405":
+    case "http_406":
+    case "http_413":
+    case "http_415":
     case "http_422":
+      // Non-retryable client/request errors (combo.js nonRetryableClientError list).
+      // Same invalid request → same invalid result on another provider; don't
+      // fallback, don't retry, don't poison provider health.
       return POLICY.userError;
     case "http_401":
     case "http_403":
@@ -207,7 +220,12 @@ function transportPolicy(reason) {
     case "http_5xx":
       return POLICY.http5xx;
     default:
-      // Unknown transport reason — conservative transient default.
+      // Unknown transport reason — G1 maps all ≥500 to http_5xx and 429 to
+      // http_429, so this only reaches unknown 4xx (410/418/426/451/…).
+      // isRetryableFailure returns false for non-429/non-5xx → retryable=false.
+      // checkFallbackError default → shouldFallback:true + transient cooldown.
+      // markAccountUnavailable IS called (transient). Hardened from the original
+      // retryable=true (which claimed retryability the executor never provides).
       return POLICY.transportDefault;
   }
 }

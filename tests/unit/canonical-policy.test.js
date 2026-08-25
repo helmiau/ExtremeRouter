@@ -33,6 +33,10 @@ describe("Policy matrix — explicit rows", () => {
     ["success", "success", null, { fallbackEligible: false, retryable: false, healthAction: H("success", "none", null), stopProgression: true }],
 
     ["http_400", "transport_failure", "http_400", { fallbackEligible: false, retryable: false, healthAction: H("none", "none", null), stopProgression: true }],
+    ["http_405", "transport_failure", "http_405", { fallbackEligible: false, retryable: false, healthAction: H("none", "none", null), stopProgression: true }],
+    ["http_406", "transport_failure", "http_406", { fallbackEligible: false, retryable: false, healthAction: H("none", "none", null), stopProgression: true }],
+    ["http_413", "transport_failure", "http_413", { fallbackEligible: false, retryable: false, healthAction: H("none", "none", null), stopProgression: true }],
+    ["http_415", "transport_failure", "http_415", { fallbackEligible: false, retryable: false, healthAction: H("none", "none", null), stopProgression: true }],
     ["http_422", "transport_failure", "http_422", { fallbackEligible: false, retryable: false, healthAction: H("none", "none", null), stopProgression: true }],
     ["http_401", "transport_failure", "http_401", { fallbackEligible: true, retryable: false, healthAction: H("failure", "unavailable", "auth"), stopProgression: false }],
     ["http_403", "transport_failure", "http_403", { fallbackEligible: true, retryable: false, healthAction: H("failure", "unavailable", "auth"), stopProgression: false }],
@@ -80,6 +84,26 @@ describe("Contradiction guards", () => {
     const p = decideAttemptPolicy(attempt("transport_failure", "http_400"));
     expect(p.fallbackEligible).toBe(false);
     expect(p.stopProgression).toBe(true);
+  });
+
+  // §6: 405/406/413/415 MUST NOT produce fallback/retry/health-failure/unavailable.
+  for (const code of ["http_405", "http_406", "http_413", "http_415", "http_422"]) {
+    it(`${code} — MUST NOT fallback/retry/sample-failure/mark-unavailable`, () => {
+      const p = decideAttemptPolicy(attempt("transport_failure", code));
+      expect(p.fallbackEligible).toBe(false);
+      expect(p.retryable).toBe(false);
+      expect(p.healthAction.sample).toBe("none");
+      expect(p.healthAction.availability).toBe("none");
+      expect(p.stopProgression).toBe(true);
+    });
+  }
+
+  it("unknown transport reason (e.g. http_410) — hardened: retryable:false (no invented retryability)", () => {
+    const p = decideAttemptPolicy(attempt("transport_failure", "http_410"));
+    expect(p.retryable).toBe(false);
+    expect(p.fallbackEligible).toBe(true);
+    expect(p.healthAction.availability).toBe("unavailable");
+    expect(p.healthAction.reason).toBe("transient");
   });
 
   it("client_abort — fallbackEligible:false + stopProgression:true + sample:none", () => {
