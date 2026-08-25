@@ -248,7 +248,28 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
     const parsed = parseSSEToOpenAIResponse(sseText, model, {
       onMalformedLine: () => { malformedLines++; },
     });
-    if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    if (!parsed) {
+      // C.1: preserve the existing 502 exactly, but persist the bounded
+      // canonical failure before returning. `malformedLines` was collected by
+      // the optional parser observer; no body re-read or parser behavior change.
+      const canonicalAttempt = createCanonicalAttemptFromForcedSse({
+        status: providerResponse.status,
+        finalJson: null,
+        malformedLines,
+      });
+      const totalLatency = Date.now() - requestStartTime;
+      saveRequestDetail(buildRequestDetail({
+        ...ctx,
+        latency: { ttft: totalLatency, total: totalLatency },
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        response: { content: null, thinking: null, finish_reason: "unknown" },
+        status: "error",
+      }, {
+        endpoint: clientRawRequest?.endpoint || null,
+        canonicalAttempt,
+      })).catch(() => {});
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    }
 
     if (onRequestSuccess) await onRequestSuccess();
 
