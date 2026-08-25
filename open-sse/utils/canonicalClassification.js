@@ -131,6 +131,7 @@ function transportReason(completionType, responseStatus, fallback) {
 
 function providerReason(completionType, attempt) {
   if (completionType === "malformed_sse") return "malformed_sse";
+  if (completionType === "json_parse_error") return "malformed_json";
   if (completionType === "response.failed") return "provider_error";
   if (typeof completionType === "string" && completionType.startsWith("http")) return completionType;
   if (attempt?.responseStatus && attempt.responseStatus >= 400) {
