@@ -79,6 +79,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
         status,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       }),
+      // No provider attempt was produced before the pipe was blocked — null,
+      // never fabricated.
+      canonicalAttempt: null,
     };
   }
 
@@ -94,13 +97,24 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // to the transform stream and appended to onStreamComplete for telemetry.
   // Purely observational — nothing downstream reads it for behavior decisions.
   const streamState = createStreamState();
+
+  // Commit D: the ChatResult carry a live canonical-attempt holder. At handler
+  // return the stream has not completed, so the holder truthfully reflects "no
+  // completion evidence yet" (completionState=unknown). When the transform
+  // flushes, onStreamCompleteWithState overwrites the SAME reference with the
+  // finalized attempt — no stream consumption, no blocking downstream delivery.
+  const canonicalAttempt = createCanonicalAttempt(streamState, { status: providerResponse.status, source: "provider" });
+
   // The completion callback is built upstream (chatCore) before this function
   // runs, so wrap it: existing positional args preserved, state appended 4th.
   // Wave 2/2: append the observational stream state (4th) and the provider HTTP
 // status (5th, for transport metadata in canonicalAttempt). Status is read
 // without touching the stream body. Existing positional args preserved.
   const onStreamCompleteWithState = onStreamComplete
-    ? (contentObj, usage, ttftAt) => onStreamComplete(contentObj, usage, ttftAt, streamState, providerResponse.status)
+    ? (contentObj, usage, ttftAt) => {
+        Object.assign(canonicalAttempt, createCanonicalAttempt(streamState, { status: providerResponse.status, source: "provider" }));
+        return onStreamComplete(contentObj, usage, ttftAt, streamState, providerResponse.status);
+      }
     : null;
 
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete: onStreamCompleteWithState, apiKey, responsesAccumulator, streamState });
@@ -136,7 +150,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   return {
     success: true,
-    response: new Response(transformedBody, { headers: SSE_HEADERS })
+    response: new Response(transformedBody, { headers: SSE_HEADERS }),
+    // Commit D: live holder — fills with the finalized attempt at flush.
+    canonicalAttempt,
   };
 }
 

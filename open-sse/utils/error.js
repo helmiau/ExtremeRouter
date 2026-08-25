@@ -134,7 +134,15 @@ export async function parseUpstreamError(response, executor = null) {
  * @returns {ChatResult}
  */
 export function buildChatResult({ success, response, ...rest }) {
-  return { success, response, ...rest };
+  return {
+    success,
+    response,
+    ...rest,
+    // Commit D: additive universal canonical-attempt field on the ChatResult
+    // envelope. Defaults to null — a path only sets it when the corresponding
+    // adapter actually produced a canonical attempt. Never fabricated.
+    canonicalAttempt: rest.canonicalAttempt ?? null,
+  };
 }
 
 /**
@@ -157,13 +165,14 @@ export function chatResultFromErrorResponse(response, status) {
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
  * @returns {ChatResult}
  */
-export function createErrorResult(statusCode, message, resetsAtMs) {
+export function createErrorResult(statusCode, message, resetsAtMs, options = {}) {
   return buildChatResult({
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
     response: errorResponse(statusCode, message),
+    canonicalAttempt: options.canonicalAttempt ?? null,
   });
 }
 

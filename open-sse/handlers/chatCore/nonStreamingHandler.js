@@ -361,6 +361,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     success: true,
     response: new Response(JSON.stringify(translatedResponse), {
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
-    })
+    }),
+    // Commit D: additive canonical-attempt field on the non-streaming ChatResult.
+    canonicalAttempt,
   };
 }

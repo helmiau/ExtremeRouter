@@ -184,7 +184,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
-        return { success: true, response: new Response(JSON.stringify(jsonResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+        return { success: true, response: new Response(JSON.stringify(jsonResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }), canonicalAttempt };
       }
 
       // Build client-format response
@@ -228,7 +228,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         };
       }
 
-      return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+      return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }), canonicalAttempt };
     } catch (err) {
       // Client cancellation (stop/disconnect) aborts the upstream stream read.
       // That is expected, not an upstream failure — mirror the chatCore 499
@@ -268,7 +268,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         endpoint: clientRawRequest?.endpoint || null,
         canonicalAttempt,
       })).catch(() => {});
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request", undefined, { canonicalAttempt });
     }
 
     if (onRequestSuccess) await onRequestSuccess();
@@ -331,7 +331,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       }
     }
 
-    return { success: true, response: new Response(JSON.stringify(parsed), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+    return { success: true, response: new Response(JSON.stringify(parsed), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }), canonicalAttempt };
   } catch (err) {
     // Client cancellation (stop/disconnect) aborts the upstream stream read.
     // That is expected, not an upstream failure — mirror the chatCore 499
