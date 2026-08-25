@@ -1,5 +1,6 @@
 // Forced SSE → JSON canonical-attempt adapter (Phase 2 / Commit C).
-//
+import { classifyCanonicalAttempt } from "./canonicalClassification.js";
+
 // This path buffers the ENTIRE upstream SSE body and converts it to a single
 // JSON response (parseSSEToOpenAIResponse for chat-completions streams,
 // convertResponsesStreamToJson for Responses/Codex streams). It is a REAL
@@ -124,5 +125,11 @@ export function createCanonicalAttemptFromForcedSse({
     usableOutput,
     logicalSuccess,
     outcome,
+    // Commit G1: deterministic outcome classification (layer #2), derived from the
+    // finalized converted/final JSON. Attached, not a separate envelope.
+    ...classifyCanonicalAttempt({
+      completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
+      completionType, usableOutput, logicalSuccess, responseStatus: status ?? null,
+    }),
   };
 }

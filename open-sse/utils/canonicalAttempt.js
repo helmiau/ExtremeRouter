@@ -1,4 +1,6 @@
 // Universal Canonical Attempt — contract + pure semantics (Phase 2 / Commit A).
+import { classifyCanonicalAttempt } from "./canonicalClassification.js";
+
 //
 // One provider-agnostic internal result that can represent ANY provider
 // execution path — streaming, forced SSE→JSON, non-streaming JSON, transport
@@ -202,6 +204,14 @@ export function createCanonicalAttempt(state = null, opts = {}) {
     usableOutput,
     logicalSuccess: deriveLogicalSuccessFrom({ ...state, completionState, usableOutput }),
     outcome: deriveOutcomeFrom({ ...state, completionState, usableOutput }),
+    // Commit G1: deterministic outcome classification (layer #2). Derived purely
+    // from the finalized canonical evidence; never the provisional streaming
+    // holder. Attached — not a separate envelope — to keep the contract bounded.
+    ...classifyCanonicalAttempt({
+      completionState, transportOk, abortSeen: state?.abortSeen ?? false, errorSeen: state?.errorSeen ?? false,
+      completionType, usableOutput, logicalSuccess: deriveLogicalSuccessFrom({ ...state, completionState, usableOutput }),
+      responseStatus: opts.status ?? null,
+    }),
   };
 }
 

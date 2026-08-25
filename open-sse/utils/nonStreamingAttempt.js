@@ -1,5 +1,6 @@
 // Non-streaming canonical-attempt adapter (Phase 2 / Commit B).
-//
+import { classifyCanonicalAttempt } from "./canonicalClassification.js";
+
 // Converts a NORMAL non-streaming provider result into the universal
 // canonicalAttempt contract (canonicalAttempt.js) WITHOUT touching any
 // existing app behavior. Input is the already-parsed / already-normalized
@@ -167,5 +168,11 @@ export function createCanonicalAttemptFromNonStreaming({ status, parsed, usage =
     usableOutput,
     logicalSuccess,
     outcome,
+    // Commit G1: deterministic outcome classification (layer #2), derived from the
+    // finalized non-streaming evidence. Attached, not a separate envelope.
+    ...classifyCanonicalAttempt({
+      completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
+      completionType, usableOutput, logicalSuccess, responseStatus: status ?? null,
+    }),
   };
 }
