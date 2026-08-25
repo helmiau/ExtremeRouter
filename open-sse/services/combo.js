@@ -334,6 +334,36 @@ export function getComboModelsFromData(modelStr, combosData) {
 }
 
 /**
+ * Commit F: finalized semantic-success gate for a provider attempt.
+ *
+ * Two distinct concepts (must NOT be collapsed):
+ *  - Candidate admission — the candidate's response has been committed to the
+ *    downstream client (a live stream handed off at the outer Fallback/RoundRobin
+ *    boundary). Once admitted it cannot be retroactively replaced.
+ *  - Final attempt outcome — canonicalAttempt.logicalSuccess, known only after the
+ *    provider attempt completes. Purely informational for an admitted stream.
+ *
+ * Rules:
+ *  - Streaming outer-handoff candidate (text/event-stream Response delivered to
+ *    the client): admission = committed 2xx transport success. The provisional
+ *    canonicalAttempt is deferred to telemetry and never read here — a streaming
+ *    candidate that already admitted output must not be re-judged mid-stream.
+ *  - Buffered attempts (non-streaming / forced-SSE / Fusion panels / Cascade stages
+ *    / Swarm legs — all stream:false and consumed via .json()): use the FINALIZED
+ *    canonicalAttempt.logicalSuccess.
+ *  - Null-attempt paths (cache / bypass / pre-provider validation): canonicalAttempt
+ *    is null → keep the legacy handler-level result.success. Null is NOT logical
+ *    failure (§12); this branch is isolated + documented, not a broad `success ?? ok`.
+ */
+function candidateServed(result) {
+  if (!result || !result.response) return false;
+  const isStreaming = /^text\/event-stream/.test(result.response.headers?.get?.("content-type") || "");
+  if (isStreaming) return result.success === true; // admission (outer handoff)
+  const ca = result.canonicalAttempt;
+  return ca ? ca.logicalSuccess === true : result.success === true; // buffered / null-attempt compat
+}
+
+/**
  * Handle combo chat with fallback
  * @param {Object} options
  * @param {Object} options.body - Request body
@@ -397,9 +427,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
     try {
       const result = await handleSingleModel(body, modelStr, { role: "worker" });
-      // Wave 1C: ChatResult.success is the authoritative application-success
-      // signal. Transport data (status/headers/body) stays on result.response.
-      if (result.success) {
+      // Wave 1C: ChatResult.success was the authoritative application-success signal.
+      // Commit F: migrate to candidateServed — finalized canonicalAttempt.logicalSuccess
+      // for buffered attempts, admission (committed 2xx stream) for the outer streaming
+      // handoff (chat.js returns this Response directly to the client). Transport data
+      // (status/headers/body) stays on result.response.
+      if (candidateServed(result)) {
         log.info("COMBO", `Model ${modelStr} succeeded`);
         // Combo observability: notify the strategy wrapper which member actually
         // served the request (used by smart-routing telemetry).
@@ -894,8 +927,9 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
     if (!res) { log.warn("FUSION", `Panel ${model} dropped (straggler/timeout)`); continue; }
     if (res.__timeout) { log.warn("FUSION", `Panel ${model} timed out`); continue; }
     if (res.__error) { log.warn("FUSION", `Panel ${model} threw`, { error: res.__error?.message || String(res.__error) }); continue; }
-    // Wave 1C: application success comes from ChatResult.success.
-    if (!res.success) { log.warn("FUSION", `Panel ${model} failed`, { status: res.status ?? res.response?.status }); continue; }
+    // Wave 1C: application success came from ChatResult.success. Commit F: panels are
+    // stream:false and consumed via .json(), so use the finalized canonical attempt.
+    if (!candidateServed(res)) { log.warn("FUSION", `Panel ${model} failed`, { status: res.status ?? res.response?.status }); continue; }
     try {
       const json = await res.response.clone().json();
       const text = extractPanelText(json);
@@ -1072,8 +1106,9 @@ export async function handleCascadeChat({ body, models, handleSingleModel, log, 
       continue;
     }
 
-    // Wave 1C: application success comes from ChatResult.success.
-    if (!res?.success) {
+    // Wave 1C: application success came from ChatResult.success. Commit F: cascade stages are
+    // stream:false and consumed via .json(), so use the finalized canonical attempt.
+    if (!candidateServed(res)) {
       log.warn("CASCADE", `Stage ${stage + 1} (${model}) returned status ${res?.status ?? res?.response?.status}`);
       if (isFinal) return res.response;
       priorAnswer = null;
@@ -1121,3 +1156,7 @@ export async function handleCascadeChat({ body, models, handleSingleModel, log, 
 // Re-export the Hierarchical Swarm engine from this barrel so chat.js keeps a
 // single import surface for all combo strategies.
 export { handleSwarmChat, SWARM_DEFAULTS } from "./swarm.js";
+
+// Commit F: shared finalized-success gate, consumed by the outer fallback loop,
+// Fusion panels, Cascade stages, and (via swarm.js) Swarm worker legs.
+export { candidateServed };

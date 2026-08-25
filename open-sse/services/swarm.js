@@ -21,6 +21,7 @@ import {
   appendUserTurn,
   collectPanel,
   withTimeout,
+  candidateServed,
 } from "./combo.js";
 import { stripIdeSystemPrompt, buildWorkerDirective } from "./swarmPersona.js";
 import { validateComboRoles } from "./providerCapabilities.js";
@@ -357,9 +358,11 @@ async function dispatchWorkers({ runId, strategy, models, body, handleSingleMode
           markWorkerStatus(runId, i, "error", { model: workerModel });
           return { ok: false, text: "" };
         }
-        // Wave 1C: application success comes from ChatResult.success — a
-        // non-2xx Response (or any failed leg) is not usable worker output.
-        if (!res?.success) {
+        // Wave 1C: application success came from ChatResult.success. Commit F: swarm
+        // legs are stream:false and consumed via .json(), so use the finalized
+        // canonical attempt for the semantic gate (candidateServed). A non-2xx
+        // Response (or any failed leg) is not usable worker output.
+        if (!candidateServed(res)) {
           markWorkerStatus(runId, i, "error", { model: workerModel, status: res?.status ?? res?.response?.status });
           return { ok: false, text: "" };
         }
