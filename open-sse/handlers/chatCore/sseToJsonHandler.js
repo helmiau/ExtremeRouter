@@ -9,6 +9,7 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requ
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
 import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";
 import { augmentWithOutputSaverSavings } from "../../rtk/outputSaver.js";
+import { createCanonicalAttemptFromForcedSse } from "../../utils/forcedSseAttempt.js";
 
 function textFromResponsesMessageItem(item) {
   if (!item?.content || !Array.isArray(item.content)) return "";
@@ -39,7 +40,7 @@ function pickAssistantMessageForChatCompletion(output) {
  * Parse OpenAI-style SSE text into a single chat completion JSON.
  * Used when provider forces streaming but client wants non-streaming.
  */
-export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
+export function parseSSEToOpenAIResponse(rawSSE, fallbackModel, { onMalformedLine = null } = {}) {
   const chunks = [];
 
   for (const line of String(rawSSE || "").split("\n")) {
@@ -47,7 +48,12 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     if (!trimmed.startsWith("data:")) continue;
     const payload = trimmed.slice(5).trim();
     if (!payload || payload === "[DONE]") continue;
-    try { chunks.push(JSON.parse(payload)); } catch { /* ignore malformed lines */ }
+    try { chunks.push(JSON.parse(payload)); } catch {
+      // Commit C: canonical semantics need to know whether the converted 200
+      // JSON came from corrupted-only SSE. Track malformed data lines via an
+      // optional observer (read-only — parser behavior unchanged).
+      onMalformedLine?.(payload);
+    }
   }
 
   if (chunks.length === 0) return null;
@@ -142,6 +148,28 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       });
 
       const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      // Commit C: Responses/Codex forced-SSE canonical attempt. Build a tiny
+      // OpenAI-normalized view the shared adapter understands; no re-read and
+      // no public response mutation. Tool calls are reconstructed below, so
+      // include the raw output array in the adapter input after mapping it.
+      const responseToolCalls = (jsonResponse.output || [])
+        .filter((item) => item.type === "function_call")
+        .map((item) => ({ id: item.call_id, type: "function", function: { name: item.name, arguments: item.arguments } }));
+      const canonicalResponsesJson = {
+        choices: [{ message: {
+          role: "assistant",
+          content: textContent || null,
+          ...(responseToolCalls.length > 0 ? { tool_calls: responseToolCalls } : {}),
+        } }],
+        ...(jsonResponse.error ? { error: jsonResponse.error } : {}),
+      };
+      const canonicalAttempt = createCanonicalAttemptFromForcedSse({
+        status: providerResponse.status,
+        finalJson: canonicalResponsesJson,
+        usage,
+        responsesStatus: jsonResponse.status || null,
+        structuredContract: Boolean(body?.response_format),
+      });
 
       saveRequestDetail(buildRequestDetail({
         ...ctx,
@@ -149,7 +177,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
         response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
         status: "success"
-      }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+      }, {
+        endpoint: clientRawRequest?.endpoint || null,
+        canonicalAttempt,
+      })).catch(() => {});
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
@@ -213,7 +244,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
   // Standard Chat Completions SSE path
   try {
     const sseText = await providerResponse.text();
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
+    let malformedLines = 0;
+    const parsed = parseSSEToOpenAIResponse(sseText, model, {
+      onMalformedLine: () => { malformedLines++; },
+    });
     if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
 
     if (onRequestSuccess) await onRequestSuccess();
@@ -236,6 +270,19 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
       retryCount,
     });
 
+    // Commit C: forced SSE→JSON canonical attempt from the parser's existing
+    // normalized output + already extracted usage. malformedLines is
+    // observation-only: a recoverable malformed event followed by valid
+    // output remains success; malformed-only never reaches this point (the
+    // existing parser returns null → existing public 502 is preserved).
+    const canonicalAttempt = createCanonicalAttemptFromForcedSse({
+      status: providerResponse.status,
+      finalJson: parsed,
+      usage,
+      malformedLines,
+      structuredContract: Boolean(body?.response_format),
+    });
+
     saveRequestDetail(buildRequestDetail({
       ...ctx,
       latency: { ttft: totalLatency, total: totalLatency },
@@ -246,7 +293,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         finish_reason: parsed.choices?.[0]?.finish_reason || "unknown"
       },
       status: "success"
-    }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+    }, {
+      endpoint: clientRawRequest?.endpoint || null,
+      canonicalAttempt,
+    })).catch(() => {});
 
     // Strip reasoning_content only when content is non-empty.
     // When content is empty (e.g. thinking models that used all tokens for reasoning),
