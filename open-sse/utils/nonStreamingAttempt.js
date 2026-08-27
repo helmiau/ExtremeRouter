@@ -1,5 +1,6 @@
 // Non-streaming canonical-attempt adapter (Phase 2 / Commit B).
 import { classifyCanonicalAttempt } from "./canonicalClassification.js";
+import { decideAttemptPolicy } from "./canonicalPolicy.js";
 
 // Converts a NORMAL non-streaming provider result into the universal
 // canonicalAttempt contract (canonicalAttempt.js) WITHOUT touching any
@@ -148,7 +149,7 @@ export function createCanonicalAttemptFromNonStreaming({ status, parsed, usage =
   const logicalSuccess = usableOutput && completionState === "success" && !errorSeen && !abortSeen;
   const outcome = errorSeen || transportOk === false ? "failure" : (logicalSuccess ? "success" : completionState === "incomplete" ? "incomplete" : "incomplete");
 
-  return {
+    const result = {
     source: "provider",
     transportOk,
     streamStarted: null,
@@ -174,5 +175,12 @@ export function createCanonicalAttemptFromNonStreaming({ status, parsed, usage =
       completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
       completionType, usableOutput, logicalSuccess, responseStatus: status ?? null,
     }),
+    policy: decideAttemptPolicy({
+      source: "provider", completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
+      completionType, usableOutput, logicalSuccess,
+      ...classifyCanonicalAttempt({ completionState, transportOk, abortSeen: !!abortSeen, errorSeen, completionType, usableOutput, logicalSuccess, responseStatus: status ?? null }),
+    }),
   };
+  console.error("NONSTREAMING ATTEMPT CREATED:", JSON.stringify(result, null, 2));
+  return result;
 }

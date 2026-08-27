@@ -159,8 +159,11 @@ const baseChat = (overrides = {}) =>
     {},
   );
 
-beforeEach(() => {
+beforeEach(async () => {
   vi.clearAllMocks();
+  const cacheMod = await import("../../open-sse/services/semanticCache.js");
+  cacheMod.cacheLookup.mockReset();
+  cacheMod.cacheLookup.mockImplementation(() => null);
   executeMock.mockResolvedValue({
     response: new Response(JSON.stringify({
       id: "chatcmpl-test",
@@ -230,7 +233,7 @@ describe("handleSingleModelChat → ChatResult (Wave 1B)", () => {
 
   it("cache hit: success=true, fromCache=true preserved through the envelope", async () => {
     const mod = await import("../../open-sse/services/semanticCache.js");
-    mod.cacheLookup.mockReturnValue({
+    mod.cacheLookup.mockReturnValueOnce({
       response: new Response(JSON.stringify({
         id: "chatcmpl-cached",
         object: "chat.completion",

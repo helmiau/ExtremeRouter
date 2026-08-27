@@ -11,6 +11,8 @@ import { parseSuffix } from "../translator/concerns/thinkingUnified.js";
 import { isCacheable, cacheLookup, cacheStore } from "../services/semanticCache.js";
 import { PROVIDERS } from "../config/providers.js";
 import { buildChatResult, createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { classifyCanonicalAttempt } from "../utils/canonicalClassification.js";
+import { decideAttemptPolicy } from "../utils/canonicalPolicy.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -31,6 +33,47 @@ import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, formatE
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
+
+/**
+ * Build a finalized canonical attempt for a provider-failure path that has no
+ * normal response body (401/403/429/5xx/502/499). The status is known and a
+ * real provider attempt occurred, so source="provider" is honest — we only set
+ * evidence we actually have (transport + abort) and leave output evidence false.
+ * This lets the G2-C health layer read one policy contract on failures too.
+ */
+function buildTransportAttempt(status, { abortSeen = false } = {}) {
+  const transportOk = Number(status) >= 200 && Number(status) < 300;
+  const attempt = {
+    source: "provider",
+    transportOk,
+    streamStarted: null,
+    hasText: false,
+    hasReasoning: false,
+    hasToolCall: false,
+    hasStructuredOutput: false,
+    hasUsage: false,
+    completionState: abortSeen ? "cancelled" : "failure",
+    completionType: abortSeen ? null : "http_error",
+    terminalState: null,
+    terminalType: null,
+    finishReason: null,
+    eofSeen: null,
+    errorSeen: !abortSeen,
+    abortSeen: !!abortSeen,
+    usableOutput: false,
+    logicalSuccess: false,
+    outcome: abortSeen ? "cancelled" : "failure",
+  };
+  const classification = classifyCanonicalAttempt({
+    ...attempt,
+    responseStatus: status,
+  });
+  return {
+    ...attempt,
+    ...classification,
+    policy: decideAttemptPolicy({ ...attempt, ...classification }),
+  };
+}
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -82,7 +125,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       } catch { /* non-fatal: return the cached response without savings */ }
 
       const cachedResponse = cached.response.clone ? cached.response.clone() : cached.response;
-      return buildChatResult({ success: true, response: cachedResponse, url: "(cache)", headers: {}, transformedBody: body, fromCache: true, cacheSimilarity: cached.similarity });
+      return buildChatResult({ success: true, response: cachedResponse, url: "(cache)", headers: {}, transformedBody: body, fromCache: true, cacheSimilarity: cached.similarity, canonicalAttempt: decideAttemptPolicy({ source: "cache", classification: "success", reason: null }) ? { source: "cache", classification: "success", reason: null, policy: decideAttemptPolicy({ source: "cache", classification: "success", reason: null }) } : null });
     }
   }
 
@@ -480,7 +523,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
     if (error.name === "AbortError") {
       streamController.handleError(error);
-      return createErrorResult(499, "Request aborted");
+      return createErrorResult(499, "Request aborted", undefined, { canonicalAttempt: buildTransportAttempt(499, { abortSeen: true }) });
     }
 
     // Cross-transport fallback: network error or timeout → try alternate endpoint.
@@ -502,7 +545,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
       const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
       console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg, undefined, { canonicalAttempt: buildTransportAttempt(502) });
     }
   }
 
@@ -558,7 +601,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
         console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
         reqLogger.logError(new Error(message), finalBody || translatedBody);
-        return createErrorResult(statusCode, errMsg, resetsAtMs);
+        return createErrorResult(statusCode, errMsg, resetsAtMs, { canonicalAttempt: buildTransportAttempt(statusCode) });
       }
     } else {
       // 4xx — no transport fallback, return error immediately.
@@ -578,7 +621,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
       console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
       reqLogger.logError(new Error(message), finalBody || translatedBody);
-      return createErrorResult(statusCode, errMsg, resetsAtMs);
+      return createErrorResult(statusCode, errMsg, resetsAtMs, { canonicalAttempt: buildTransportAttempt(statusCode) });
     }
   }
 
