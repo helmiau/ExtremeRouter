@@ -101,3 +101,9 @@ outputs/
 
 # machine-specific launcher (kept local)
 /brave-extremerouter.cmd
+
+# editor/backup/temp artifacts (never commit)
+*.bak
+*.orig
+*.rej
+.freebuff/

@@ -11,6 +11,7 @@ import { parseSuffix } from "../translator/concerns/thinkingUnified.js";
 import { isCacheable, cacheLookup, cacheStore } from "../services/semanticCache.js";
 import { PROVIDERS } from "../config/providers.js";
 import { buildChatResult, createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { createCanonicalAttempt } from "../utils/canonicalAttempt.js";
 import { classifyCanonicalAttempt } from "../utils/canonicalClassification.js";
 import { decideAttemptPolicy } from "../utils/canonicalPolicy.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
@@ -93,7 +94,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Check for bypass patterns (warmup, skip, cc naming)
   const bypassResponse = handleBypassRequest(body, model, userAgent, ccFilterNaming);
-  if (bypassResponse) return bypassResponse;
+  if (bypassResponse) {
+    // G2-C.1: bypass wraps through the canonical factory (source=bypass →
+    // synthetic policy → no provider health mutation). No invented stream evidence.
+    return { ...bypassResponse, canonicalAttempt: createCanonicalAttempt(null, { source: "bypass" }) };
+  }
 
   // Semantic Cache — check for cached response before executing request.
   // Only applies to non-streaming, tool-free, sufficiently-long requests.
@@ -125,7 +130,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       } catch { /* non-fatal: return the cached response without savings */ }
 
       const cachedResponse = cached.response.clone ? cached.response.clone() : cached.response;
-      return buildChatResult({ success: true, response: cachedResponse, url: "(cache)", headers: {}, transformedBody: body, fromCache: true, cacheSimilarity: cached.similarity, canonicalAttempt: decideAttemptPolicy({ source: "cache", classification: "success", reason: null }) ? { source: "cache", classification: "success", reason: null, policy: decideAttemptPolicy({ source: "cache", classification: "success", reason: null }) } : null });
+      // G2-C.1: cache canonical attempt built through the single factory —
+      // policy computed once, no duplicated decideAttemptPolicy, no invented
+      // stream/content evidence (source=cache carries the synthetic provenance).
+      const canonicalAttempt = createCanonicalAttempt(null, { status: cachedResponse.status || 200, source: "cache" });
+      return buildChatResult({ success: true, response: cachedResponse, url: "(cache)", headers: {}, transformedBody: body, fromCache: true, cacheSimilarity: cached.similarity, canonicalAttempt });
     }
   }
 

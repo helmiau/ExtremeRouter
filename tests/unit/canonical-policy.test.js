@@ -6,7 +6,12 @@ import { describe, it, expect } from "vitest";
 // No production code is executed by this suite — `decideAttemptPolicy` is pure.
 
 import { decideAttemptPolicy, ATTEMPT_POLICY_FIELDS } from "../../open-sse/utils/canonicalPolicy.js";
+import { createCanonicalAttempt } from "../../open-sse/utils/canonicalAttempt.js";
 import { createCanonicalAttemptFromNonStreaming } from "../../open-sse/utils/nonStreamingAttempt.js";
+import { createCanonicalAttemptFromForcedSse } from "../../open-sse/utils/forcedSseAttempt.js";
+import { createStreamState, observeParsedEvent } from "../../open-sse/utils/streamState.js";
+
+const openaiText = (content) => ({ choices: [{ message: { role: "assistant", content }, finish_reason: "stop" }] });
 
 // Minimal finalized canonicalAttempt shape — policy reads only source/classification/reason.
 const attempt = (classification, reason, source = "provider") => ({
@@ -211,5 +216,64 @@ describe("G1 reason correction: malformed_json", () => {
     expect(p.retryable).toBe(false);
     expect(p.healthAction.reason).toBe("malformed");
     expect(p.stopProgression).toBe(false);
+  });
+});
+
+describe("G2-B policy attachment — every finalized canonical attempt carries policy", () => {
+  // §21: canonicalAttempt.policy must exist and equal decideAttemptPolicy(evidence)
+  // for streaming, non-streaming, forced-SSE, provider failure, cache, bypass.
+
+  it("streaming final attempt → policy attached (success)", () => {
+    const s = createStreamState();
+    observeParsedEvent(s, { choices: [{ index: 0, delta: { content: "hi" }, finish_reason: null }] });
+    s.streamStarted = true;
+    observeParsedEvent(s, { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] });
+    s.eofSeen = true;
+    const ca = createCanonicalAttempt(s, { status: 200, source: "provider" });
+    expect(ca.policy).toBeDefined();
+    expect(ca.policy.healthAction.sample).toBe("success");
+    expect(ca.policy).toEqual(decideAttemptPolicy(ca));
+  });
+
+  it("non-streaming text → policy attached (success)", () => {
+    const ca = createCanonicalAttemptFromNonStreaming({ status: 200, parsed: openaiText("hi"), usage: null, malformed: false });
+    expect(ca.policy).toBeDefined();
+    expect(ca.policy.healthAction.sample).toBe("success");
+    expect(ca.policy).toEqual(decideAttemptPolicy(ca));
+  });
+
+  it("forced-SSE valid → policy attached (success)", () => {
+    const ca = createCanonicalAttemptFromForcedSse({ status: 200, finalJson: openaiText("hi"), usage: { prompt_tokens: 1, completion_tokens: 1 } });
+    expect(ca.policy).toBeDefined();
+    expect(ca.policy.healthAction.sample).toBe("success");
+    expect(ca.policy).toEqual(decideAttemptPolicy(ca));
+  });
+
+  it("non-streaming usage-only → empty_output policy (no health)", () => {
+    const ca = createCanonicalAttemptFromNonStreaming({ status: 200, parsed: { choices: [] }, usage: { prompt_tokens: 1, completion_tokens: 1 }, malformed: false });
+    expect(ca.policy).toBeDefined();
+    expect(ca.policy.healthAction).toEqual({ sample: "none", availability: "none", reason: null });
+  });
+
+  it("cache → synthetic policy (no provider health)", () => {
+    const ca = createCanonicalAttempt(null, { status: 200, source: "cache" });
+    expect(ca.policy).toBeDefined();
+    expect(ca.policy).toEqual({ fallbackEligible: false, retryable: false, healthAction: { sample: "none", availability: "none", reason: null }, stopProgression: true });
+    expect(ca.policy).toEqual(decideAttemptPolicy(ca));
+  });
+
+  it("bypass → synthetic policy (no provider health)", () => {
+    const ca = createCanonicalAttempt(null, { status: 200, source: "bypass" });
+    expect(ca.policy).toBeDefined();
+    expect(ca.policy.healthAction).toEqual({ sample: "none", availability: "none", reason: null });
+    expect(ca.policy).toEqual(decideAttemptPolicy(ca));
+  });
+
+  it("provider transport failure → policy attached (transport_failure)", () => {
+    const ca = createCanonicalAttempt(null, { status: 502, source: "provider" });
+    // provider failure uses buildTransportAttempt elsewhere; here prove the
+    // factory attaches classification + policy for a non-2xx provider status.
+    expect(ca.policy).toBeDefined();
+    expect(ca.policy).toEqual(decideAttemptPolicy(ca));
   });
 });

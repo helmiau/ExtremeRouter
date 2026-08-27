@@ -236,3 +236,18 @@ describe("HARDENING: no overfit — source!=provider does NOT hard-code success"
     expect(ca.logicalSuccess).toBe(false);
   });
 });
+
+describe("G2-C.1 regression: null evidence semantics preserved (baseline 954370e)", () => {
+  it("deriveCompletionState(null) → unknown", () => {
+    expect(deriveCompletionState(null)).toBe("unknown");
+  });
+  it("deriveUsableOutput(null) → false", () => {
+    expect(deriveUsableOutput(null)).toBe(false);
+  });
+  it("deriveLogicalSuccess(null) → false", () => {
+    expect(deriveLogicalSuccess(null)).toBe(false);
+  });
+  it("deriveOutcome(null) → incomplete (NOT failure)", () => {
+    expect(deriveOutcome(null)).toBe("incomplete");
+  });
+});

@@ -30,20 +30,26 @@ import { recordHealthSample } from "open-sse/services/healthMonitor.js";
 import { classifyCanonicalAttempt } from "open-sse/utils/canonicalClassification.js";
 import { decideAttemptPolicy } from "open-sse/utils/canonicalPolicy.js";
 import { buildComboExecutionGraph, authorizeComboExecution, resolveComboStrategyConfig } from "../services/comboExecutionPolicy.js";
+import { acquireComboAdmission, wrapResponseWithAdmission } from "../services/comboAdmission.js";
+import { createComboBudget } from "open-sse/services/comboBudget.js";
 
 /**
  * Execute a health action from a canonical policy result.
  * Policy NEVER calls health primitives directly — this executor does.
  * This is imperative instruction execution, not policy recomputation.
  *
- * Returns the account-unavailability result ({shouldFallback}) when the policy
- * says availability:"unavailable" and markAccountUnavailable ran; otherwise
- * false. fallbackEligible/retryable/stopProgression are NEVER consumed here.
+ * G2-C.1: executeHealthAction is a pure health executor. It performs health
+ * sampling + breaker mutation ONLY. It MUST NOT return or decide any
+ * fallback/candidate-progression signal — markAccountUnavailable (an
+ * account-availability action) is executed by the caller when policy says so;
+ * its result never crosses this boundary as an orchestration decision.
+ *
+ * Exported for unit-testability of the no-fallback boundary.
  */
-async function executeHealthAction(healthAction, ctx) {
-  if (!healthAction) return { shouldFallback: false };
+export async function executeHealthAction(healthAction, ctx) {
+  if (!healthAction) return;
 
-  const { provider, latencyMs, status, error, connectionId, model, resetsAtMs, vaultKey, skipBreaker, breakerKeyVal, chatSettings } = ctx;
+  const { provider, latencyMs, status, skipBreaker, breakerKeyVal, chatSettings } = ctx;
 
   // Sample
   if (healthAction.sample === "success") {
@@ -52,29 +58,22 @@ async function executeHealthAction(healthAction, ctx) {
     recordHealthSample(provider, { success: false, latencyMs, status }, chatSettings);
   }
 
-  // Availability — only lock the account when the policy explicitly says to.
-  let shouldFallback = false;
-  if (healthAction.availability === "unavailable") {
-    const res = await markAccountUnavailable(connectionId, status, error, provider, model, resetsAtMs, vaultKey);
-    shouldFallback = !!res?.shouldFallback;
-  }
-
-  // Breaker — only for user-facing traffic
+  // Breaker — only for user-facing traffic. Guards preserved exactly:
+  //  - 401/403 (sample=failure, not retryable) → never recordBreakerFailure
+  //  - 429/5xx (retryable) → recordBreakerFailure
+  //  - otherwise (non-retryable failure) → releaseBreakerProbe (lifecycle cleanup)
   if (!skipBreaker) {
     if (healthAction.sample === "success") {
       recordBreakerSuccess(provider, chatSettings, breakerKeyVal);
     } else if (healthAction.sample === "failure" && isRetryableFailure(status)) {
       recordBreakerFailure(provider, status, chatSettings, breakerKeyVal);
     } else {
-      // Non-retryable failure in half-open: release probe so breaker doesn't wedge
+      // Non-retryable failure in half-open: release probe so breaker doesn't wedge.
+      // This is lifecycle cleanup, NOT a fallback/health-policy decision.
       releaseBreakerProbe(provider, breakerKeyVal);
     }
   }
-
-  return { shouldFallback };
 }
-import { acquireComboAdmission, wrapResponseWithAdmission } from "../services/comboAdmission.js";
-import { createComboBudget } from "open-sse/services/comboBudget.js";
 
 /**
  * P0 (combos): single gated path for dispatching a combo by name. Both the
@@ -642,13 +641,21 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
 
     if (result.success) {
       const latencyMs = Date.now() - attemptStart;
-      // G2-C: policy-driven health execution for the ONE finalized provider
-      // attempt. policy.healthAction governs sample + availability; breaker
+      // G2-C.1: policy-driven health execution for the ONE finalized provider
+      // attempt. policy.healthAction governs sample + breaker; breaker
       // mutations stay skipBreaker-gated (M6: panel legs must not trip the
-      // shared per-provider breaker). When no policy exists (legacy path),
-      // fall back to the previous success-health behavior verbatim.
-      const policy = result.canonicalAttempt?.policy;
-      if (policy) {
+      // shared per-provider breaker).
+      //
+      // Commit E invariant: a provisional (not-yet-finalized) canonical attempt
+      // must not be consumed as final. The streaming holder reports
+      // completionState="unknown" until flush; using its derived policy would
+      // misread empty/in-progress evidence as empty_output and suppress the
+      // success health sample. Only the FINALized attempt drives healthAction;
+      // otherwise keep the pre-G2-C success health behavior verbatim.
+      const attempt = result.canonicalAttempt;
+      const policy = attempt?.policy;
+      const isFinalized = !!attempt && attempt.completionState !== "unknown";
+      if (policy && isFinalized) {
         await executeHealthAction(policy.healthAction, {
           provider, latencyMs,
           status: result.status ?? 200,
@@ -680,15 +687,17 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
       return result;
     }
 
-    // G2-C: policy-driven health execution for the ONE finalized provider
-    // failure attempt. Replaces the old status-based block to avoid double
-    // health mutations. Pre-core/catch paths (no ChatResult/policy) keep their
-    // existing behavior above; nothing here double-runs.
+    // G2-C.1: policy-driven health execution for the ONE finalized provider
+    // failure attempt. Health and account-availability are SEPARATE:
+    //  - executeHealthAction performs sampling + breaker only (no fallback).
+    //  - markAccountUnavailable performs account locking only when the policy
+    //    says availability="unavailable"; its result feeds the EXISTING
+    //    account-fallback loop (G2-D unchanged — fallbackEligible is not read).
     const latencyMs = Date.now() - attemptStart;
     const policy = result.canonicalAttempt?.policy;
-    let shouldFallback = false; // default when no account-lock policy exists
+    let shouldFallback = false;
     if (policy) {
-      const healthRes = await executeHealthAction(policy.healthAction, {
+      await executeHealthAction(policy.healthAction, {
         provider, latencyMs,
         status: result.status ?? 500,
         error: result.error ?? "",
@@ -702,21 +711,34 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
         breakerKeyVal,
         chatSettings,
       });
-      shouldFallback = healthRes.shouldFallback;
+      if (policy.healthAction.availability === "unavailable") {
+        const vaultKey = credentials.connectionId === "vault"
+          ? credentials.connectionName?.replace("Vault · ", "")
+          : null;
+        ({ shouldFallback } = await markAccountUnavailable(
+          credentials.connectionId,
+          result.status,
+          result.error,
+          provider,
+          model,
+          result.resetsAtMs,
+          vaultKey
+        ));
+      }
     } else {
-      // No canonical attempt (shouldn't happen post-G2-B on provider paths,
-      // but defend): fall back to legacy status-based health.
-      const vaultKey = credentials.connectionId === "vault" ? credentials.connectionName?.replace("Vault · ", "") : null;
-      ({ shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs, vaultKey));
-      if (result.status !== 499) {
-        recordHealthSample(provider, { success: false, latencyMs, status: result.status }, chatSettings);
+        // No canonical attempt (shouldn't happen post-G2-B on provider paths,
+        // but defend): fall back to legacy status-based health.
+        const vaultKey = credentials.connectionId === "vault" ? credentials.connectionName?.replace("Vault · ", "") : null;
+        ({ shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs, vaultKey));
+        if (result.status !== 499) {
+          recordHealthSample(provider, { success: false, latencyMs, status: result.status }, chatSettings);
+        }
+        if (isRetryableFailure(result.status) && !opts.skipBreaker) {
+          recordBreakerFailure(provider, result.status, chatSettings, breakerKeyVal);
+        } else if (!opts.skipBreaker) {
+          releaseBreakerProbe(provider, breakerKeyVal);
+        }
       }
-      if (isRetryableFailure(result.status) && !opts.skipBreaker) {
-        recordBreakerFailure(provider, result.status, chatSettings, breakerKeyVal);
-      } else if (!opts.skipBreaker) {
-        releaseBreakerProbe(provider, breakerKeyVal);
-      }
-    }
 
     if (shouldFallback) {
       log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
