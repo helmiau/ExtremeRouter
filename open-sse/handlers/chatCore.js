@@ -532,7 +532,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
     if (error.name === "AbortError") {
       streamController.handleError(error);
-      return createErrorResult(499, "Request aborted", undefined, { canonicalAttempt: buildTransportAttempt(499, { abortSeen: true }) });
+      return createErrorResult(499, "Request aborted", undefined, { canonicalAttempt: buildTransportAttempt(499, { abortSeen: true }), retryCount: executorRetryCount });
     }
 
     // Cross-transport fallback: network error or timeout → try alternate endpoint.
@@ -554,7 +554,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
       const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
       console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg, undefined, { canonicalAttempt: buildTransportAttempt(502) });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg, undefined, { canonicalAttempt: buildTransportAttempt(502), retryCount: executorRetryCount });
     }
   }
 
@@ -610,7 +610,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
         console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
         reqLogger.logError(new Error(message), finalBody || translatedBody);
-        return createErrorResult(statusCode, errMsg, resetsAtMs, { canonicalAttempt: buildTransportAttempt(statusCode) });
+        return createErrorResult(statusCode, errMsg, resetsAtMs, { canonicalAttempt: buildTransportAttempt(statusCode), retryCount: executorRetryCount });
       }
     } else {
       // 4xx — no transport fallback, return error immediately.
@@ -630,7 +630,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
       console.log(`${COLORS.red}[ERROR] ${errMsg}${COLORS.reset}`);
       reqLogger.logError(new Error(message), finalBody || translatedBody);
-      return createErrorResult(statusCode, errMsg, resetsAtMs, { canonicalAttempt: buildTransportAttempt(statusCode) });
+      return createErrorResult(statusCode, errMsg, resetsAtMs, { canonicalAttempt: buildTransportAttempt(statusCode), retryCount: executorRetryCount });
     }
   }
 
@@ -645,15 +645,24 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
-  // Provider forced streaming but client wants JSON
+  // Forced SSE→JSON: adapter returns its own ChatResult envelope.
   if (!clientRequestedStreaming && providerRequiresStreaming) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, trackDone, appendLog });
-    if (result) { streamController.handleComplete(); return result; }
+    if (result) {
+      // G2-D.2: executor transport retries ride the envelope (shared retry
+      // accounting with the semantic retry gate). Adapters keep their shape.
+      if (result?.retryCount == null) result.retryCount = executorRetryCount;
+      streamController.handleComplete();
+      return result;
+    }
   }
 
   // True non-streaming response
   if (!stream) {
     const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, reqLogger, toolNameMap, trackDone, appendLog });
+    // G2-D.2: executor transport retries ride the envelope (shared retry
+    // accounting with the semantic retry gate). Adapters keep their own shape.
+    if (result?.retryCount == null) result.retryCount = executorRetryCount;
     streamController.handleComplete();
     return result;
   }

@@ -173,6 +173,9 @@ export function createErrorResult(statusCode, message, resetsAtMs, options = {})
     resetsAtMs,
     response: errorResponse(statusCode, message),
     canonicalAttempt: options.canonicalAttempt ?? null,
+    // G2-D.2: shared retry accounting — executor transport retries ride on the
+    // envelope so the semantic retry gate consumes the same budget.
+    retryCount: options.retryCount,
   });
 }
 

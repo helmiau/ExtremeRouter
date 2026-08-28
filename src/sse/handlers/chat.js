@@ -27,6 +27,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { recordBreakerSuccess, recordBreakerFailure, isRetryableFailure, releaseBreakerProbe, breakerKey } from "open-sse/services/circuitBreaker.js";
 import { recordHealthSample } from "open-sse/services/healthMonitor.js";
+import { shouldSemanticRetry } from "open-sse/utils/canonicalRetry.js";
 import { classifyCanonicalAttempt } from "open-sse/utils/canonicalClassification.js";
 import { decideAttemptPolicy } from "open-sse/utils/canonicalPolicy.js";
 import { buildComboExecutionGraph, authorizeComboExecution, resolveComboStrategyConfig } from "../services/comboExecutionPolicy.js";
@@ -580,10 +581,13 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
     // Proxy-aware breaker key: isolate breaker state per (provider, proxy) so
     // one dead proxy doesn't trip the breaker for other proxies/direct traffic.
     const breakerKeyVal = breakerKey(provider, refreshedCredentials?.providerSpecificData || {});
-    const result = await handleChatCore({
+    // Shared chatCore invocation for this account attempt — used by the main
+    // attempt and the G2-D.2 bounded semantic retry (same provider/account,
+    // same full pipeline, same probe-release + failure-sample wrapping).
+    const runChatCore = (creds) => handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
-      credentials: refreshedCredentials,
+      credentials: creds,
       log,
       clientRawRequest,
       connectionId: credentials.connectionId,
@@ -639,7 +643,28 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
       throw err;
     });
 
+    let result = await runChatCore(refreshedCredentials);
+
     if (result.success) {
+      // G2-D.2: semantic retry handoff — finalized HTTP-200 semantic failures
+      // (usage_only / empty_response / no_successful_terminal) that canonical
+      // policy marks retryable=true may re-run the SAME pipeline ONCE, bounded
+      // by the shared retry accounting carried on result.retryCount (executor
+      // transport retries AND any prior semantic retry share this budget).
+      // Streaming never retries — the SSE response is the candidate-admission
+      // handoff; partial output already committed to the client must not be
+      // replaced (§3/§27). The retried result falls through the health + return
+      // below, so attempt 2's OWN canonical policy drives everything downstream.
+      if (shouldSemanticRetry(result)) {
+        log.info("CHAT", `[${provider}/${model}] semantic retry (${result.canonicalAttempt?.classification}:${result.canonicalAttempt?.reason})`);
+        const retried = await runChatCore(refreshedCredentials);
+        // Shared retry accounting: attempt 2's retryCount = attempt 1's + 1,
+        // unconditionally — attempt 2 owns its OWN canonical policy from here,
+        // and any executor transport retries it makes are additive on top.
+        if (retried) retried.retryCount = (result.retryCount ?? 0) + 1;
+        result = retried;
+      }
+
       const latencyMs = Date.now() - attemptStart;
       // G2-C.1: policy-driven health execution for the ONE finalized provider
       // attempt. policy.healthAction governs sample + breaker; breaker
@@ -744,7 +769,7 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
         }
       }
 
-    if (shouldFallback) {
+if (shouldFallback) {
       log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
