@@ -2,6 +2,7 @@ import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FET
 import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
+import { retryEligibilityForTransport } from "../utils/canonicalRetry.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 
 /**
@@ -106,18 +107,18 @@ export class BaseExecutor {
     // Merge default retry config with provider-specific config
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
 
-    // G2-D (eligibility-only): `retryConfig` is the ONLY same-provider retry
-    // vector and, in the default config, contains only statuses whose finalized
-    // canonical policy says `retryable:true` (429/502/503/504). Statuses the
-    // policy marks `retryable:false` (400/401/403/404/provider_error/malformed)
-    // have no entry → resolveRetryEntry attempts=0 → never retried. There is no
-    // separate same-account retry loop; `canonicalAttempt.policy.retryable`
-    // therefore gates retry via this existing budget boundary, not by
-    // re-classifying HTTP status here.
-
+    // G2-D.1 (policy gate): canonical policy is authoritative for retry
+    // ELIGIBILITY. `retryable:false` forbids a same-provider retry even when a
+    // provider-specific retryConfig[status] has a budget. `retryable:true` only
+    // permits — the retry engine below (budget/backoff/hooks) still decides
+    // whether a retry actually happens.
+    //
     // Schedule retry via retryConfig[statusKey]. Returns true when caller should `urlIndex--; continue`
     // response (optional) lets a subclass hook compute a dynamic delay (e.g. antigravity Retry-After).
     const tryRetry = async (urlIndex, statusKey, reason, response = null) => {
+      // Policy gate first — before any retryConfig/budget read. This consults
+      // the same frozen canonical policy matrix, never `if status === …`.
+      if (retryEligibilityForTransport(statusKey) === false) return false;
       const { attempts, delayMs } = resolveRetryEntry(retryConfig[statusKey]);
       if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts) return false;
       // Hook: subclass may derive delay from the response (headers/body). null → skip retry, use fallback.
