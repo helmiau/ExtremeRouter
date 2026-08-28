@@ -106,6 +106,15 @@ export class BaseExecutor {
     // Merge default retry config with provider-specific config
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
 
+    // G2-D (eligibility-only): `retryConfig` is the ONLY same-provider retry
+    // vector and, in the default config, contains only statuses whose finalized
+    // canonical policy says `retryable:true` (429/502/503/504). Statuses the
+    // policy marks `retryable:false` (400/401/403/404/provider_error/malformed)
+    // have no entry → resolveRetryEntry attempts=0 → never retried. There is no
+    // separate same-account retry loop; `canonicalAttempt.policy.retryable`
+    // therefore gates retry via this existing budget boundary, not by
+    // re-classifying HTTP status here.
+
     // Schedule retry via retryConfig[statusKey]. Returns true when caller should `urlIndex--; continue`
     // response (optional) lets a subclass hook compute a dynamic delay (e.g. antigravity Retry-After).
     const tryRetry = async (urlIndex, statusKey, reason, response = null) => {

@@ -148,8 +148,13 @@ export function createCanonicalAttemptFromNonStreaming({ status, parsed, usage =
     || (parsed && typeof parsed === "object" && (Boolean(parsed.error) || parsed.success === false));
   const logicalSuccess = usableOutput && completionState === "success" && !errorSeen && !abortSeen;
   const outcome = errorSeen || transportOk === false ? "failure" : (logicalSuccess ? "success" : completionState === "incomplete" ? "incomplete" : "incomplete");
+  // Compute classification once; reused for both the attached spread and policy.
+  const classification = classifyCanonicalAttempt({
+    completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
+    completionType, usableOutput, logicalSuccess, responseStatus: status ?? null,
+  });
 
-    const result = {
+  const result = {
     source: "provider",
     transportOk,
     streamStarted: null,
@@ -171,16 +176,12 @@ export function createCanonicalAttemptFromNonStreaming({ status, parsed, usage =
     outcome,
     // Commit G1: deterministic outcome classification (layer #2), derived from the
     // finalized non-streaming evidence. Attached, not a separate envelope.
-    ...classifyCanonicalAttempt({
-      completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
-      completionType, usableOutput, logicalSuccess, responseStatus: status ?? null,
-    }),
+    ...classification,
     policy: decideAttemptPolicy({
       source: "provider", completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
       completionType, usableOutput, logicalSuccess,
-      ...classifyCanonicalAttempt({ completionState, transportOk, abortSeen: !!abortSeen, errorSeen, completionType, usableOutput, logicalSuccess, responseStatus: status ?? null }),
+      ...classification,
     }),
   };
-  console.error("NONSTREAMING ATTEMPT CREATED:", JSON.stringify(result, null, 2));
   return result;
 }

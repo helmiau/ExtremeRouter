@@ -687,17 +687,20 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
       return result;
     }
 
-    // G2-C.1: policy-driven health execution for the ONE finalized provider
-    // failure attempt. Health and account-availability are SEPARATE:
+    // G2-C.1 + G2-D: policy-driven execution for the ONE finalized provider
+    // failure attempt. Layers are SEPARATE:
     //  - executeHealthAction performs sampling + breaker only (no fallback).
-    //  - markAccountUnavailable performs account locking only when the policy
-    //    says availability="unavailable"; its result feeds the EXISTING
-    //    account-fallback loop (G2-D unchanged — fallbackEligible is not read).
+    //  - markAccountUnavailable performs account locking on health instruction
+    //    only (availability="unavailable"); its result is NOT a fallback signal.
+    //  - shouldFallback (continue to next account) comes only from
+    //    canonicalAttempt.policy.fallbackEligible (§25). Legacy status-based
+    //    fallback is kept solely for no-policy / streaming-provisional compat.
     const latencyMs = Date.now() - attemptStart;
-    const policy = result.canonicalAttempt?.policy;
+    const attempt = result.canonicalAttempt;
+    const finalizedPolicy = (attempt && attempt.completionState !== "unknown") ? attempt.policy : null;
     let shouldFallback = false;
-    if (policy) {
-      await executeHealthAction(policy.healthAction, {
+    if (finalizedPolicy) {
+      await executeHealthAction(finalizedPolicy.healthAction, {
         provider, latencyMs,
         status: result.status ?? 500,
         error: result.error ?? "",
@@ -711,11 +714,11 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
         breakerKeyVal,
         chatSettings,
       });
-      if (policy.healthAction.availability === "unavailable") {
+      if (finalizedPolicy.healthAction.availability === "unavailable") {
         const vaultKey = credentials.connectionId === "vault"
           ? credentials.connectionName?.replace("Vault · ", "")
           : null;
-        ({ shouldFallback } = await markAccountUnavailable(
+        await markAccountUnavailable(
           credentials.connectionId,
           result.status,
           result.error,
@@ -723,8 +726,9 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
           model,
           result.resetsAtMs,
           vaultKey
-        ));
+        );
       }
+      shouldFallback = finalizedPolicy.fallbackEligible === true;
     } else {
         // No canonical attempt (shouldn't happen post-G2-B on provider paths,
         // but defend): fall back to legacy status-based health.

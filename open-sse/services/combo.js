@@ -463,11 +463,29 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
-      // Check if should fallback to next model
-      const nonRetryableClientError = [400, 405, 406, 413, 415, 422].includes(status);
-      const { shouldFallback, cooldownMs } = nonRetryableClientError
-        ? { shouldFallback: false, cooldownMs: 0 }
-        : checkFallbackError(status, errorText);
+      // G2-D: canonicalAttempt.policy is the source of truth for candidate
+      // progression. `stopProgression` stops the loop (client_abort, the
+      // non-retryable user-error set, cache/bypass); `fallbackEligible` permits
+      // trying the next candidate. The 503/502/504 delay below is a lifecycle
+      // guard (brief-overload recovery wait), NOT another fallback decision —
+      // policy already allowed fallback before we get there. Legacy status-based
+      // rules are kept only as a temporary compatibility path when no finalized
+      // canonical policy exists (pre-provider validation / older internal paths).
+      let shouldFallback;
+      let cooldownMs = 0;
+      const attempt = result.canonicalAttempt;
+      const finalizedPolicy = (attempt && attempt.completionState !== "unknown") ? attempt.policy : null;
+      if (finalizedPolicy) {
+        shouldFallback = finalizedPolicy.stopProgression === true
+          ? false
+          : finalizedPolicy.fallbackEligible === true;
+        if (shouldFallback) cooldownMs = checkFallbackError(status, errorText).cooldownMs;
+      } else {
+        const nonRetryableClientError = [400, 405, 406, 413, 415, 422].includes(status);
+        ({ shouldFallback, cooldownMs } = nonRetryableClientError
+          ? { shouldFallback: false, cooldownMs: 0 }
+          : checkFallbackError(status, errorText));
+      }
 
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status });

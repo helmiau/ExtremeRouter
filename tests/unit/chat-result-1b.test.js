@@ -174,11 +174,18 @@ beforeEach(async () => {
     headers: {},
     transformedBody: null,
   });
-  credentialsMock.mockResolvedValue({
-    connectionId: "conn-1",
-    connectionName: "Test Account",
-    apiKey: "sk-test",
-    providerSpecificData: {},
+  // G2-D: a 503 is now policy-fallbackEligible, so the account loop advances and
+  // excludes conn-1 before asking for the next account. Model that like the real
+  // auth service: return the account once, then null once it is excluded — the
+  // old always-return-conn-1 mock produced an unbounded account-retry loop.
+  credentialsMock.mockImplementation(async (_provider, excludeConnectionIds) => {
+    if (excludeConnectionIds?.has?.("conn-1")) return null;
+    return {
+      connectionId: "conn-1",
+      connectionName: "Test Account",
+      apiKey: "sk-test",
+      providerSpecificData: {},
+    };
   });
 });
 

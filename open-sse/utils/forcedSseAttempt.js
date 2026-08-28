@@ -106,6 +106,13 @@ export function createCanonicalAttemptFromForcedSse({
   // (chat-completions path only; Responses keeps it in completionType instead).
   const finishReason = finalJson?.choices?.[0]?.finish_reason ?? null;
 
+  // Commit G1: deterministic outcome classification (layer #2), derived from the
+  // finalized forced-SSE evidence. Computed once; reused for spread + policy.
+  const classification = classifyCanonicalAttempt({
+    completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
+    completionType, usableOutput, logicalSuccess, responseStatus: status ?? null,
+  });
+
   return {
     source: "provider",
     transportOk,
@@ -126,16 +133,11 @@ export function createCanonicalAttemptFromForcedSse({
     usableOutput,
     logicalSuccess,
     outcome,
-    // Commit G1: deterministic outcome classification (layer #2), derived from the
-    // finalized converted/final JSON. Attached, not a separate envelope.
-    ...classifyCanonicalAttempt({
-      completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
-      completionType, usableOutput, logicalSuccess, responseStatus: status ?? null,
-    }),
+    ...classification,
     policy: decideAttemptPolicy({
       source: "provider", completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
       completionType, usableOutput, logicalSuccess,
-      ...classifyCanonicalAttempt({ completionState, transportOk, abortSeen: !!abortSeen, errorSeen, completionType, usableOutput, logicalSuccess, responseStatus: status ?? null }),
+      ...classification,
     }),
   };
 }
