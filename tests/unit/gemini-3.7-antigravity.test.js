@@ -37,10 +37,10 @@ describe("Gemini 3.7 Flash Support & Config", () => {
     expect(MODEL_PRICING["gemini-3.7-flash-low"]).toEqual(MODEL_PRICING["gemini-3.6-flash-low"]);
   });
 
-  it("resolves tiered upstream ids with preset effort", () => {
-    expect(getModelUpstreamId("ag", "gemini-3.7-flash-high")).toBe("gemini-3.7-flash-tiered(high)");
-    expect(getModelUpstreamId("ag", "gemini-3.7-flash-medium")).toBe("gemini-3.7-flash-tiered(medium)");
-    expect(getModelUpstreamId("ag", "gemini-3.7-flash-low")).toBe("gemini-3.7-flash-tiered(low)");
+  it("resolves tiered upstream ids to the single plain wire id", () => {
+    expect(getModelUpstreamId("ag", "gemini-3.7-flash-high")).toBe("gemini-3.7-flash-tiered");
+    expect(getModelUpstreamId("ag", "gemini-3.7-flash-medium")).toBe("gemini-3.7-flash-tiered");
+    expect(getModelUpstreamId("ag", "gemini-3.7-flash-low")).toBe("gemini-3.7-flash-tiered");
   });
 
   it("exposes 3.7 tiers on MITM tool aliases without changing default first model", () => {

@@ -7,6 +7,7 @@ import { PROVIDER_MAX_OUTPUT_TOKENS } from "../config/providerOutputLimits.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
+import { getModelUpstreamId, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 
@@ -393,10 +394,19 @@ export class AntigravityExecutor extends BaseExecutor {
 
     this._lastSessionId = transformedRequest.sessionId; // cached for buildHeaders (base.execute order)
 
+    // Wire model: the CodeAssist API must receive the real upstream model id, not
+    // the router alias. Sending the alias (e.g. "gemini-3.7-flash-high") or a
+    // parenthesized tier id returns 404 NOT_FOUND "Requested entity was not found."
+    // (OmniRoute reference: "tier suffixes were speculative and caused 404"). The
+    // plain upstream id is resolved via the registry upstreamModelId.
+    const modelAlias = PROVIDER_ID_TO_ALIAS[this.provider] || this.provider;
+    const strippedModel = typeof model === "string" && model.includes("/") ? model.split("/").pop() : model;
+    const wireModel = getModelUpstreamId(modelAlias, strippedModel) || strippedModel || model;
+
     return {
       ...body,
       project: projectId,
-      model: model,
+      model: wireModel,
       userAgent: "antigravity",
       requestType: "agent",
       requestId: `agent-${crypto.randomUUID()}`,

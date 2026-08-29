@@ -59,15 +59,19 @@ export default {
     clientSecret: ANTIGRAVITY_OAUTH_CLIENT.clientSecret,
   },
   models: [
-    // Tiered Gemini 3.7 / 3.6 Flash — upstream id carries a (high/medium/low) preset
-    // that getModelUpstreamId resolves and merges with the caller's effort
-    // suffix. Port of decolua/9router commits 190020c + 86694ed.
-    { id: "gemini-3.7-flash-high", name: "Gemini 3.7 Flash (High)", upstreamModelId: "gemini-3.7-flash-tiered(high)" },
-    { id: "gemini-3.7-flash-medium", name: "Gemini 3.7 Flash (Medium)", upstreamModelId: "gemini-3.7-flash-tiered(medium)" },
-    { id: "gemini-3.7-flash-low", name: "Gemini 3.7 Flash (Low)", upstreamModelId: "gemini-3.7-flash-tiered(low)" },
-    { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)", upstreamModelId: "gemini-3.6-flash-tiered(high)" },
-    { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", upstreamModelId: "gemini-3.6-flash-tiered(medium)" },
-    { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)", upstreamModelId: "gemini-3.6-flash-tiered(low)" },
+    // Tiered Gemini 3.7 / 3.6 Flash. The upstream CodeAssist API uses a SINGLE
+    // plain model id for every tier (no -high/-low suffix): the parenthesized
+    // "gemini-3.7-flash-tiered(high)" form does not exist and 404s with
+    // NOT_FOUND "Requested entity was not found." (verified against the
+    // OmniRoute/antigravity reference — the tier suffix "was speculative and
+    // caused 404 for gemini-3.x models"). The tier only affects router-side
+    // pricing/UX; the wire always sends the plain tiered id.
+    { id: "gemini-3.7-flash-high", name: "Gemini 3.7 Flash (High)", upstreamModelId: "gemini-3.7-flash-tiered" },
+    { id: "gemini-3.7-flash-medium", name: "Gemini 3.7 Flash (Medium)", upstreamModelId: "gemini-3.7-flash-tiered" },
+    { id: "gemini-3.7-flash-low", name: "Gemini 3.7 Flash (Low)", upstreamModelId: "gemini-3.7-flash-tiered" },
+    { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)", upstreamModelId: "gemini-3.6-flash-tiered" },
+    { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", upstreamModelId: "gemini-3.6-flash-tiered" },
+    { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)", upstreamModelId: "gemini-3.6-flash-tiered" },
     { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)" },
     { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium)" },
     { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)" },
