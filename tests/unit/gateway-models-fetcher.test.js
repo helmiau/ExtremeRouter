@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FILTERS } from "@/app/api/providers/suggested-models/filters.js";
+import { FILTERS } from "../../src/app/api/providers/suggested-models/filters.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 
 // Representative /v1/models payload using the bynara-style shape

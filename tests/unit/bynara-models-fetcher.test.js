@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { FILTERS } from "@/app/api/providers/suggested-models/filters.js";
+import { FILTERS } from "../../src/app/api/providers/suggested-models/filters.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 
 // Real /v1/models payload shape returned by router.bynara.id.
@@ -8,21 +8,27 @@ const BYNARA_PAYLOAD = {
   data: [
     { id: "agnes-2.0-flash", object: "model", owned_by: "byNara", context_window: 512000, weight: 0.1, vision: true, reasoning: true },
     { id: "agnes-2.5-flash", object: "model", owned_by: "byNara", context_window: 512000, weight: 0.2, vision: true, reasoning: true },
+    { id: "glm-5.3-flash-free", object: "model", owned_by: "byNara", context_window: 128000, weight: 1, vision: true, reasoning: true },
     { id: "grok-4.5-free", object: "model", owned_by: "byNara", context_window: 212000, weight: 1, vision: true },
     { id: "laguna-s-2.1", object: "model", owned_by: "byNara", context_window: 262000, weight: 0.5, reasoning: true },
     { id: "ling-3.0-flash-free", object: "model", owned_by: "byNara", context_window: 262000, weight: 1, reasoning: true },
+    { id: "minimax-m3-free", object: "model", owned_by: "byNara", context_window: 1000000, weight: 1, vision: true, reasoning: true },
     { id: "mistral-large", object: "model", owned_by: "byNara", context_window: 252000, weight: 1 },
     { id: "mistral-medium-3-5", object: "model", owned_by: "byNara", context_window: 256000, weight: 1, vision: true },
     { id: "nemotron-3-ultra", object: "model", owned_by: "byNara", context_window: 1000000, weight: 0.5 },
+    { id: "qwen-3.8-max-free", object: "model", owned_by: "byNara", context_window: 262144, weight: 1 },
+    { id: "qwen3.8-27b", object: "model", owned_by: "byNara", context_window: 1000000, weight: 1, reasoning: true },
     { id: "stepfun-3.7-flash", object: "model", owned_by: "byNara", context_window: 262000, weight: 1, vision: true, reasoning: true },
     { id: "tencent-hy3-free", object: "model", owned_by: "byNara", context_window: 262000, weight: 1 },
+    { id: "deepseek-v4-flash", object: "model", owned_by: "byNara", context_window: 1000000, weight: 1.5, reasoning: true },
+    { id: "qwen3.8-flash-free", object: "model", owned_by: "byNara", context_window: 1000000, weight: 1, vision: true, reasoning: true },
   ],
 };
 
 describe("bynara modelsFetcher parser", () => {
   it("absorbs context_window, vision and reasoning from /v1/models", () => {
     const out = FILTERS.bynara(BYNARA_PAYLOAD);
-    expect(out).toHaveLength(10);
+    expect(out).toHaveLength(16);
 
     const agnes = out.find((m) => m.id === "agnes-2.0-flash");
     expect(agnes.contextLength).toBe(512000);
@@ -39,6 +45,11 @@ describe("bynara modelsFetcher parser", () => {
     expect(grok.contextLength).toBe(212000);
     expect(grok.vision).toBe(true);
     expect(grok.reasoning).toBe(false);
+
+    const qwenFlash = out.find((m) => m.id === "qwen3.8-flash-free");
+    expect(qwenFlash.contextLength).toBe(1000000);
+    expect(qwenFlash.vision).toBe(true);
+    expect(qwenFlash.reasoning).toBe(true);
   });
 
   it("skips entries without an id", () => {

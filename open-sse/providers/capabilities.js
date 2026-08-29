@@ -195,24 +195,27 @@ export const PROVIDER_CAPABILITIES = {
   // before/without that fetch. Reasoning models speak OpenAI reasoning_effort
   // (the gateway's primary chat format).
   bynara: {
-    "agnes-2.0-flash":     { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 512000 },
-    "agnes-2.5-flash":     { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 512000 },
-    "grok-4.5-free":       { vision: true, contextWindow: 212000 },
-    "laguna-s-2.1":        { reasoning: true, thinkingFormat: "openai", contextWindow: 262000 },
-    "ling-3.0-flash-free": { reasoning: true, thinkingFormat: "openai", contextWindow: 262000 },
-    "mistral-large":       { contextWindow: 252000 },
-    "mistral-medium-3-5":  { vision: true, contextWindow: 256000 },
-    "nemotron-3-ultra":    { contextWindow: 1000000 },
-    "stepfun-3.7-flash":   { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 262000 },
-    "tencent-hy3-free":    { contextWindow: 262000 },
+    "agnes-2.0-flash":        { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 512000 },
+    "agnes-2.5-flash":        { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 512000 },
+    "glm-5.3-flash-free":     { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 128000 },
+    "grok-4.5-free":          { vision: true, contextWindow: 212000 },
+    "laguna-s-2.1":           { reasoning: true, thinkingFormat: "openai", contextWindow: 262000 },
+    "ling-3.0-flash-free":    { reasoning: true, thinkingFormat: "openai", contextWindow: 262000 },
+    "minimax-m3-free":        { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000 },
+    "mistral-large":          { contextWindow: 252000 },
+    "mistral-medium-3-5":     { vision: true, contextWindow: 256000 },
+    "nemotron-3-ultra":       { contextWindow: 1000000 },
+    "qwen-3.8-max-free":      { contextWindow: 262144 },
+    "qwen3.8-27b":            { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000 },
+    "qwen3.8-flash-free":     { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000 },
+    "stepfun-3.7-flash":      { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 262000 },
+    "tencent-hy3-free":       { contextWindow: 262000 },
     // DeepSeek V4 free/paid on Bynara speak OpenAI reasoning_effort only
     // (gateway rejects native DeepSeek thinking:{type} blocks → HTTP 400).
-    // vision:false — free tier is text-only; generic *deepseek-v4* has no vision
-    // either, pin keeps picker/combo honest if patterns drift later.
-    "deepseek-v4-pro":       { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1000000, maxOutput: 384000 },
-    "deepseek-v4-pro-free":  { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1000000, maxOutput: 384000 },
-    "deepseek-v4-flash":     { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1000000, maxOutput: 384000 },
-    "deepseek-v4-flash-free":{ vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1000000, maxOutput: 384000 },
+    "deepseek-v4-pro":        { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1000000, maxOutput: 384000 },
+    "deepseek-v4-pro-free":   { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1000000, maxOutput: 384000 },
+    "deepseek-v4-flash":      { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1000000, maxOutput: 384000 },
+    "deepseek-v4-flash-free": { vision: false, reasoning: true, thinkingFormat: "openai", thinkingMaxEffort: true, contextWindow: 1000000, maxOutput: 384000 },
   },
   // OrcaRouter (api.orcarouter.ai) — multi-provider OpenAI gateway. Live model
   // cards: https://www.orcarouter.ai/api/public/models/<id>. thinkingFormat is

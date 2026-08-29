@@ -1,4 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+
+vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
+  proxyAwareFetch: vi.fn(),
+}));
+
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { getPricingForModel } from "open-sse/providers/pricing.js";
 import { PROVIDERS } from "open-sse/providers/index.js";

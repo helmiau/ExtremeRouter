@@ -29,7 +29,7 @@ export default {
       text: "Bynara is a multi-model AI router with OpenAI, Anthropic, and Responses API support. Create an API key at router.bynara.id, then paste it here. Supports LLM chat, image generation, and image editing.",
     },
   },
-  category: "freeTier",
+  category: "free",
   hasFree: true,
   authType: "apikey",
   transport: {

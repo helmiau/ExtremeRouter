@@ -5,16 +5,22 @@ import { resolveTransport, resolveAlternateTransport } from "open-sse/services/p
 
 describe("bynara capabilities (from /v1/models metadata)", () => {
   const cases = [
-    ["agnes-2.0-flash",     { vision: true,  reasoning: true,  contextWindow: 512000 }],
-    ["agnes-2.5-flash",     { vision: true,  reasoning: true,  contextWindow: 512000 }],
-    ["grok-4.5-free",       { vision: true,  reasoning: false, contextWindow: 212000 }],
-    ["laguna-s-2.1",        { vision: false, reasoning: true,  contextWindow: 262000 }],
-    ["ling-3.0-flash-free", { vision: false, reasoning: true,  contextWindow: 262000 }],
-    ["mistral-large",       { vision: false, reasoning: false, contextWindow: 252000 }],
-    ["mistral-medium-3-5",  { vision: true,  reasoning: false, contextWindow: 256000 }],
-    ["nemotron-3-ultra",    { vision: false, reasoning: false, contextWindow: 1000000 }],
-    ["stepfun-3.7-flash",   { vision: true,  reasoning: true,  contextWindow: 262000 }],
-    ["tencent-hy3-free",    { vision: false, reasoning: false, contextWindow: 262000 }],
+    ["agnes-2.0-flash",        { vision: true,  reasoning: true,  contextWindow: 512000 }],
+    ["agnes-2.5-flash",        { vision: true,  reasoning: true,  contextWindow: 512000 }],
+    ["glm-5.3-flash-free",     { vision: true,  reasoning: true,  contextWindow: 128000 }],
+    ["grok-4.5-free",          { vision: true,  reasoning: false, contextWindow: 212000 }],
+    ["laguna-s-2.1",           { vision: false, reasoning: true,  contextWindow: 262000 }],
+    ["ling-3.0-flash-free",    { vision: false, reasoning: true,  contextWindow: 262000 }],
+    ["minimax-m3-free",        { vision: true,  reasoning: true,  contextWindow: 1000000 }],
+    ["mistral-large",          { vision: false, reasoning: false, contextWindow: 252000 }],
+    ["mistral-medium-3-5",     { vision: true,  reasoning: false, contextWindow: 256000 }],
+    ["nemotron-3-ultra",       { vision: false, reasoning: false, contextWindow: 1000000 }],
+    ["qwen-3.8-max-free",      { vision: false, reasoning: false, contextWindow: 262144 }],
+    ["qwen3.8-27b",            { vision: false, reasoning: true,  contextWindow: 1000000 }],
+    ["qwen3.8-flash-free",     { vision: true,  reasoning: true,  contextWindow: 1000000 }],
+    ["stepfun-3.7-flash",      { vision: true,  reasoning: true,  contextWindow: 262000 }],
+    ["tencent-hy3-free",       { vision: false, reasoning: false, contextWindow: 262000 }],
+    ["deepseek-v4-flash",      { vision: false, reasoning: true,  contextWindow: 1000000 }],
   ];
 
   it.each(cases)("%s matches the gateway metadata", (model, expected) => {
