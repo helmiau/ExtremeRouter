@@ -6,6 +6,24 @@ import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 
+// Auth/profile-shaped failures from the kiro.dev gateway that should fall back to
+// the region-resolved AWS CodeWhisperer host. Mirrors 9router's
+// KIRO_ENDPOINT_FALLBACK_STATUSES. 400 (malformed body) is intentionally absent:
+// resending the same body to a different host cannot fix it.
+const KIRO_GATEWAY_HOST = "runtime.us-east-1.kiro.dev";
+const KIRO_ENDPOINT_FALLBACK_STATUSES = [401, 403, 404];
+
+// Whether an auth method's token is accepted by the kiro.dev gateway. api_key /
+// external_idp / idc tokens are rejected by the gateway (403 "bearer token
+// invalid"), so they must use the CodeWhisperer *.amazonaws.com surface instead.
+function isKiroGatewayAcceptable(authMethod) {
+  return authMethod !== "api_key" && authMethod !== "external_idp" && authMethod !== "idc";
+}
+
+function isKiroGatewayUrl(url) {
+  return typeof url === "string" && url.includes(KIRO_GATEWAY_HOST);
+}
+
 /**
  * KiroExecutor - Executor for Kiro AI (AWS CodeWhisperer)
  * Uses AWS CodeWhisperer streaming API with AWS EventStream binary format
@@ -69,9 +87,8 @@ export class KiroExecutor extends BaseExecutor {
     // 403 "bearer token invalid", so they must hit the CodeWhisperer
     // *.amazonaws.com surface, and in the region the token was minted in
     // (the baseUrls are hardcoded us-east-1).
-    const isCodeWhispererSurface =
-      authMethod === "api_key" || authMethod === "external_idp" || authMethod === "idc";
-    if (!isCodeWhispererSurface) return baseUrls;
+    const gatewayAcceptable = isKiroGatewayAcceptable(authMethod);
+    if (gatewayAcceptable) return baseUrls;
 
     const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
     const regionalize = (u) =>
@@ -82,6 +99,29 @@ export class KiroExecutor extends BaseExecutor {
     const amazon = baseUrls.filter((u) => u.includes("amazonaws.com")).map(regionalize);
     const others = baseUrls.filter((u) => !u.includes("amazonaws.com"));
     return amazon.length > 0 ? [...amazon, ...others] : baseUrls;
+  }
+
+  /**
+   * Gateway-first fallback. BaseExecutor only advances to the next host on 429 /
+   * network / 5xx; a 401/403/404 from the kiro.dev gateway would otherwise hard-stop
+   * even though the same token is valid on the region-resolved AWS CodeWhisperer
+   * host. So for a gateway-acceptable token, an auth/profile-shaped failure on the
+   * gateway leg advances to the next host. Only the gateway leg falls back this way —
+   * a 401/403/404 from an AWS host is final. Malformed-body 400 is not in the set and
+   * stays terminal. Everything else keeps base behavior (429 rate-limit fallback).
+   */
+  shouldRetry(status, urlIndex) {
+    if (KIRO_ENDPOINT_FALLBACK_STATUSES.includes(status)) {
+      const creds = this._lastCredentials || {};
+      if (isKiroGatewayAcceptable(creds?.providerSpecificData?.authMethod)) {
+        const urls = this.getOrderedBaseUrls(creds);
+        if (isKiroGatewayUrl(urls[urlIndex] || "") && urlIndex + 1 < urls.length) {
+          return true;
+        }
+      }
+      return false;
+    }
+    return super.shouldRetry(status, urlIndex);
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
