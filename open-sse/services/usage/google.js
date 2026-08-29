@@ -158,54 +158,85 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     const data = await response.json();
     const quotas = {};
 
-    // Parse model quotas (inspired by vscode-antigravity-cockpit)
+    // Parse model quotas into 4 consolidated family buckets (inspired by vscode-antigravity-cockpit):
+    // 1. Claude Sonnet 4.6 (Thinking)
+    // 2. Claude Opus 4.6 (Thinking)
+    // 3. GPT-OSS 120B (Medium)
+    // 4. Gemini Family (consolidates all Gemini models sharing the unified upstream quota pool)
     if (data.models) {
-      // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
-      const importantModels = [
-        'gemini-3.7-flash-high',
-        'gemini-3.7-flash-medium',
-        'gemini-3.7-flash-low',
-        'gemini-3.6-flash-high',
-        'gemini-3.6-flash-medium',
-        'gemini-3.6-flash-low',
-        'gemini-3.5-flash-low',
-        'gemini-3.5-flash-extra-low',
-        'gemini-pro-agent',
-        'gemini-3.1-pro-low',
-        'claude-sonnet-4-6',
-        'claude-opus-4-6-thinking',
-        'gpt-oss-120b-medium',
-        // Image generation models
-        'gemini-3.1-flash-image',
-      ];
+      let geminiRemainingFraction = null;
+      let geminiResetTime = null;
 
       for (const [modelKey, info] of Object.entries(data.models)) {
-        // Skip models without quota info
-        if (!info.quotaInfo) {
+        // Skip models without quota info or internal models
+        if (!info?.quotaInfo || info.isInternal) {
           continue;
         }
 
-        // Skip internal models and non-important models
-        if (info.isInternal || !importantModels.includes(modelKey)) {
+        const remainingFraction = info.quotaInfo.remainingFraction != null
+          ? Number(info.quotaInfo.remainingFraction)
+          : null;
+        if (remainingFraction == null) continue;
+
+        // Group all Gemini models into the shared Gemini Family pool
+        if (modelKey.startsWith("gemini-") || modelKey.includes("gemini")) {
+          if (geminiRemainingFraction === null || remainingFraction < geminiRemainingFraction) {
+            geminiRemainingFraction = remainingFraction;
+          }
+          if (info.quotaInfo.resetTime && (!geminiResetTime || new Date(info.quotaInfo.resetTime) < new Date(geminiResetTime))) {
+            geminiResetTime = info.quotaInfo.resetTime;
+          }
           continue;
         }
 
-        const remainingFraction = info.quotaInfo.remainingFraction || 0;
-        const remainingPercentage = remainingFraction * 100;
+        // Direct non-Gemini family models
+        if (modelKey === "claude-sonnet-4-6" || modelKey.includes("claude-sonnet")) {
+          const total = 1000;
+          const remaining = Math.round(total * remainingFraction);
+          quotas["claude-sonnet-4-6"] = {
+            used: total - remaining,
+            total,
+            resetAt: parseResetTime(info.quotaInfo.resetTime),
+            remainingPercentage: remainingFraction * 100,
+            unlimited: false,
+            displayName: info.displayName || "Claude Sonnet 4.6 (Thinking)",
+          };
+        } else if (modelKey === "claude-opus-4-6-thinking" || modelKey.includes("claude-opus")) {
+          const total = 1000;
+          const remaining = Math.round(total * remainingFraction);
+          quotas["claude-opus-4-6-thinking"] = {
+            used: total - remaining,
+            total,
+            resetAt: parseResetTime(info.quotaInfo.resetTime),
+            remainingPercentage: remainingFraction * 100,
+            unlimited: false,
+            displayName: info.displayName || "Claude Opus 4.6 (Thinking)",
+          };
+        } else if (modelKey === "gpt-oss-120b-medium" || modelKey.includes("gpt-oss")) {
+          const total = 1000;
+          const remaining = Math.round(total * remainingFraction);
+          quotas["gpt-oss-120b-medium"] = {
+            used: total - remaining,
+            total,
+            resetAt: parseResetTime(info.quotaInfo.resetTime),
+            remainingPercentage: remainingFraction * 100,
+            unlimited: false,
+            displayName: info.displayName || "GPT-OSS 120B (Medium)",
+          };
+        }
+      }
 
-        // Convert percentage to used/total for UI compatibility
-        const total = 1000; // Normalized base
-        const remaining = Math.round(total * remainingFraction);
-        const used = total - remaining;
-
-        // Use modelKey as key (matches PROVIDER_MODELS id)
-        quotas[modelKey] = {
-          used,
+      // Add consolidated Gemini Family if any Gemini models were found
+      if (geminiRemainingFraction !== null) {
+        const total = 1000;
+        const remaining = Math.round(total * geminiRemainingFraction);
+        quotas["gemini-family"] = {
+          used: total - remaining,
           total,
-          resetAt: parseResetTime(info.quotaInfo.resetTime),
-          remainingPercentage,
+          resetAt: parseResetTime(geminiResetTime),
+          remainingPercentage: geminiRemainingFraction * 100,
           unlimited: false,
-          displayName: info.displayName || modelKey,
+          displayName: "Gemini Family",
         };
       }
     }

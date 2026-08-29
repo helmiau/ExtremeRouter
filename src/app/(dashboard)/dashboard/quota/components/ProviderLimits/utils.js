@@ -328,6 +328,13 @@ export function parseQuotaData(provider, data) {
 
       case "antigravity":
         if (data.quotas) {
+          const agOrder = [
+            "claude-sonnet-4-6",
+            "claude-opus-4-6-thinking",
+            "gpt-oss-120b-medium",
+            "gemini-family",
+          ];
+          const agOrderMap = new Map(agOrder.map((k, i) => [k, i]));
           Object.entries(data.quotas).forEach(([modelKey, quota]) => {
             normalizedQuotas.push({
               name: quota.displayName || modelKey,
@@ -337,6 +344,11 @@ export function parseQuotaData(provider, data) {
               resetAt: quota.resetAt || null,
               remainingPercentage: quota.remainingPercentage,
             });
+          });
+          normalizedQuotas.sort((a, b) => {
+            const ordA = agOrderMap.get(a.modelKey) ?? 999;
+            const ordB = agOrderMap.get(b.modelKey) ?? 999;
+            return ordA - ordB;
           });
         }
         break;
@@ -631,19 +643,20 @@ export function parseQuotaData(provider, data) {
     return [];
   }
 
-  // Sort quotas according to PROVIDER_MODELS order
-  const modelOrder = getModelsByProviderId(provider);
-  if (modelOrder.length > 0) {
-    const orderMap = new Map(modelOrder.map((m, i) => [m.id, i]));
-    
-    normalizedQuotas.sort((a, b) => {
-      // Use modelKey for antigravity, otherwise use name
-      const keyA = a.modelKey || a.name;
-      const keyB = b.modelKey || b.name;
-      const orderA = orderMap.get(keyA) ?? 999;
-      const orderB = orderMap.get(keyB) ?? 999;
-      return orderA - orderB;
-    });
+  // Sort quotas according to PROVIDER_MODELS order (except antigravity which has its own family sort)
+  if (provider !== "antigravity") {
+    const modelOrder = getModelsByProviderId(provider);
+    if (modelOrder.length > 0) {
+      const orderMap = new Map(modelOrder.map((m, i) => [m.id, i]));
+      
+      normalizedQuotas.sort((a, b) => {
+        const keyA = a.modelKey || a.name;
+        const keyB = b.modelKey || b.name;
+        const orderA = orderMap.get(keyA) ?? 999;
+        const orderB = orderMap.get(keyB) ?? 999;
+        return orderA - orderB;
+      });
+    }
   }
 
   return normalizedQuotas;
