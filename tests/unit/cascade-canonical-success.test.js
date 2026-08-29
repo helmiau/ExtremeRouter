@@ -55,3 +55,58 @@ describe("Cascade: stage escalation gated on finalized logicalSuccess", () => {
     expect(out.status).toBe(200);
   });
 });
+
+// ---- G2-E.3: Cascade must NOT own retry/fallback; policy is leaf-owned ----
+describe("Cascade: policy ownership (G2-E.3)", () => {
+  const failedStage = (policy, overrides = {}) => ({
+    success: false, status: 502, error: "boom",
+    response: jsonRes({ error: { message: "boom" } }, 502),
+    canonicalAttempt: { source: "provider", transportOk: true, completionState: "failure", logicalSuccess: false, classification: "provider_failure", reason: "provider_error", ...overrides, policy },
+  });
+
+  it("failed stage with fallbackEligible=true advances, is NOT re-run by cascade", async () => {
+    const calls = [];
+    const fake = vi.fn(async (b, m) => {
+      calls.push(m);
+      if (m === "cheap") return failedStage({ fallbackEligible: true, stopProgression: false, retryable: false });
+      return { success: true, status: 200, response: jsonRes(confident("good")), canonicalAttempt: attempt() };
+    });
+    const out = await handleCascadeChat({ body: { model: "c" }, models: ["cheap", "strong"], handleSingleModel: fake, log, comboName: "c", tuning: {}, signal: undefined, runBudget: null });
+    expect(calls).toEqual(["cheap", "strong"]); // each stage once; no per-stage fallback loop
+    expect(out.status).toBe(200);
+  });
+
+  it("retryable=true stage is NOT double-retried by cascade", async () => {
+    const calls = [];
+    const fake = vi.fn(async (b, m) => {
+      calls.push(m);
+      if (m === "cheap") return failedStage({ fallbackEligible: false, stopProgression: false, retryable: true });
+      return { success: true, status: 200, response: jsonRes(confident("good")), canonicalAttempt: attempt() };
+    });
+    await handleCascadeChat({ body: { model: "c" }, models: ["cheap", "strong"], handleSingleModel: fake, log, comboName: "c", tuning: {}, signal: undefined, runBudget: null });
+    expect(calls.filter((m) => m === "cheap")).toHaveLength(1); // no cascade-level retry
+  });
+
+  it("client_abort stage does NOT cause cascade fallback/retry", async () => {
+    const calls = [];
+    const fake = vi.fn(async (b, m) => {
+      calls.push(m);
+      if (m === "cheap") return failedStage({ fallbackEligible: false, stopProgression: true, retryable: false }, { classification: "client_abort", reason: "client_abort" });
+      return { success: true, status: 200, response: jsonRes(confident("good")), canonicalAttempt: attempt() };
+    });
+    const out = await handleCascadeChat({ body: { model: "c" }, models: ["cheap", "strong"], handleSingleModel: fake, log, comboName: "c", tuning: {}, signal: undefined, runBudget: null });
+    expect(calls.filter((m) => m === "cheap")).toHaveLength(1);
+    expect(out.status).toBe(200);
+  });
+
+  it("user-error (400) stage with stopProgression=true does NOT fallback", async () => {
+    const calls = [];
+    const fake = vi.fn(async (b, m) => {
+      calls.push(m);
+      if (m === "cheap") return failedStage({ fallbackEligible: false, stopProgression: true, retryable: false }, { classification: "transport_failure", reason: "http_400", completionState: "failure" });
+      return { success: true, status: 200, response: jsonRes(confident("good")), canonicalAttempt: attempt() };
+    });
+    await handleCascadeChat({ body: { model: "c" }, models: ["cheap", "strong"], handleSingleModel: fake, log, comboName: "c", tuning: {}, signal: undefined, runBudget: null });
+    expect(calls.filter((m) => m === "cheap")).toHaveLength(1); // no re-run
+  });
+});

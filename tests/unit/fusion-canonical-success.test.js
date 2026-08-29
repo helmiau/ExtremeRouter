@@ -74,3 +74,67 @@ describe("Fusion: panel leg gated on finalized logicalSuccess", () => {
     expect(fake.mock.calls.some(([b, m]) => m === "a" && b?.stream === true)).toBe(true);
   });
 });
+
+// ---- G2-E.3: Fusion must NOT own retry/fallback; policy is leaf-owned ----
+describe("Fusion: policy ownership (G2-E.3)", () => {
+  const failedLeg = (policy, overrides = {}) => ({
+    success: false, status: 502, error: "boom",
+    response: jsonRes({ error: { message: "boom" } }, 502),
+    canonicalAttempt: { source: "provider", transportOk: true, completionState: "failure", logicalSuccess: false, classification: "provider_failure", reason: "provider_error", ...overrides, policy },
+  });
+
+  it("failed leg with fallbackEligible=true is dropped, NOT re-run inside fusion", async () => {
+    // If Fusion wrongly owned fallback, it would call handleSingleModel again for
+    // the failed panel. It must invoke each panel exactly once (fan-out) and drop
+    // the failed leg; the judge still runs from survivors.
+    const calls = [];
+    const fake = vi.fn(async (b, m) => {
+      calls.push(m);
+      if (m === "judge") return { success: true, status: 200, response: jsonRes(textBody("final")), canonicalAttempt: attempt() };
+      if (m === "a") return failedLeg({ fallbackEligible: true, stopProgression: false, retryable: false });
+      return { success: true, status: 200, response: jsonRes(textBody("p-b")), canonicalAttempt: attempt() };
+    });
+    const out = await handleFusionChat({ body: { model: "f" }, models: ["a", "b"], handleSingleModel: fake, log, comboName: "f", judgeModel: "judge", tuning: {}, signal: undefined, runBudget: null });
+    // "a" failed → dropped. "a" must NOT be called a second time (no per-leg fallback loop).
+    expect(calls.filter((m) => m === "a")).toHaveLength(1);
+    expect(out.status).toBe(200);
+  });
+
+  it("failed leg with retryable=true is NOT double-retried by fusion", async () => {
+    const calls = [];
+    const fake = vi.fn(async (b, m) => {
+      calls.push(m);
+      if (m === "judge") return { success: true, status: 200, response: jsonRes(textBody("final")), canonicalAttempt: attempt() };
+      if (m === "a") return failedLeg({ fallbackEligible: false, stopProgression: false, retryable: true });
+      return { success: true, status: 200, response: jsonRes(textBody("p-b")), canonicalAttempt: attempt() };
+    });
+    await handleFusionChat({ body: { model: "f" }, models: ["a", "b"], handleSingleModel: fake, log, comboName: "f", judgeModel: "judge", tuning: {}, signal: undefined, runBudget: null });
+    // Retry stays at the leaf (handleSingleModelChat/executor); fusion fans out once.
+    expect(calls.filter((m) => m === "a")).toHaveLength(1);
+  });
+
+  it("client_abort leg is dropped without triggering fusion fallback/retry", async () => {
+    const calls = [];
+    const fake = vi.fn(async (b, m) => {
+      calls.push(m);
+      if (m === "judge") return { success: true, status: 200, response: jsonRes(textBody("final")), canonicalAttempt: attempt() };
+      if (m === "a") return failedLeg({ fallbackEligible: false, stopProgression: true, retryable: false }, { classification: "client_abort", reason: "client_abort" });
+      return { success: true, status: 200, response: jsonRes(textBody("p-b")), canonicalAttempt: attempt() };
+    });
+    const out = await handleFusionChat({ body: { model: "f" }, models: ["a", "b"], handleSingleModel: fake, log, comboName: "f", judgeModel: "judge", tuning: {}, signal: undefined, runBudget: null });
+    expect(calls.filter((m) => m === "a")).toHaveLength(1); // no retry
+    expect(out.status).toBe(200);
+  });
+
+  it("user-error (400) leg with stopProgression=true does NOT cause panel fallback", async () => {
+    const calls = [];
+    const fake = vi.fn(async (b, m) => {
+      calls.push(m);
+      if (m === "judge") return { success: true, status: 200, response: jsonRes(textBody("final")), canonicalAttempt: attempt() };
+      if (m === "a") return failedLeg({ fallbackEligible: false, stopProgression: true, retryable: false }, { classification: "transport_failure", reason: "http_400", completionState: "failure" });
+      return { success: true, status: 200, response: jsonRes(textBody("p-b")), canonicalAttempt: attempt() };
+    });
+    await handleFusionChat({ body: { model: "f" }, models: ["a", "b"], handleSingleModel: fake, log, comboName: "f", judgeModel: "judge", tuning: {}, signal: undefined, runBudget: null });
+    expect(calls.filter((m) => m === "a")).toHaveLength(1); // no fallback/re-run
+  });
+});
