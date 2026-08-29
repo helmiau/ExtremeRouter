@@ -141,4 +141,44 @@ describe("G2-D: Combo consumes canonical policy for candidate progression", () =
     const out = await run(["a", "b"], fake);
     expect(fake).toHaveBeenCalledTimes(1);
   });
+
+  // ---- G2-E.1: finalized policy precedence over legacy helpers (mandatory) ----
+
+  it("NEGATIVE: finalized fallbackEligible=false overrides a status the legacy helper would fallback", async () => {
+    // 502 normally falls back via checkFallbackError (legacy). With a FINALIZED
+    // policy saying fallbackEligible=false, candidate 2 must NOT be invoked.
+    const finalizedNoFallback = failResult(502, { classification: "provider_failure", reason: "provider_error" });
+    // Force the policy field the test cares about, independent of the matrix.
+    finalizedNoFallback.canonicalAttempt.policy = { fallbackEligible: false, stopProgression: false, retryable: false };
+    const fake = vi.fn(async () => finalizedNoFallback);
+    const out = await run(["a", "b"], fake);
+    expect(fake).toHaveBeenCalledTimes(1);
+    expect(out.status).toBe(502);
+  });
+
+  it("POSITIVE: finalized fallbackEligible=true overrides a status the legacy helper would stop", async () => {
+    // 400 is a nonRetryableClientError → legacy stops progression. With a
+    // FINALIZED policy saying fallbackEligible=true, candidate 2 must run.
+    const finalizedFallback = failResult(400, { classification: "transport_failure", reason: "http_400" });
+    finalizedFallback.canonicalAttempt.policy = { fallbackEligible: true, stopProgression: false, retryable: false };
+    const calls = [];
+    const fake = vi.fn(async (_b, m) => {
+      calls.push(m);
+      return m === "a" ? finalizedFallback : okResult();
+    });
+    const out = await run(["a", "b"], fake);
+    expect(calls).toEqual(["a", "b"]);
+    expect(out.status).toBe(200);
+  });
+
+  it("COOLDOWN separation: fallbackEligible=false with a status that yields cooldownMs still does NOT fallback", async () => {
+    // 502 would yield a cooldown via checkFallbackError. The policy decides
+    // WHETHER (no), the cooldown helper only decides HOW LONG. No fallback.
+    const finalizedNoFallback = failResult(502, { classification: "provider_failure", reason: "provider_error" });
+    finalizedNoFallback.canonicalAttempt.policy = { fallbackEligible: false, stopProgression: false, retryable: false };
+    const fake = vi.fn(async () => finalizedNoFallback);
+    const out = await run(["a", "b"], fake);
+    expect(fake).toHaveBeenCalledTimes(1);
+    expect(out.status).toBe(502);
+  });
 });

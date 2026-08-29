@@ -755,8 +755,13 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
       }
       shouldFallback = finalizedPolicy.fallbackEligible === true;
     } else {
-        // No canonical attempt (shouldn't happen post-G2-B on provider paths,
-        // but defend): fall back to legacy status-based health.
+        // Legacy compatibility bridge: only reached when no FINALIZED canonical
+        // policy exists (pre-provider validation / provisional streaming state).
+        // It must NEVER run once result.canonicalAttempt.policy is present — that
+        // path is authoritative above. markAccountUnavailable's RETURN is the
+        // fallback signal here (legacy), not on the policy path (§25). Diagnosed
+        // so the bridge is observable and removable once every attempt finalizes.
+        log.warn("AUTH", `Legacy account-fallback bridge used (no finalized canonical policy) for ${provider}/${model}`, { status: result.status });
         const vaultKey = credentials.connectionId === "vault" ? credentials.connectionName?.replace("Vault · ", "") : null;
         ({ shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs, vaultKey));
         if (result.status !== 499) {

@@ -481,6 +481,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
           : finalizedPolicy.fallbackEligible === true;
         if (shouldFallback) cooldownMs = checkFallbackError(status, errorText).cooldownMs;
       } else {
+        // Legacy compatibility bridge: only reached when no FINALIZED canonical
+        // policy exists (pre-provider validation / older internal paths). It must
+        // NEVER run once result.canonicalAttempt.policy is present — that path is
+        // authoritative above. Diagnosed (not spammed) so the bridge is observable
+        // and removable once every provider attempt finalizes a canonical policy.
+        log.warn("COMBO", `Legacy fallback bridge used (no finalized canonical policy) for ${modelStr}`, { status });
         const nonRetryableClientError = [400, 405, 406, 413, 415, 422].includes(status);
         ({ shouldFallback, cooldownMs } = nonRetryableClientError
           ? { shouldFallback: false, cooldownMs: 0 }
