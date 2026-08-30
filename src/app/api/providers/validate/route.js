@@ -324,6 +324,7 @@ export async function POST(request) {
 
         case "glm":
         case "glm-cn":
+        case "zcode":
         case "kimi":
         case "minimax":
         case "minimax-cn":

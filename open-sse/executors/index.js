@@ -103,6 +103,8 @@ const executors = {
   // GLM effort tiers (glm-5.3-high/-low) resolved to base id + reasoning_effort.
   glm: new GlmExecutor("glm"),
   "glm-cn": new GlmExecutor("glm-cn"),
+  // ZCode (zcode.z.ai OAuth) — same Z.ai coding endpoints as glm, same effort tiers.
+  zcode: new GlmExecutor("zcode"),
   // Web-cookie providers (ported from OmniRoute)
   "deepseek-web": new DeepSeekWebExecutor(),
   "qwen-web": new QwenWebExecutor(),

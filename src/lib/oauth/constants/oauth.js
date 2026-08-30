@@ -146,6 +146,11 @@ export const FREEBUFF_CONFIG = {
   premiumModelIds: ["deepseek/deepseek-v4-pro", "openai/gpt-5.6-luna", "minimax/minimax-m3"],
 };
 
+// ZCode — Zhipu's coding agent (zcode.z.ai). Device-style browser flow against
+// zcode.z.ai /oauth/cli (init+poll); after approval the Z.ai OAuth token is
+// exchanged for the account's "zcode-api-key" coding-plan key (see providers.js).
+export const ZCODE_CONFIG = { ...PROVIDER_OAUTH["zcode"] };
+
 // Zed Hosted AI — import user_id + access_token from Zed Editor, mint llm_token.
 // Not a browser OAuth flow; credentials are imported from the Zed keychain.
 export const ZED_CONFIG = {

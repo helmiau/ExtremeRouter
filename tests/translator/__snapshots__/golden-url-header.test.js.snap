@@ -4806,6 +4806,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > zai-web → headers 
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > zcode → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > zed → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -6596,6 +6615,13 @@ exports[`GOLDEN buildUrl (default executor providers) > zai-web → url (stream 
 {
   "nonStream": "https://chat.z.ai",
   "stream": "https://chat.z.ai",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > zcode → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.z.ai/api/coding/paas/v4/chat/completions",
+  "stream": "https://api.z.ai/api/coding/paas/v4/chat/completions",
 }
 `;
 

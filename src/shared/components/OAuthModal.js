@@ -160,7 +160,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       setError(null);
 
       // Device code flow providers
-      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode", "codebuddy-cn", "codebuddy-intl", "workbuddy", "qoder", "freebuff"];
+      const deviceCodeProviders = ["github", "qwen", "kiro", "kimi-coding", "kilocode", "codebuddy-cn", "codebuddy-intl", "workbuddy", "qoder", "freebuff", "zcode"];
       if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);
         setStep("waiting");
@@ -204,6 +204,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           ? {
               _fingerprintHash: data.fingerprintHash,
               _expiresAt: data.expiresAt,
+            }
+          : provider === "zcode"
+          ? {
+              // Poll endpoint authenticates with the locally generated
+              // pollToken — generated at device-code time, forwarded here.
+              _zcodePollToken: data._zcodePollToken,
             }
           : null;
         startPolling(

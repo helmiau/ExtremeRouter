@@ -51,6 +51,9 @@ const USAGE_HANDLERS = {
   ollama: (c) => getOllamaUsage(c.apiKey, c.proxyOptions),
   glm: (c) => getGlmUsage(c.apiKey, c.provider, c.proxyOptions),
   "glm-cn": (c) => getGlmUsage(c.apiKey, c.provider, c.proxyOptions),
+  // ZCode stores the derived coding-plan key ("id.secret") in apiKey — same
+  // quota endpoint + response shape as glm (international region).
+  zcode: (c) => getGlmUsage(c.apiKey, c.provider, c.proxyOptions),
   minimax: (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
   "minimax-cn": (c) => getMiniMaxUsage(c.apiKey, c.provider, c.proxyOptions),
   "vercel-ai-gateway": (c) => getVercelAiGatewayUsage(c.apiKey, c.proxyOptions),

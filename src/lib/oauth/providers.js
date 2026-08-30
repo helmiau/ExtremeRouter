@@ -31,10 +31,12 @@ import {
   CODEBUDDY_CONFIG_WORKBUDDY,
   KIMCHI_CONFIG,
   FREEBUFF_CONFIG,
+  ZCODE_CONFIG,
   getOAuthClientMetadata,
 } from "./constants/oauth";
 import { tlsFetch } from "open-sse/utils/tlsClient.js";
 import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "./constants/xai";
+import { ZcodeService } from "./services/zcode";
 import {
   validateXaiOAuthEndpoint,
   decodeXaiIdTokenEmail,
@@ -1567,7 +1569,80 @@ const PROVIDERS = {
       };
     },
   },
+
+  // ZCode (Zhipu / Z.ai) — device-style browser polling flow, ported from the
+  // ZCode app bundle (zcode.z.ai /oauth/cli). The full flow logic (init/poll +
+  // OAuth-token → coding-plan API key derivation) lives in
+  // lib/oauth/services/zcode.js (ZcodeService).
+  zcode: {
+    config: ZCODE_CONFIG,
+    flowType: "device_code",
+    requestDeviceCode: async (config) => {
+      const svc = new ZcodeService(config);
+      const flow = await svc.initiateDeviceFlow();
+      return {
+        device_code: flow.flowId,
+        user_code: "",
+        verification_uri: flow.authorizeUrl,
+        verification_uri_complete: flow.authorizeUrl,
+        expires_in: flow.expiresInSeconds,
+        interval: flow.pollIntervalSec,
+        _zcodePollToken: flow.pollToken,
+      };
+    },
+    pollToken: async (config, deviceCode, codeVerifier, extraData) => {
+      const svc = new ZcodeService(config);
+      const pollToken = extraData?._zcodePollToken;
+      if (!pollToken || !deviceCode) {
+        return { ok: false, data: { error: "invalid_request", error_description: "Missing ZCode poll token or flow id" } };
+      }
+      let result;
+      try {
+        result = await svc.pollDeviceFlow({ flowId: deviceCode, pollToken });
+      } catch (err) {
+        return { ok: false, data: { error: "poll_failed", error_description: err.message } };
+      }
+      if (result.status === "pending") return { ok: true, data: { error: "authorization_pending" } };
+      if (result.status === "failed") {
+        return { ok: false, data: { error: "auth_failed", error_description: "ZCode authorization failed — please retry login" } };
+      }
+      // Ready → derive the coding-plan API key (the runtime credential).
+      let apiKey;
+      try {
+        apiKey = await svc.resolveCodingPlanApiKey(result.zaiAccessToken);
+      } catch (err) {
+        return { ok: false, data: { error: "key_derivation_failed", error_description: err.message } };
+      }
+      return {
+        ok: true,
+        data: {
+          access_token: result.zaiAccessToken,
+          _zcodeApiKey: apiKey,
+          _zcodeUserId: result.user.userId,
+          _zcodeEmail: result.user.email,
+          _zcodeName: result.user.name,
+        },
+      };
+    },
+    mapTokens: (tokens) => {
+      const userId = tokens._zcodeUserId || "";
+      const email = (tokens._zcodeEmail || "").trim() || (userId ? `zcode-user-${userId}` : null);
+      return {
+        accessToken: tokens.access_token,
+        // Long-lived coding-plan key — the credential the executor sends.
+        apiKey: tokens._zcodeApiKey || null,
+        refreshToken: null,
+        email,
+        displayName: (tokens._zcodeName || "").trim() || null,
+        providerSpecificData: {
+          authMethod: "device",
+          ...(userId ? { userId } : {}),
+        },
+      };
+    },
+  },
 };
+
 
 /**
  * Get provider handler
