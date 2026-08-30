@@ -278,6 +278,139 @@ describe("buildCatalogDelta (normalize core)", () => {
   });
 });
 
+// ── One vote per provider (modality majority granularity) ────────────────────
+
+describe("one-vote-per-provider modality tally", () => {
+  const vision = (input) => ({ modalities: { input: input || ["text"] } });
+
+  it("§12 mandatory: variant stacking cannot flip a majority (A×3 variants vs B, C)", () => {
+    // Provider A ships three ids normalizing to model-x, all vision=true;
+    // B and C each ship one text-only model-x. Record-count tally would give
+    // 3/5 = 60% vision; provider votes give 1/3 = 33% → text-only wins.
+    const catalog = {
+      provA: { models: { "model-x": vision(["text", "image"]), "model-x:variant-1": vision(["text", "image"]), "model-x:variant-2": vision(["text", "image"]) } },
+      provB: { models: { "model-x": vision(["text"]) } },
+      provC: { models: { "model-x": vision(["text"]) } },
+    };
+    const { models } = buildCatalogDelta(catalog, [], {});
+    // No modality passes → the model contributes nothing to the snapshot.
+    expect(models["model-x"]).toBeUndefined();
+  });
+
+  it("Case A: one provider, many aliases → exactly one vote", () => {
+    const catalog = {
+      provA: { models: { "model-x": vision(["text", "image"]), "model-x:free": vision(["text", "image"]), "model-x:preview": vision(["text", "image"]) } },
+    };
+    const { models } = buildCatalogDelta(catalog, [], {});
+    // 1 provider vote, 1/1 = 100% → vision on (threshold unchanged).
+    expect(models["model-x"].vision).toBe(true);
+  });
+
+  it("Case B: many providers, one canonical model → one vote each", () => {
+    const catalog = {
+      provA: { models: { "model-x": vision(["text", "image"]) } },
+      provB: { models: { "model-x": vision(["text", "image"]) } },
+      provC: { models: { "model-x": vision(["text", "image"]) } },
+    };
+    const { models } = buildCatalogDelta(catalog, [], {});
+    expect(models["model-x"].vision).toBe(true); // 3/3
+  });
+
+  it("Case C: same provider, different canonical models → independent votes", () => {
+    const catalog = {
+      provA: { models: { "model-x": vision(["text", "image"]), "model-y": vision(["text"]) } },
+    };
+    const { models } = buildCatalogDelta(catalog, [], {});
+    expect(models["model-x"].vision).toBe(true);
+    expect(models["model-y"]).toBeUndefined(); // 0/1 image < 0.5 → omitted
+  });
+
+  it("Case D: conflicting duplicate aliases use the deterministic first-record representative", () => {
+    const catalog = {
+      // Same provider: base record text-only, later variant claims image.
+      // First record wins — the provider's vote is text-only, stable across
+      // syncs regardless of later variants.
+      provA: { models: { "model-x": vision(["text"]), "model-x:variant": vision(["text", "image"]) } },
+      provB: { models: { "model-x": vision(["text"]) } },
+      provC: { models: { "model-x": vision(["text"]) } },
+    };
+    const { models } = buildCatalogDelta(catalog, [], {});
+    expect(models["model-x"]).toBeUndefined(); // A voted text-only: 0/3 image < 0.5
+  });
+
+  it("Case D (positive): first record's positive evidence survives later variants", () => {
+    const catalog = {
+      provA: { models: { "model-x": vision(["text", "image"]), "model-x:variant": vision(["text"]) } },
+      provB: { models: { "model-x": vision(["text", "image"]) } },
+    };
+    const { models } = buildCatalogDelta(catalog, [], {});
+    expect(models["model-x"].vision).toBe(true); // 2/2 providers voted image
+  });
+
+  it("Case E: records under an invalid provider shape are skipped, not merged", () => {
+    const catalog = {
+      brokenProvider: { models: { "model-x": null } },
+      alsoBroken: null,
+      provA: { models: { "model-x": vision(["text", "image"]) } },
+    };
+    const { models } = buildCatalogDelta(catalog, [], {});
+    expect(models["model-x"]).toEqual({ vision: true }); // only provA voted
+  });
+
+  it("Case F: empty canonical ids contribute no vote", () => {
+    const catalog = {
+      provA: { models: { "": vision(["text", "image"]) } },
+      provB: { models: { "model-x": vision(["text", "image"]) } },
+    };
+    const { models } = buildCatalogDelta(catalog, [], {});
+    expect(Object.keys(models)).toEqual(["model-x"]);
+  });
+
+  it("§14 invariant: adding another alias for the same provider+model never adds a vote", () => {
+    const one = buildCatalogDelta(
+      { provA: { models: { "model-x": vision(["text", "image"]) } } }, [], {},
+    );
+    const withAlias = buildCatalogDelta(
+      { provA: { models: { "model-x": vision(["text", "image"]), "model-x:free": vision(["text", "image"]) } } }, [], {},
+    );
+    const withTwoAliases = buildCatalogDelta(
+      { provA: { models: { "model-x": vision(["text", "image"]), "model-x:free": vision(["text", "image"]), "model-x:preview": vision(["text", "image"]) } } }, [], {},
+    );
+    // The provider's vote tally is identical in all three worlds (total stays 1).
+    expect(one.models).toEqual(withAlias.models);
+    expect(one.models).toEqual(withTwoAliases.models);
+  });
+
+  it("§15 idempotency: repeated normalization of the same catalog is stable", () => {
+    const catalog = {
+      provA: { models: { "model-x": vision(["text", "image"]), "model-x:free": vision(["text", "image"]) } },
+      provB: { models: { "model-x": vision(["text"]) } },
+    };
+    const first = buildCatalogDelta(catalog, [], {});
+    const second = buildCatalogDelta(catalog, [], {});
+    const third = buildCatalogDelta(catalog, [], {});
+    expect(second).toEqual(first);
+    expect(third).toEqual(first);
+  });
+
+  it("§4/§8: provider limit records keep last-record-wins (dedup is modality-only)", () => {
+    const catalog = {
+      provA: {
+        models: {
+          "model-x": { modalities: { input: ["text"] }, limit: { context: 1000000, output: 64000 } },
+          "model-x:variant": { modalities: { input: ["text"] }, limit: { context: 131072, output: 16384 } },
+        },
+      },
+    };
+    const entries = [{ provider: "provA", model: "model-x", contextLength: null, current: {} }];
+    const { providers } = buildCatalogDelta(catalog, entries, {});
+    // Limits layer is untouched by the vote dedup: the variant's own numbers
+    // remain the provider-scoped record for its canonical id.
+    expect(providers.provA["model-x"].contextWindow).toBe(131072);
+    expect(providers.provA["model-x"].maxOutput).toBe(16384);
+  });
+});
+
 // ── D/E. Sync failure isolation + ETag (fetchAndNormalizeCatalog) ───────────
 
 describe("D/E. conditional sync + failure isolation", () => {

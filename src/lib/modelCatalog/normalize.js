@@ -94,6 +94,12 @@ export function buildCatalogDelta(rawCatalog, entries, opts = {}) {
   for (const [providerId, provider] of Object.entries(rawCatalog)) {
     if (!provider || typeof provider !== "object" || !provider.models || typeof provider.models !== "object") continue;
     const models = {};
+    // Modality majority is counted at PROVIDER × canonical-model granularity:
+    // multiple ids from one provider can normalize to the same model
+    // (foo, foo:free, foo:preview …) and represent ONE provider vote — they
+    // must not inflate the denominator. First record wins (deterministic:
+    // the same upstream payload yields the same representative).
+    const counted = new Set();
     for (const [modelId, model] of Object.entries(provider.models)) {
       if (!model || typeof model !== "object") continue;
       const id = catalogBaseId(modelId);
@@ -105,7 +111,12 @@ export function buildCatalogDelta(rawCatalog, entries, opts = {}) {
       const output = model.limit && isPositiveLimit(model.limit.output) ? model.limit.output : null;
       if (!inputs.length && !context && !output) continue;
 
+      // Per-provider map for the LIMITS layer — gateway-scoped, kept as-is
+      // (last record wins); deduplication applies to modality votes only.
       models[id] = { inputs, context, output };
+
+      if (counted.has(id)) continue;
+      counted.add(id);
 
       const counts = tally[id] || (tally[id] = { total: 0 });
       counts.total += 1;

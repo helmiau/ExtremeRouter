@@ -172,6 +172,34 @@ describe("catalog sync scheduler", () => {
     expect(opts.limitTolerance).toBe(0.1);
   });
 
+  it("delta baseline detaches the synced catalog (no self-erasing deltas across runs)", async () => {
+    // Poison the in-memory catalog: if collectRegistryEntries measured the
+    // registry against THIS, a still-agreeing upstream value would look like
+    // "no change" and be dropped — the provider delta erases itself over runs.
+    catalogSource.setCatalogSnapshot(catalogSource.validateCatalogSnapshot({
+      schemaVersion: 1,
+      source: "models.dev",
+      syncedAt: Date.now(),
+      models: {},
+      providers: { "prov-a": { "model-x": { contextWindow: 12345, maxOutput: 999 } } },
+    }));
+
+    const pending = syncModelCatalog();
+    await flush();
+    workerInstances[0].postResult({ status: "unchanged" });
+    await pending;
+
+    // The baseline must be the hand-written tables alone: model-x has no
+    // registry-declared limit beyond its own contextWindow (128000), and the
+    // poisoned catalog values (12345/999) must NOT appear in the baseline —
+    // otherwise upstream 128000-ish values would diverge-check against them.
+    const entry = workerInstances.at(-1).opts.workerData.entries[0];
+    expect(entry.current.contextWindow).toBe(128000);
+    expect(entry.current.maxOutput).not.toBe(999);
+    // The reader is restored after the sync: catalog lookups work again.
+    expect(catalogSource.getCatalogSnapshot().models).toBeDefined();
+  });
+
   // ── 304 freshness semantics (validatedAt) ────────────────────────────────
 
   const seedSnapshot = (syncedAt, validatedAt, etag = '"e1"') => {

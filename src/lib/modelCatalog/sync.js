@@ -70,14 +70,23 @@ export function getCatalogState() {
   };
 }
 
-// Snapshot every registry model with its currently resolved capabilities so the
-// worker can compute a meaningful delta without importing app modules (the
-// worker cannot resolve bundler aliases).
+// Snapshot every registry model with the capabilities the HAND-WRITTEN tables
+// resolve on their own, so the delta computation can tell which upstream values
+// are actually a change.
+//
+// The previous synced catalog MUST be detached first. Leaving it installed
+// makes each delta relative to the LAST one: an upstream value that still
+// agrees with what we previously wrote looks like "no change" and is dropped —
+// the provider-limit delta erases itself over repeated syncs.
 function collectRegistryEntries() {
   // Imported lazily so merely loading this module (e.g. from a route in dev)
   // does not pull the whole registry into every entry point.
   return (async () => {
-    const { default: REGISTRY } = await import("open-sse/providers/registry/index.js");
+    const [{ default: REGISTRY }, { setCatalogSource }] = await Promise.all([
+      import("open-sse/providers/registry/index.js"),
+      import("open-sse/providers/capabilities.js"),
+    ]);
+    setCatalogSource(null);
     const entries = [];
     for (const provider of REGISTRY) {
       if (!Array.isArray(provider.models)) continue;
@@ -185,6 +194,11 @@ export async function syncModelCatalog() {
     console.log(`[model-catalog] sync failed; keeping last-known-good | ${state.lastError}`);
     return null;
   } finally {
+    // collectRegistryEntries detaches the catalog reader so the delta baseline
+    // is the hand-written tables alone; put it back whatever happened.
+    installCatalogSource().catch((err) => {
+      console.error(`[model-catalog] failed to restore catalog source: ${err?.message || err}`);
+    });
     state.running = false;
   }
 }
