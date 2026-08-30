@@ -146,7 +146,7 @@ export class BaseExecutor {
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
-      const headers = this.buildHeaders(credentials, stream, model, opencodeIdentity);
+      const headers = this.buildHeaders(credentials, stream, model, opencodeIdentity, urlIndex);
 
       if (!retryAttemptsByUrl[urlIndex]) retryAttemptsByUrl[urlIndex] = 0;
 

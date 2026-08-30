@@ -19,6 +19,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const [deviceData, setDeviceData] = useState(null);
   const [polling, setPolling] = useState(false);
   const [importingFreebuff, setImportingFreebuff] = useState(false);
+  const [importingZcode, setImportingZcode] = useState(false);
   const popupRef = useRef(null);
   const pollingAbortRef = useRef(false);
   const openedRef = useRef(false);
@@ -495,6 +496,29 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
   };
 
+  // ZCode: import the credential from the ZCode desktop app config
+  // (~/.zcode/v2/config.json → builtin:zai-start-plan). The route creates the
+  // connection server-side — success completes the modal immediately.
+  const handleZcodeImport = async () => {
+    if (provider !== "zcode") return;
+    setImportingZcode(true);
+    try {
+      const res = await fetch("/api/oauth/zcode/import", { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data?.success) {
+        setError(null);
+        setStep("success");
+        onSuccess?.();
+      } else {
+        setError(data?.error || "No ZCode credential found — log in to the ZCode desktop app first.");
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setImportingZcode(false);
+    }
+  };
+
   // Handle manual URL input
   const handleManualSubmit = async () => {
     try {
@@ -706,6 +730,30 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               <div className="flex items-center justify-center gap-2 text-sm text-text-muted">
                 <span className="material-symbols-outlined animate-spin">progress_activity</span>
                 Waiting for authorization...
+              </div>
+            )}
+            {/* ZCode: shortcut for users who are already logged into the ZCode
+                desktop app — read the session credential straight from the
+                app's local config instead of the browser flow. */}
+            {provider === "zcode" && (
+              <div className="mt-2">
+                <div className="flex items-center gap-3 my-1">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-xs text-text-muted uppercase tracking-wider">Or</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+                <Button
+                  variant="secondary"
+                  icon="download"
+                  fullWidth
+                  onClick={handleZcodeImport}
+                  disabled={importingZcode}
+                >
+                  {importingZcode ? "Detecting…" : "Import from ZCode desktop app"}
+                </Button>
+                <p className="mt-1 text-[10px] text-text-muted">
+                  Reads the session credential from ~/.zcode/v2/config.json
+                </p>
               </div>
             )}
           </>

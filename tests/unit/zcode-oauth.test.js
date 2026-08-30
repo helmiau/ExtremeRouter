@@ -118,6 +118,33 @@ describe("zcode executor", () => {
     expect(executor.shouldRetry(429, 2)).toBe(false);
   });
 
+  it("sends the JWT on the zcode-plan leg and the coding key on the coding legs", () => {
+    const executor = getExecutor("zcode");
+    const credentials = {
+      apiKey: "zcode-jwt",
+      providerSpecificData: { authMethod: "device", codingApiKey: "key-1.secret-1" },
+    };
+
+    // Leg 0 (zcode-plan): Start Plan JWT, unsigned — mirrors the ZCode app.
+    const leg0 = executor.buildHeaders(credentials, true, "glm-5.3", null, 0);
+    expect(leg0["x-api-key"]).toBe("zcode-jwt");
+    // Default (health checks etc.) resolves to the primary leg.
+    expect(executor.buildHeaders(credentials, true)["x-api-key"]).toBe("zcode-jwt");
+
+    // Legs 1-2 (bigmodel / api.z.ai coding plans): derived coding key.
+    const leg1 = executor.buildHeaders(credentials, true, "glm-5.3", null, 1);
+    expect(leg1["x-api-key"]).toBe("key-1.secret-1");
+    const leg2 = executor.buildHeaders(credentials, true, "glm-5.3", null, 2);
+    expect(leg2["x-api-key"]).toBe("key-1.secret-1");
+  });
+
+  it("falls back to the JWT on coding legs when no coding key exists", () => {
+    const executor = getExecutor("zcode");
+    const credentials = { apiKey: "zcode-jwt", providerSpecificData: { authMethod: "device" } };
+    const leg1 = executor.buildHeaders(credentials, true, "glm-5.3", null, 1);
+    expect(leg1["x-api-key"]).toBe("zcode-jwt");
+  });
+
   it("resolves glm-5.3 effort tiers", () => {
     expect(parseGlmEffortTier("glm-5.3-high")).toEqual({ baseModel: "glm-5.3", effort: "high" });
     expect(parseGlmEffortTier("glm-5.3-low")).toEqual({ baseModel: "glm-5.3", effort: "low" });
@@ -180,7 +207,7 @@ describe("ZcodeService.pollDeviceFlow", () => {
     expect(result).toEqual({ status: "failed" });
   });
 
-  it("returns ready with the zai access token + user profile", async () => {
+  it("returns ready with the JWT + zai access token + user profile", async () => {
     fetchResponses.set("/oauth/cli/poll", envelope({
       status: "ready",
       token: "zcode-jwt",
@@ -190,10 +217,17 @@ describe("ZcodeService.pollDeviceFlow", () => {
     const svc = new ZcodeService();
     const result = await svc.pollDeviceFlow({ flowId: "flow-1", pollToken: "tok" });
     expect(result.status).toBe("ready");
+    expect(result.zcodeJwt).toBe("zcode-jwt");
     expect(result.zaiAccessToken).toBe("zai-oauth-token");
     expect(result.user).toEqual({ userId: "u-1", email: "dev@example.com", name: "Dev" });
     // poll authenticates with the locally generated pollToken, not the JWT
     expect(fetchCalls[0].options.headers.Authorization).toBe("Bearer tok");
+  });
+
+  it("rejects a ready response without the JWT session token", async () => {
+    fetchResponses.set("/oauth/cli/poll", envelope({ status: "ready", zai: { access_token: "zai-oauth-token" } }));
+    const svc = new ZcodeService();
+    await expect(svc.pollDeviceFlow({ flowId: "flow-1", pollToken: "tok" })).rejects.toThrow(/Invalid ZCode poll response/);
   });
 
   it("rejects a ready response without a zai access token", async () => {
@@ -293,7 +327,7 @@ describe("zcode oauth provider entry (providers.js)", () => {
     expect(typeof provider.mapTokens).toBe("function");
   });
 
-  it("pollToken maps a ready flow to connection tokens with the derived apiKey", async () => {
+  it("pollToken maps a ready flow to connection tokens: JWT as apiKey + coding key in psd", async () => {
     fetchResponses.set("/oauth/cli/poll", envelope({
       status: "ready",
       token: "zcode-jwt",
@@ -317,17 +351,46 @@ describe("zcode oauth provider entry (providers.js)", () => {
     );
     expect(result.ok).toBe(true);
     expect(result.data.access_token).toBe("zai-oauth-token");
+    expect(result.data._zcodeJwt).toBe("zcode-jwt");
     expect(result.data._zcodeApiKey).toBe("key-1.secret-1");
 
     const tokens = provider.mapTokens(result.data);
     expect(tokens).toMatchObject({
+      // Start Plan JWT is the primary credential (zcode-plan leg)
+      apiKey: "zcode-jwt",
       accessToken: "zai-oauth-token",
-      apiKey: "key-1.secret-1",
       refreshToken: null,
       email: "dev@example.com",
       displayName: "Dev",
     });
-    expect(tokens.providerSpecificData).toEqual({ authMethod: "device", userId: "u-1" });
+    expect(tokens.providerSpecificData).toEqual({
+      authMethod: "device",
+      codingApiKey: "key-1.secret-1",
+      userId: "u-1",
+    });
+  });
+
+  it("pollToken survives a failed key derivation (Start-Plan-only account)", async () => {
+    fetchResponses.set("/oauth/cli/poll", envelope({
+      status: "ready",
+      token: "zcode-jwt",
+      user: { user_id: "u-2", email: "", name: "" },
+      zai: { access_token: "zai-oauth-token" },
+    }));
+    // coding-plan exchange chain fails entirely (e.g. no org access)
+    fetchResponses.set("/api/auth/z/login", envelope(null, 403, "not entitled"));
+
+    const { getProvider } = await import("../../src/lib/oauth/providers.js");
+    const provider = getProvider("zcode");
+    const result = await provider.pollToken(PROVIDER_OAUTH.zcode, "flow-1", null, { _zcodePollToken: "poll-token" });
+    expect(result.ok).toBe(true);
+    expect(result.data._zcodeJwt).toBe("zcode-jwt");
+    expect(result.data._zcodeApiKey).toBe("");
+
+    const tokens = provider.mapTokens(result.data);
+    expect(tokens.apiKey).toBe("zcode-jwt");
+    expect(tokens.providerSpecificData).toEqual({ authMethod: "device", userId: "u-2" });
+    expect(tokens.email).toBe("zcode-user-u-2");
   });
 
   it("pollToken reports pending without creating tokens", async () => {

@@ -78,7 +78,14 @@ export class ZcodeService {
 
   /**
    * Poll once for the flow result.
-   * @returns {Promise<{status:"pending"|"failed"}|{status:"ready", zaiAccessToken, user}>}
+   * @returns {Promise<{status:"pending"|"failed"}|{status:"ready", zcodeJwt, zaiAccessToken, user}>}
+   *
+   * `zcodeJwt` (data.token) is the Start Plan session credential the ZCode app
+   * writes into its own config (options.apiKey) and sends as x-api-key to the
+   * zcode-plan Anthropic leg — unsigned (parseClientSigningCredential only
+   * accepts "id.secret" shapes, so the JWT always takes the unsigned path).
+   * `zaiAccessToken` (data.zai.access_token) is the OAuth token exchanged for
+   * the coding-plan API key.
    */
   async pollDeviceFlow({ flowId, pollToken }) {
     if (!flowId || !pollToken) throw new Error("Missing ZCode flow id or poll token");
@@ -89,9 +96,10 @@ export class ZcodeService {
     const status = data?.status;
     if (status === "pending") return { status: "pending" };
     if (status === "failed") return { status: "failed" };
-    if (status === "ready" && typeof data.zai?.access_token === "string") {
+    if (status === "ready" && typeof data.token === "string" && typeof data.zai?.access_token === "string") {
       return {
         status: "ready",
+        zcodeJwt: data.token,
         zaiAccessToken: data.zai.access_token,
         user: {
           userId: data.user?.user_id || "",

@@ -1606,18 +1606,20 @@ const PROVIDERS = {
       if (result.status === "failed") {
         return { ok: false, data: { error: "auth_failed", error_description: "ZCode authorization failed — please retry login" } };
       }
-      // Ready → derive the coding-plan API key (the runtime credential).
-      let apiKey;
+      // Derive the coding-plan API key for the paid coding legs (bigmodel /
+      // api.z.ai). NON-FATAL: Start-Plan-only accounts may refuse the exchange
+      // — the zcode-plan leg authenticates with the JWT alone, so the
+      // connection still works without a coding key.
+      let codingApiKey = "";
       try {
-        apiKey = await svc.resolveCodingPlanApiKey(result.zaiAccessToken);
-      } catch (err) {
-        return { ok: false, data: { error: "key_derivation_failed", error_description: err.message } };
-      }
+        codingApiKey = await svc.resolveCodingPlanApiKey(result.zaiAccessToken);
+      } catch { /* coding key unavailable — JWT-only connection */ }
       return {
         ok: true,
         data: {
           access_token: result.zaiAccessToken,
-          _zcodeApiKey: apiKey,
+          _zcodeJwt: result.zcodeJwt,
+          _zcodeApiKey: codingApiKey,
           _zcodeUserId: result.user.userId,
           _zcodeEmail: result.user.email,
           _zcodeName: result.user.name,
@@ -1628,14 +1630,19 @@ const PROVIDERS = {
       const userId = tokens._zcodeUserId || "";
       const email = (tokens._zcodeEmail || "").trim() || (userId ? `zcode-user-${userId}` : null);
       return {
+        // Start Plan session JWT (the credential ZCode itself stores as
+        // options.apiKey) — sent as x-api-key to the zcode-plan leg.
+        apiKey: tokens._zcodeJwt || tokens.access_token,
+        // OAuth access token kept for audit / future re-exchange.
         accessToken: tokens.access_token,
-        // Long-lived coding-plan key — the credential the executor sends.
-        apiKey: tokens._zcodeApiKey || null,
         refreshToken: null,
         email,
         displayName: (tokens._zcodeName || "").trim() || null,
         providerSpecificData: {
           authMethod: "device",
+          // Derived coding-plan key ("id.secret") for the paid coding legs —
+          // empty when the account has no coding-plan entitlement.
+          ...(tokens._zcodeApiKey ? { codingApiKey: tokens._zcodeApiKey } : {}),
           ...(userId ? { userId } : {}),
         },
       };

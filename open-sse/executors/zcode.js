@@ -23,6 +23,30 @@ export class ZcodeExecutor extends GlmExecutor {
   }
 
   /**
+   * Per-leg credential selection. The legs authenticate against different
+   * account surfaces:
+   *   - leg 0 (zcode-plan): the Start Plan session JWT (connection.apiKey —
+   *     the exact credential the ZCode app stores as options.apiKey), sent
+   *     unsigned exactly like the app does.
+   *   - legs 1-2 (bigmodel / api.z.ai coding plans): the derived coding-plan
+   *     key ("id.secret", providerSpecificData.codingApiKey). OAuth users
+   *     without coding-plan entitlement have no valid credential here — the
+   *     auth-error fallback moves on / surfaces the upstream billing error.
+   */
+  buildHeaders(credentials, stream = true, model = null, opencodeIdentity = null, urlIndex = 0) {
+    const codingApiKey = credentials?.providerSpecificData?.codingApiKey;
+    if (urlIndex >= 1 && codingApiKey) {
+      return super.buildHeaders(
+        { ...credentials, apiKey: codingApiKey },
+        stream,
+        model,
+        opencodeIdentity,
+      );
+    }
+    return super.buildHeaders(credentials, stream, model, opencodeIdentity);
+  }
+
+  /**
    * Multi-leg URL resolution. DefaultExecutor.buildUrl (inherited through
    * GlmExecutor) resolves only config.baseUrl — it predates baseUrls chains,
    * which only BaseExecutor.buildUrl (Kiro) walks. Without this override the
