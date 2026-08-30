@@ -2374,38 +2374,22 @@
     }
   },
   "zcode": {
-    "baseUrl": "https://api.z.ai/api/coding/paas/v4/chat/completions",
-    "format": "openai",
+    "baseUrl": "https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages",
+    "baseUrls": [
+      "https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages",
+      "https://open.bigmodel.cn/api/anthropic/v1/messages",
+      "https://api.z.ai/api/anthropic/v1/messages"
+    ],
+    "format": "claude",
     "thinkingFormat": "openai",
+    "headers": {
+      "Anthropic-Version": "2023-06-01",
+      "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
+    },
     "auth": {
       "combined": true,
-      "header": "Authorization",
-      "scheme": "bearer"
-    },
-    "transports": [
-      {
-        "format": "openai",
-        "baseUrl": "https://api.z.ai/api/coding/paas/v4/chat/completions",
-        "auth": {
-          "combined": true,
-          "header": "Authorization",
-          "scheme": "bearer"
-        }
-      },
-      {
-        "format": "claude",
-        "baseUrl": "https://api.z.ai/api/anthropic/v1/messages",
-        "urlSuffix": "?beta=true",
-        "headers": {
-          "Anthropic-Version": "2023-06-01",
-          "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14"
-        },
-        "auth": {
-          "combined": true,
-          "header": "x-api-key",
-          "scheme": "raw"
-        }
-      }
-    ]
+      "header": "x-api-key",
+      "scheme": "raw"
+    }
   }
 }

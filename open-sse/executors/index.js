@@ -20,6 +20,7 @@ import { MimoFreeExecutor } from "./mimo-free.js";
 import { CodeBuddyExecutor } from "./codebuddy-cn.js";
 import { ZaiWebExecutor } from "./zai-web.js";
 import { GlmExecutor } from "./glm.js";
+import { ZcodeExecutor } from "./zcode.js";
 import { DefaultExecutor } from "./default.js";
 import { DevinExecutor } from "./devin.js";
 // Web-cookie providers (ported from OmniRoute)
@@ -103,8 +104,9 @@ const executors = {
   // GLM effort tiers (glm-5.3-high/-low) resolved to base id + reasoning_effort.
   glm: new GlmExecutor("glm"),
   "glm-cn": new GlmExecutor("glm-cn"),
-  // ZCode (zcode.z.ai OAuth) — same Z.ai coding endpoints as glm, same effort tiers.
-  zcode: new GlmExecutor("zcode"),
+  // ZCode (zcode.z.ai OAuth) — Anthropic legs with auth-error fallback across
+  // zcode-plan → bigmodel → api.z.ai; effort tiers inherited from GlmExecutor.
+  zcode: new ZcodeExecutor("zcode"),
   // Web-cookie providers (ported from OmniRoute)
   "deepseek-web": new DeepSeekWebExecutor(),
   "qwen-web": new QwenWebExecutor(),
@@ -202,6 +204,7 @@ export { CodeBuddyExecutor } from "./codebuddy-cn.js";
 export { DevinExecutor } from "./devin.js";
 export { ZaiWebExecutor } from "./zai-web.js";
 export { GlmExecutor } from "./glm.js";
+export { ZcodeExecutor } from "./zcode.js";
 // Web-cookie providers (ported from OmniRoute)
 export { DeepSeekWebExecutor } from "./deepseek-web.js";
 export { QwenWebExecutor } from "./qwen-web.js";

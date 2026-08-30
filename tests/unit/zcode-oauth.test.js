@@ -10,7 +10,7 @@ vi.mock("@/shared/utils/ssrfGuard.js", () => ({ assertPublicUrl: vi.fn() }));
 import { ZcodeService, ZCODE_DEFAULTS, zcodeEnvelopeOk } from "../../src/lib/oauth/services/zcode.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 import { PROVIDERS, PROVIDER_OAUTH, PROVIDER_MODELS } from "open-sse/providers/index.js";
-import { getExecutor, GlmExecutor } from "open-sse/executors/index.js";
+import { getExecutor, GlmExecutor, ZcodeExecutor } from "open-sse/executors/index.js";
 import { parseGlmEffortTier } from "../../open-sse/executors/glm.js";
 
 // ── fetch mock plumbing ────────────────────────────────────────────────────
@@ -57,18 +57,21 @@ describe("zcode registry entry", () => {
   });
 
   it("builds PROVIDERS + PROVIDER_OAUTH from the entry", () => {
-    expect(PROVIDERS.zcode.baseUrl).toBe("https://api.z.ai/api/coding/paas/v4/chat/completions");
+    expect(PROVIDERS.zcode.baseUrl).toBe("https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages");
     expect(PROVIDER_OAUTH.zcode.baseUrl).toBe("https://zcode.z.ai/api/v1");
     expect(PROVIDER_OAUTH.zcode.provider).toBe("zai");
   });
 
-  it("mirrors the GLM Coding endpoint contract (cross-transport)", () => {
-    const openai = entry.transports.find((t) => t.format === "openai");
-    const claude = entry.transports.find((t) => t.format === "claude");
-    expect(openai.baseUrl).toBe("https://api.z.ai/api/coding/paas/v4/chat/completions");
-    expect(openai.auth).toEqual({ combined: true, header: "Authorization", scheme: "bearer" });
-    expect(claude.baseUrl).toBe("https://api.z.ai/api/anthropic/v1/messages");
-    expect(claude.auth).toEqual({ combined: true, header: "x-api-key", scheme: "raw" });
+  it("routes chat through the Anthropic legs in ZCode runtime order with fallback", () => {
+    const t = PROVIDERS.zcode;
+    expect(t.format).toBe("claude");
+    expect(t.baseUrl).toBe("https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages");
+    expect(t.baseUrls).toEqual([
+      "https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages",
+      "https://open.bigmodel.cn/api/anthropic/v1/messages",
+      "https://api.z.ai/api/anthropic/v1/messages",
+    ]);
+    expect(t.auth).toEqual({ combined: true, header: "x-api-key", scheme: "raw" });
   });
 
   it("exposes the GLM catalog with 5.3 effort tiers resolved to the base id", () => {
@@ -83,9 +86,36 @@ describe("zcode registry entry", () => {
 });
 
 describe("zcode executor", () => {
-  it("maps zcode to the GLM executor (shared effort-tier handling)", () => {
+  it("maps zcode to the Zcode executor (GLM tiers + endpoint fallback)", () => {
     const executor = getExecutor("zcode");
+    expect(executor).toBeInstanceOf(ZcodeExecutor);
     expect(executor).toBeInstanceOf(GlmExecutor);
+  });
+
+  it("builds each leg URL from the baseUrls chain", () => {
+    const executor = getExecutor("zcode");
+    expect(executor.buildUrl("glm-5.3", true, 0)).toBe("https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages");
+    expect(executor.buildUrl("glm-5.3", true, 1)).toBe("https://open.bigmodel.cn/api/anthropic/v1/messages");
+    expect(executor.buildUrl("glm-5.3", true, 2)).toBe("https://api.z.ai/api/anthropic/v1/messages");
+  });
+
+  it("falls back to the next leg on 401/403/404, stops at the last leg", () => {
+    const executor = getExecutor("zcode");
+    expect(executor.shouldRetry(401, 0)).toBe(true);
+    expect(executor.shouldRetry(403, 0)).toBe(true);
+    expect(executor.shouldRetry(404, 1)).toBe(true);
+    expect(executor.shouldRetry(401, 2)).toBe(false);
+    expect(executor.shouldRetry(403, 2)).toBe(false);
+  });
+
+  it("keeps 400 terminal and 429/5xx on base behavior", () => {
+    const executor = getExecutor("zcode");
+    expect(executor.shouldRetry(400, 0)).toBe(false);
+    // 429 advances to the next leg; 503 retries the same leg via the retry
+    // budget (retryAttemptsByUrl) without advancing the URL chain.
+    expect(executor.shouldRetry(429, 0)).toBe(true);
+    expect(executor.shouldRetry(503, 0)).toBe(false);
+    expect(executor.shouldRetry(429, 2)).toBe(false);
   });
 
   it("resolves glm-5.3 effort tiers", () => {

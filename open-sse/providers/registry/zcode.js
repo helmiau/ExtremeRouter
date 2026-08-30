@@ -8,10 +8,23 @@
 // api_keys (+ /copy for the secret part). That key is the credential ZCode
 // itself writes into its config and uses for model calls.
 //
-// The derived key works on the same Z.ai endpoints as the GLM Coding provider,
-// so the transport below mirrors glm.js: OpenAI coding chat/completions +
-// Anthropic-compatible messages, with cross-transport fallback.
+// Chat: Anthropic-compatible messages endpoint, multi-endpoint fallback in the
+// order the ZCode runtime itself resolves hosts (all three are Anthropic SDK
+// base URLs in the app — /v1/messages appended):
+//   1. zcode-plan (start-plan runtime origin)
+//   2. BigModel coding plan (open.bigmodel.cn)
+//   3. Z.AI coding plan (api.z.ai)
+// The zcode-plan leg may additionally require the app's client-signing
+// protocol (X-Client-Sig / X-Client-Pow handshake); ZcodeExecutor therefore
+// falls through auth errors (401/403/404) to the next leg (Kiro-style).
 import { CLAUDE_API_HEADERS } from "../shared.js";
+
+// Full Anthropic-messages URLs (SDK base + /v1/messages), in fallback order.
+const ZCODE_BASE_URLS = [
+  "https://zcode.z.ai/api/v1/zcode-plan/anthropic/v1/messages",
+  "https://open.bigmodel.cn/api/anthropic/v1/messages",
+  "https://api.z.ai/api/anthropic/v1/messages",
+];
 
 export default {
   id: "zcode",
@@ -34,26 +47,15 @@ export default {
   authModes: ["oauth", "apikey"],
   hasOAuth: true,
   transport: {
-    // Default = OpenAI coding endpoint (matches glm.js — reasoning_effort wire format).
-    baseUrl: "https://api.z.ai/api/coding/paas/v4/chat/completions",
-    format: "openai",
+    // Anthropic messages format across all legs (x-api-key raw, like glm's
+    // claude transport). The ZCodePlanExecutor walks baseUrls on auth errors.
+    baseUrl: ZCODE_BASE_URLS[0],
+    baseUrls: ZCODE_BASE_URLS,
+    format: "claude",
     thinkingFormat: "openai",
-    auth: { combined: true, header: "Authorization", scheme: "bearer" },
+    headers: { ...CLAUDE_API_HEADERS },
+    auth: { combined: true, header: "x-api-key", scheme: "raw" },
   },
-  transports: [
-    {
-      format: "openai",
-      baseUrl: "https://api.z.ai/api/coding/paas/v4/chat/completions",
-      auth: { combined: true, header: "Authorization", scheme: "bearer" },
-    },
-    {
-      format: "claude",
-      baseUrl: "https://api.z.ai/api/anthropic/v1/messages",
-      urlSuffix: "?beta=true",
-      headers: { ...CLAUDE_API_HEADERS },
-      auth: { combined: true, header: "x-api-key", scheme: "raw" },
-    },
-  ],
   models: [
     // Mirror of the ZCode model catalog (Z.AI family). GLM-5.3 effort tiers are
     // aliases resolved by GlmExecutor (base id + reasoning_effort selector).
