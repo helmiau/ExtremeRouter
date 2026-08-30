@@ -26,8 +26,11 @@ const REGISTRY_LIMITS = (() => {
     if (!Array.isArray(entry.models)) continue;
     for (const raw of entry.models) {
       if (typeof raw === "string") continue; // terse form carries no limits
-      const ctx = raw.contextWindow;
-      const out = raw.maxOutput;
+      // Registries predate the canonical field names and use two spellings
+      // (kiro: contextLength/maxOutputTokens, github: contextWindow/maxOutput).
+      // Accept both — canonical name wins when a model declares both.
+      const ctx = raw.contextWindow ?? raw.contextLength;
+      const out = raw.maxOutput ?? raw.maxOutputTokens;
       const hasCtx = typeof ctx === "number" && Number.isFinite(ctx) && ctx > 0;
       const hasOut = typeof out === "number" && Number.isFinite(out) && out > 0;
       if (!hasCtx && !hasOut) continue;

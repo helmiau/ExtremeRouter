@@ -9,7 +9,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
-import { adjustMaxTokens } from "../formats/maxTokens.js";
 
 function extractContent(content) {
   if (typeof content === "string") return content;
@@ -178,7 +177,11 @@ export function openaiToCursorRequest(model, body, stream, credentials) {
   return {
     ...rest,
     messages,
-    max_tokens: adjustMaxTokens(rest)
+    // max_tokens is already the canonical, provider-aware resolved budget
+    // (translateRequest clamps before direct translators run). Re-invoking
+    // adjustMaxTokens here without provider/model would re-clamp against the
+    // floor context window and can zero the budget for large inputs.
+    max_tokens: rest.max_tokens
   };
 }
 

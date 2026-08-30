@@ -58,9 +58,12 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   // Canonical representation is established BEFORE the translation pipeline so every
   // path (OpenAI fast-path, translated paths, Claude format, direct translators like claude→kiro)
   // goes through the same resolver. Downstream translators only read result.max_tokens.
-  if (result?.max_tokens === undefined) {
-    if (result?.max_completion_tokens !== undefined) result.max_tokens = result.max_completion_tokens;
-    else if (result?.max_output_tokens !== undefined) result.max_tokens = result.max_output_tokens;
+  // Precedence matches the documented contract (mirrored by the Responses
+  // request translator): max_output_tokens > max_completion_tokens > max_tokens.
+  if (result?.max_tokens !== undefined || result?.max_completion_tokens !== undefined || result?.max_output_tokens !== undefined) {
+    const canonical =
+      result.max_output_tokens ?? result.max_completion_tokens ?? result.max_tokens;
+    result.max_tokens = canonical;
   }
   // Clean up aliases — prevent leakage of unknown fields to upstream
   delete result?.max_output_tokens;

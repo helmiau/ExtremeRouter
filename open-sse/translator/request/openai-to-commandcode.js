@@ -13,7 +13,6 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { randomUUID } from "crypto";
 import { ROLE, OPENAI_BLOCK } from "../schema/index.js";
-import { adjustMaxTokens } from "../formats/maxTokens.js";
 
 function flattenText(content) {
   if (content == null) return "";
@@ -139,7 +138,10 @@ export function openaiToCommandCodeRequest(model, body, stream /* , credentials 
     model,
     messages,
     stream: stream !== false,
-    max_tokens: adjustMaxTokens(body),  // undefined body.max_tokens → DEFAULT_MAX_TOKENS, clamped to model caps
+    // max_tokens is already the canonical, provider-aware resolved budget
+    // (translateRequest clamps before direct translators run); re-invoking
+    // adjustMaxTokens without provider/model would re-clamp against the floor.
+    max_tokens: body.max_tokens,
     temperature: body.temperature ?? 0.3,
   };
 

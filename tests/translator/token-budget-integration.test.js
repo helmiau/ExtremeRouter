@@ -168,6 +168,8 @@ describe("token budget integration: Kiro paths use the canonical budget", () => 
     translateRequest(FORMATS.OPENAI, FORMATS.KIRO, "claude-sonnet-4.5", body, true, null, "kiro");
   const C2K = (body) =>
     translateRequest(FORMATS.CLAUDE, FORMATS.KIRO, "claude-sonnet-4.5", body, true, null, "kiro");
+  const C2K_HAIKU = (body) =>
+    translateRequest(FORMATS.CLAUDE, FORMATS.KIRO, "claude-haiku-4.5", body, true, null, "kiro");
 
   it("J1: OpenAI→Kiro respects an explicit max_tokens", () => {
     const out = O2K({ max_tokens: 4096, messages: [{ role: "user", content: "hi" }] });
@@ -192,13 +194,16 @@ describe("token budget integration: Kiro paths use the canonical budget", () => 
   });
 
   it("J5: Claude→Kiro with a huge prompt is clamped by context, not defaulted", () => {
+    // claude-haiku-4.5 declares contextLength 200000 in the kiro registry — a
+    // genuinely small window where the context clamp engages. (sonnet-4.5 now
+    // correctly resolves its 1M registry window, so 64K fits untouched there.)
     const body = { messages: [{ role: "user", content: filler(140000) }] };
     const inputTokens = estimateInputTokens(body);
-    const out = C2K(body);
+    const out = C2K_HAIKU(body);
     // No explicit limit and no tools → desired is the 64K normal default. A value
     // below that proves the context ceiling (derived from the full body) applied.
     expect(out.inferenceConfig?.maxTokens ?? 0).toBeLessThan(64000);
-    expect(out.inferenceConfig?.maxTokens ?? 0).toBe(200000 - inputTokens); // default 200K window
+    expect(out.inferenceConfig?.maxTokens ?? 0).toBe(200000 - inputTokens); // registry 200K window
   });
 });
 
@@ -215,13 +220,15 @@ describe("token budget integration: alias normalization", () => {
     expect(out.max_output_tokens).toBeUndefined();
   });
 
-  it("max_tokens wins over aliases when several are present", () => {
+  it("max_output_tokens wins over the other spellings (documented precedence)", () => {
+    // Precedence: max_output_tokens > max_completion_tokens > max_tokens —
+    // matching the Responses request translator and the OpenAI Responses API.
     const out = toOpenAI({
       messages: [{ role: "user", content: "hi" }],
       max_tokens: 2048,
       max_completion_tokens: 8192,
       max_output_tokens: 9999,
     });
-    expect(out.max_tokens).toBe(2048);
+    expect(out.max_tokens).toBe(9999);
   });
 });
