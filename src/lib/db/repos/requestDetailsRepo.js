@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { shouldSkipRequestDetailOverwrite } from "../../../../open-sse/utils/requestDetailStatus.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -133,6 +134,15 @@ async function flushToDatabase() {
             providerResponse: truncateField(redactSecretsDeep(item.providerResponse), config.maxJsonSize),
             response: truncateField(redactSecretsDeep(item.response), config.maxJsonSize),
           };
+
+          // Lifecycle guard: the FIRST terminal status wins. A row that has
+          // reached a terminal state can only be refreshed by the SAME status
+          // (content/usage upgrade) — never silently reverted to a different
+          // terminal outcome (e.g. success → cancelled after a racing abort).
+          const existing = db.get(`SELECT status FROM requestDetails WHERE id = ?`, [record.id]);
+          if (shouldSkipRequestDetailOverwrite(existing?.status, record.status)) {
+            continue;
+          }
 
           db.run(
             `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,

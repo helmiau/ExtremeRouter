@@ -12,6 +12,7 @@ import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { augmentWithOutputSaverSavings } from "../../rtk/outputSaver.js";
 import { createCanonicalAttemptFromNonStreaming } from "../../utils/nonStreamingAttempt.js";
+import { mapCanonicalAttemptToRequestStatus } from "../../utils/requestDetailStatus.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -348,7 +349,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       thinking: translatedResponse?.choices?.[0]?.message?.reasoning_content || translatedResponse?.reasoning_content || null,
       finish_reason: translatedResponse?.choices?.[0]?.finish_reason || "unknown"
     },
-    status: "success",
+    // Terminal status derives from the canonical classification (never transport 200 alone).
+    status: mapCanonicalAttemptToRequestStatus(canonicalAttempt),
     combo
   }, {
     endpoint: clientRawRequest?.endpoint || null,

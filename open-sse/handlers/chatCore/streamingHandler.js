@@ -8,6 +8,10 @@ import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamH
 import { createResponsesAccumulator } from "../../translator/concerns/responsesAccumulator.js";
 import { createStreamState } from "../../utils/streamState.js";
 import { createCanonicalAttempt, deriveUsableOutput } from "../../utils/canonicalAttempt.js";
+import {
+  mapCanonicalAttemptToRequestStatus,
+  REQUEST_DETAIL_STREAMING_STATUS,
+} from "../../utils/requestDetailStatus.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
@@ -98,6 +102,42 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // Purely observational — nothing downstream reads it for behavior decisions.
   const streamState = createStreamState();
 
+  // Request-detail lifecycle: the admission save marks the row "streaming"
+  // (non-terminal). The FINAL terminal write happens exactly once — either in
+  // the completion callback (buildOnStreamComplete, canonical outcome) or in
+  // the abort/error finalizers below when the stream ends without a flush.
+  // requestDetailsRepo additionally enforces first-terminal-wins at the DB.
+  let detailFinalized = false;
+  const claimDetailFinalization = () => {
+    if (detailFinalized) return false;
+    detailFinalized = true;
+    return true;
+  };
+
+  // Finalize the request detail when the stream ends WITHOUT reaching the
+  // transform flush (client disconnect / upstream read error / stall). The
+  // status is derived from the canonical attempt built from the observed
+  // stream state (abortSeen → cancelled, errorSeen → provider failure).
+  const finalizeDetailOnTermination = (terminationReason) => {
+    if (!claimDetailFinalization()) return;
+    const attempt = createCanonicalAttempt(streamState, { status: providerResponse.status, source: "provider" });
+    const status = mapCanonicalAttemptToRequestStatus(attempt);
+    saveRequestDetail(buildRequestDetail({
+      provider, model, connectionId,
+      latency: { ttft: 0, total: Date.now() - requestStartTime },
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: "[Streaming - raw response not captured]",
+      response: { content: "[Stream terminated before completion]", thinking: null, type: "streaming" },
+      status,
+      combo
+    }, { id: streamDetailId, canonicalAttempt: attempt })).catch(err => {
+      console.error("[RequestDetail] Failed to finalize streaming request:", err.message);
+    });
+    console.log(`[RequestDetail] lifecycle: streaming → ${status} | provider=${provider} | model=${model} | reason=${terminationReason} | classification=${attempt.classification ?? "null"}${combo ? ` | combo=${combo.id || "custom"}` : ""}`);
+  };
+
   // Commit D: the ChatResult carry a live canonical-attempt holder. At handler
   // return the stream has not completed, so the holder truthfully reflects "no
   // completion evidence yet" (completionState=unknown). When the transform
@@ -112,6 +152,9 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 // without touching the stream body. Existing positional args preserved.
   const onStreamCompleteWithState = onStreamComplete
     ? (contentObj, usage, ttftAt) => {
+        // The flush is the authoritative finalizer for the request detail;
+        // claim it so a late abort/error observer cannot double-finalize.
+        claimDetailFinalization();
         Object.assign(canonicalAttempt, createCanonicalAttempt(streamState, { status: providerResponse.status, source: "provider" }));
         return onStreamComplete(contentObj, usage, ttftAt, streamState, providerResponse.status);
       }
@@ -128,10 +171,11 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     : null;
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   // Wave 2 observational wiring: disconnect/cancel → abortSeen (client-side,
-  // NOT a provider failure); upstream read errors → errorSeen. No behavior.
+  // NOT a provider failure); upstream read errors → errorSeen. The observers
+  // also finalize the request detail when the stream ends without a flush.
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, {
-    onAbort: () => { streamState.abortSeen = true; },
-    onError: () => { streamState.errorSeen = true; },
+    onAbort: () => { streamState.abortSeen = true; finalizeDetailOnTermination("client_disconnect"); },
+    onError: () => { streamState.errorSeen = true; finalizeDetailOnTermination("stream_error"); },
   });
 
   saveRequestDetail(buildRequestDetail({
@@ -142,7 +186,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     providerRequest: finalBody || translatedBody || null,
     providerResponse: "[Streaming - raw response not captured]",
     response: { content: "[Streaming in progress...]", thinking: null, type: "streaming" },
-    status: "success",
+    status: REQUEST_DETAIL_STREAMING_STATUS,
     combo
   }, { id: streamDetailId })).catch(err => {
     console.error("[RequestDetail] Failed to save streaming request:", err.message);
@@ -201,11 +245,13 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const observability = pickStreamObservability(streamState);
     // Canonical attempt: pure derivation composed with transport status at
     // the integration boundary (status only — body never touched). This is
-    // informational; nothing in production consumes it. source='provider' —
-    // this IS a live upstream attempt.
+    // the FINAL outcome evidence for the request detail: the persisted status
+    // is mapped from the canonical classification, never from transport
+    // success alone. source='provider' — this IS a live upstream attempt.
     const canonicalAttempt = streamState
       ? createCanonicalAttempt(streamState, { status: transportStatus, source: "provider" })
       : null;
+    const finalStatus = mapCanonicalAttemptToRequestStatus(canonicalAttempt);
 
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -215,7 +261,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       providerRequest: finalBody || translatedBody || null,
       providerResponse: safeContent,
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
-      status: "success",
+      status: finalStatus,
       combo
     }, {
       id: streamDetailId,
@@ -224,6 +270,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
+    console.log(`[RequestDetail] lifecycle: streaming → ${finalStatus} | provider=${provider} | model=${model} | reason=stream_complete | classification=${canonicalAttempt?.classification ?? "null"}${combo ? ` | combo=${combo.id || "custom"}` : ""}`);
 
     const augmented = augmentWithOutputSaverSavings({
       usage, provider, model,

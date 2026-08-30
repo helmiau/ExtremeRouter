@@ -372,7 +372,12 @@ export default function RequestDetailsTab() {
                 <span className="text-text-muted">Status:</span>{" "}
                 <span className={cn(
                   "font-medium",
-                  selectedDetail.status === "success" ? "text-green-600" : "text-red-600"
+                  // Lifecycle buckets: terminal success green, in-flight neutral,
+                  // soft-terminated (cancelled/incomplete/empty) amber, failures red.
+                  selectedDetail.status === "success" ? "text-green-600"
+                    : selectedDetail.status === "streaming" ? "text-blue-500"
+                    : selectedDetail.status === "cancelled" || selectedDetail.status === "incomplete" || selectedDetail.status === "empty_output" ? "text-amber-500"
+                    : "text-red-600"
                 )}>
                   {selectedDetail.status}
                 </span>

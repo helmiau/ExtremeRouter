@@ -10,6 +10,7 @@ const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPO
 import { saveRequestDetail, appendRequestLog } from "@/lib/usageDb.js";
 import { augmentWithOutputSaverSavings } from "../../rtk/outputSaver.js";
 import { createCanonicalAttemptFromForcedSse } from "../../utils/forcedSseAttempt.js";
+import { mapCanonicalAttemptToRequestStatus } from "../../utils/requestDetailStatus.js";
 
 function textFromResponsesMessageItem(item) {
   if (!item?.content || !Array.isArray(item.content)) return "";
@@ -176,7 +177,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         latency: { ttft: totalLatency, total: totalLatency },
         tokens: { prompt_tokens: usage.input_tokens || 0, completion_tokens: usage.output_tokens || 0 },
         response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
-        status: "success"
+        status: mapCanonicalAttemptToRequestStatus(canonicalAttempt)
       }, {
         endpoint: clientRawRequest?.endpoint || null,
         canonicalAttempt,
@@ -313,7 +314,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         thinking: parsed.choices?.[0]?.message?.reasoning_content || null,
         finish_reason: parsed.choices?.[0]?.finish_reason || "unknown"
       },
-      status: "success"
+      status: mapCanonicalAttemptToRequestStatus(canonicalAttempt)
     }, {
       endpoint: clientRawRequest?.endpoint || null,
       canonicalAttempt,
