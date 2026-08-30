@@ -125,15 +125,21 @@ describe("zcode executor", () => {
       providerSpecificData: { authMethod: "device", codingApiKey: "key-1.secret-1" },
     };
 
-    // Leg 0 (zcode-plan): Start Plan JWT, unsigned — mirrors the ZCode app.
+    // Leg 0 (zcode-plan): Start Plan JWT, unsigned — mirrors the ZCode app
+    // (credential sent as BOTH x-api-key and Authorization: Bearer, per the
+    // app's AI-SDK header wrapper Fvo).
     const leg0 = executor.buildHeaders(credentials, true, "glm-5.3", null, 0);
     expect(leg0["x-api-key"]).toBe("zcode-jwt");
+    expect(leg0["Authorization"]).toBe("Bearer zcode-jwt");
     // Default (health checks etc.) resolves to the primary leg.
-    expect(executor.buildHeaders(credentials, true)["x-api-key"]).toBe("zcode-jwt");
+    const def = executor.buildHeaders(credentials, true);
+    expect(def["x-api-key"]).toBe("zcode-jwt");
+    expect(def["Authorization"]).toBe("Bearer zcode-jwt");
 
     // Legs 1-2 (bigmodel / api.z.ai coding plans): derived coding key.
     const leg1 = executor.buildHeaders(credentials, true, "glm-5.3", null, 1);
     expect(leg1["x-api-key"]).toBe("key-1.secret-1");
+    expect(leg1["Authorization"]).toBe("Bearer key-1.secret-1");
     const leg2 = executor.buildHeaders(credentials, true, "glm-5.3", null, 2);
     expect(leg2["x-api-key"]).toBe("key-1.secret-1");
   });
@@ -143,6 +149,7 @@ describe("zcode executor", () => {
     const credentials = { apiKey: "zcode-jwt", providerSpecificData: { authMethod: "device" } };
     const leg1 = executor.buildHeaders(credentials, true, "glm-5.3", null, 1);
     expect(leg1["x-api-key"]).toBe("zcode-jwt");
+    expect(leg1["Authorization"]).toBe("Bearer zcode-jwt");
   });
 
   it("resolves glm-5.3 effort tiers", () => {

@@ -32,18 +32,24 @@ export class ZcodeExecutor extends GlmExecutor {
    *     key ("id.secret", providerSpecificData.codingApiKey). OAuth users
    *     without coding-plan entitlement have no valid credential here — the
    *     auth-error fallback moves on / surfaces the upstream billing error.
+   *
+   * Header shape mirrors ZCode's AI-SDK client (het + Fvo in the app bundle):
+   * the credential goes out TWICE — x-api-key (SDK default) AND
+   * Authorization: Bearer (Fvo wrapper prepends it for anthropic-kind
+   * providers). The zcode-plan leg validates the Bearer header; a request
+   * carrying only x-api-key is rejected 401.
    */
   buildHeaders(credentials, stream = true, model = null, opencodeIdentity = null, urlIndex = 0) {
     const codingApiKey = credentials?.providerSpecificData?.codingApiKey;
-    if (urlIndex >= 1 && codingApiKey) {
-      return super.buildHeaders(
-        { ...credentials, apiKey: codingApiKey },
-        stream,
-        model,
-        opencodeIdentity,
-      );
+    const effective = urlIndex >= 1 && codingApiKey
+      ? { ...credentials, apiKey: codingApiKey }
+      : credentials;
+    const headers = super.buildHeaders(effective, stream, model, opencodeIdentity);
+    const token = headers["x-api-key"];
+    if (token && !headers["Authorization"]) {
+      headers["Authorization"] = `Bearer ${token}`;
     }
-    return super.buildHeaders(credentials, stream, model, opencodeIdentity);
+    return headers;
   }
 
   /**
