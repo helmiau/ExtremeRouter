@@ -333,10 +333,20 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
 
   // Pass through other relevant fields
   if (body.temperature !== undefined) result.temperature = body.temperature;
-  if (body.max_tokens !== undefined) result.max_tokens = body.max_tokens;
   if (body.top_p !== undefined) result.top_p = body.top_p;
   if (body.reasoning !== undefined) result.reasoning = body.reasoning;
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
+
+  // Output-limit normalization: the Responses API field is max_output_tokens.
+  // Normalize the Chat Completions spellings with explicit precedence —
+  // max_output_tokens > max_completion_tokens > max_tokens — and never emit
+  // contradictory fields upstream (Responses hosts reject or ignore the Chat
+  // Completions spellings; verified live on opencode /zen/v1/responses).
+  const explicitMaxOutput =
+    body.max_output_tokens ?? body.max_completion_tokens ?? body.max_tokens;
+  if (explicitMaxOutput !== undefined) {
+    result.max_output_tokens = explicitMaxOutput;
+  }
 
   // Map Chat Completions response_format → Responses API text.format
   // (Structured Output). Without this, json_schema/json_object is silently

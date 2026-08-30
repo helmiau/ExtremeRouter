@@ -276,6 +276,15 @@ export const PROVIDER_CAPABILITIES = {
     "muse-spark-1.2-contributor": { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 },
     "muse-spark-1.1":            { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 },
   },
+  // opencode — free lane serves muse-spark-1.2-contributor-free via the
+  // Responses API (model targetFormat: openai-responses). Same Muse Spark 1.2
+  // family as meta-ai's entries: multimodal input, reasoning always on with
+  // native effort tiers ("none" unsupported), 1M context / 131072 output
+  // (models.dev: opencode/muse-spark-1.2-contributor-free, verified live —
+  // /zen/v1/responses accepted the request; /chat/completions 500s).
+  opencode: {
+    "muse-spark-1.2-contributor-free": { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 },
+  },
   // codebuddy-intl + workbuddy — same CodeBuddy gateway on their own hosts
   // (codebuddy.ai / workbuddy.ai). WorkBuddy's flagship model is "hy3" (the
   // registry model id); it reasons via OpenAI-style reasoning_effort like every

@@ -76,7 +76,9 @@ describe("ModelSelectModal windowing", () => {
     });
   };
 
-  it("mounts only the initial viewport window, then moves it on scroll", async () => {
+  // jsdom scroll simulation is load-sensitive under parallel workers — size
+  // the timeout for the environment; assertions unchanged.
+  it("mounts only the initial viewport window, then moves it on scroll", { timeout: 30_000 }, async () => {
     await renderModal();
 
     const total = AI_MODELS.length;
