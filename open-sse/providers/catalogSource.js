@@ -70,7 +70,12 @@ export function validateCatalogSnapshot(parsed) {
     models: Object.freeze(models),
     providers: Object.freeze(providers),
     meta: Object.freeze({
+      // syncedAt: last successful installation of a catalog payload (200 OK).
+      // validatedAt: most recent successful validation of the active snapshot
+      // against upstream (200 OK or 304 Not Modified). Legacy snapshots lack
+      // validatedAt — the staleness calculation falls back to syncedAt.
       syncedAt: typeof parsed.syncedAt === "number" ? parsed.syncedAt : null,
+      validatedAt: typeof parsed.validatedAt === "number" ? parsed.validatedAt : null,
       etag: typeof parsed.etag === "string" ? parsed.etag : null,
       modelCount: Object.keys(models).length,
       providerCount: Object.keys(providers).length,
@@ -105,6 +110,47 @@ export function loadCatalogSnapshotFromDisk() {
   const validated = validateCatalogSnapshot(parsed);
   if (!validated) return false;
   setCatalogSnapshot(validated);
+  return true;
+}
+
+/**
+ * Persist the CURRENT in-memory snapshot atomically (tmp + rename). Used by
+ * the scheduler to save a 304's validation timestamp without re-downloading
+ * or re-normalizing anything — the delta snapshot is small (tens of KB), so
+ * the occasional write is negligible churn and keeps freshness correct
+ * across restarts.
+ */
+export function persistCatalogSnapshot() {
+  try {
+    fs.mkdirSync(path.dirname(CATALOG_FILE), { recursive: true });
+    const tmp = `${CATALOG_FILE}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(snapshot), "utf8");
+    fs.renameSync(tmp, CATALOG_FILE);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Record a successful upstream VALIDATION of the active snapshot (304 Not
+ * Modified). Extends freshness WITHOUT touching contents, file contents of the
+ * models/providers data, or the ETag — a metadata-only immutable replacement:
+ *
+ *   snapshot = { ...snapshot, meta: { ...snapshot.meta, validatedAt: now } }
+ *
+ * Monotonic: never moves validatedAt backward (concurrency § — a late 304 can
+ * never regress a fresher 200's metadata). Returns false when there is no
+ * active snapshot or the timestamp would regress.
+ */
+export function extendCatalogValidation(now = Date.now()) {
+  const current = snapshot;
+  if (!current?.meta) return false;
+  const previous = typeof current.meta.validatedAt === "number"
+    ? current.meta.validatedAt
+    : current.meta.syncedAt ?? 0;
+  if (now <= previous) return false;
+  setCatalogSnapshot({ ...current, meta: { ...current.meta, validatedAt: now } });
   return true;
 }
 

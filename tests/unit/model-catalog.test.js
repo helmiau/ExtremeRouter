@@ -368,12 +368,20 @@ describe("F/G. snapshot validation + atomic replacement", () => {
       schemaVersion: 1,
       source: "models.dev",
       syncedAt: 123,
+      validatedAt: 456,
       etag: '"e"',
       models: { "m/v": { vision: true, audioInput: false } },
       providers: { p: { "m/v": { contextWindow: 128000, maxOutput: 8192 } } },
     });
     expect(snap.models["m/v"]).toEqual({ vision: true });
     expect(snap.providers.p["m/v"]).toEqual({ contextWindow: 128000, maxOutput: 8192 });
+    // Both freshness timestamps survive validation; legacy snapshots without
+    // validatedAt normalize to null (staleness falls back to syncedAt).
+    expect(snap.meta).toMatchObject({ syncedAt: 123, validatedAt: 456 });
+    const legacy = validateCatalogSnapshot({
+      schemaVersion: 1, syncedAt: 123, etag: '"e"', models: {}, providers: {},
+    });
+    expect(legacy.meta.validatedAt).toBeNull();
     expect(Object.isFrozen(snap)).toBe(true);
   });
 

@@ -64,13 +64,43 @@ startup (initializeApp)                     — never blocks boot
   providers and takes ~180ms to `JSON.parse` — long enough to stall concurrent
   SSE traffic, so the download/parse/normalize runs off the main thread. The
   main thread only loads the small validated delta snapshot (tens of KB).
-- **ETag**: an unchanged catalog costs one empty 304 request.
+- **ETag**: an unchanged catalog costs one empty 304 request. The effective
+  validator is the scheduler's stored ETag, falling back to the active
+  snapshot's ETag — so the first sync after a restart stays conditional.
 - **No overlap**: a sync while one is running is a no-op (`syncModelCatalog`
   returns `null`).
 - **Failure isolation**: network errors, HTTP 5xx, malformed JSON, oversized
   payloads, and invalid records all keep the last-known-good snapshot; sync
   failures never touch request handling (§ invariant: a catalog bug cannot
   cause a 500).
+
+## Freshness semantics: `syncedAt` vs `validatedAt`
+
+Four distinct timestamps, never collapsed:
+
+| Field | Meaning | Advanced by |
+|---|---|---|
+| `lastAttemptAt` | latest sync attempt started | every attempt |
+| `lastSuccessAt` | latest sync operation succeeded | 200 **and** 304 |
+| `syncedAt` | latest successful **installation** of a catalog payload | 200 only |
+| `validatedAt` | latest successful **validation** of the active snapshot against upstream | 200 **and** 304 |
+
+> A `304 Not Modified` extends catalog freshness by validating that the
+> existing snapshot is still current, but does not constitute a new catalog
+> payload synchronization. `syncedAt` represents the last successful
+> installation of a catalog payload, while `validatedAt` represents the most
+> recent successful validation of the active catalog against the source.
+
+`stale` therefore means "the active catalog has not been successfully
+**validated** within `MODEL_CATALOG_MAX_STALENESS`" — not "the last payload
+download is old". Repeated successful 304s keep the catalog `ready` even when
+the payload itself is months old. Failed attempts (network, HTTP 5xx,
+malformed, oversized) advance nothing. Legacy snapshots without `validatedAt`
+fall back to `syncedAt`; the next successful 200/304 writes the field.
+
+On a 304 the contents and ETag are untouched; only `validatedAt` advances,
+persisted as a small metadata-only snapshot rewrite so restarts keep the
+correct freshness.
 
 ## Storage
 

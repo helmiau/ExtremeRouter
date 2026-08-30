@@ -228,7 +228,11 @@ export async function fetchAndNormalizeCatalog(opts, fetchImpl = globalThis.fetc
     snapshot: {
       schemaVersion: 1,
       source: "models.dev",
+      // syncedAt: a new payload was downloaded and installed.
+      // validatedAt: the (same) payload was validated against upstream — set
+      // here and re-advanced on every 304 by the scheduler.
       syncedAt: Date.now(),
+      validatedAt: Date.now(),
       etag: nextEtag,
       models,
       providers,

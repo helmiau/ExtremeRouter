@@ -18,6 +18,8 @@ import {
   loadCatalogSnapshotFromDisk,
   getCatalogSnapshot,
   installCatalogSource,
+  extendCatalogValidation,
+  persistCatalogSnapshot,
 } from "open-sse/providers/catalogSource.js";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 
@@ -36,21 +38,29 @@ const state = {
 export function getCatalogState() {
   const snapshot = getCatalogSnapshot();
   const meta = snapshot?.meta || null;
-  const stale = meta?.syncedAt
-    ? Date.now() - meta.syncedAt > MODEL_CATALOG_CONFIG.maxStalenessMs
+  // Freshness = the most recent successful VALIDATION of the active snapshot
+  // (200 install or 304 confirmation), falling back to syncedAt for legacy
+  // snapshots written before validatedAt existed. An old payload age alone
+  // never means stale while conditional validations keep succeeding.
+  const freshness = meta?.validatedAt ?? meta?.syncedAt ?? null;
+  const stale = freshness
+    ? Date.now() - freshness > MODEL_CATALOG_CONFIG.maxStalenessMs
     : !meta; // never synced → the catalog layer itself is "unavailable"
   return {
     enabled: MODEL_CATALOG_CONFIG.enabled,
     running: state.running,
     state: state.running
       ? "syncing"
-      : meta?.syncedAt
+      : freshness
         ? (stale ? "stale" : "ready")
         : "unavailable",
     lastAttemptAt: state.lastAttemptAt,
-    lastSuccessAt: state.lastSuccessAt || meta?.syncedAt || null,
+    lastSuccessAt: state.lastSuccessAt || freshness || null,
     lastError: state.lastError,
     etag: state.etag || meta?.etag || null,
+    // syncedAt = last payload INSTALL; validatedAt = last upstream validation.
+    syncedAt: meta?.syncedAt || null,
+    validatedAt: meta?.validatedAt || null,
     modelCount: meta?.modelCount || 0,
     providerCount: meta?.providerCount || 0,
     file: CATALOG_FILE,
@@ -134,9 +144,13 @@ export async function syncModelCatalog() {
   state.lastAttemptAt = Date.now();
   try {
     const entries = await collectRegistryEntries();
+    // Effective validator: scheduler state, falling back to the active
+    // snapshot's etag — after a restart state.etag is null while the persisted
+    // snapshot still carries one, and the first sync must stay conditional.
+    const currentEtag = state.etag ?? getCatalogSnapshot()?.meta?.etag ?? null;
     const result = await runWorker({
       url: MODEL_CATALOG_CONFIG.url,
-      etag: state.etag,
+      etag: currentEtag,
       outFile: CATALOG_FILE,
       timeoutMs: MODEL_CATALOG_CONFIG.requestTimeoutMs,
       maxPayloadBytes: MODEL_CATALOG_CONFIG.maxPayloadBytes,
@@ -148,11 +162,19 @@ export async function syncModelCatalog() {
     if (result.status === "updated") {
       state.etag = result.etag;
       // Load the small validated delta into memory (atomic swap; the big
-      // payload never crosses the main thread).
+      // payload never crosses the main thread). The snapshot carries both
+      // syncedAt and validatedAt = install time.
       loadCatalogSnapshotFromDisk();
-      console.log(`[model-catalog] snapshot updated | ${result.snapshot.models ? Object.keys(result.snapshot.models).length : 0} models, ${result.snapshot.providers ? Object.keys(result.snapshot.providers).length : 0} providers, ${(result.bytes / 1024).toFixed(1)}KB payload`);
+      console.log(`[model-catalog] sync success: catalog updated | ${result.snapshot.models ? Object.keys(result.snapshot.models).length : 0} models, ${result.snapshot.providers ? Object.keys(result.snapshot.providers).length : 0} providers, ${(result.bytes / 1024).toFixed(1)}KB payload`);
     } else {
-      console.log("[model-catalog] catalog unchanged (ETag 304)");
+      // 304 Not Modified: upstream confirms our validator (ETag) is current.
+      // The catalog contents, snapshot file data, and ETag stay untouched —
+      // only freshness advances (validatedAt = now), persisted as a small
+      // metadata-only snapshot rewrite so restarts keep the correct freshness.
+      if (extendCatalogValidation()) {
+        persistCatalogSnapshot();
+      }
+      console.log("[model-catalog] sync success: catalog unchanged (304) — freshness extended");
     }
     state.lastSuccessAt = Date.now();
     state.lastError = null;
