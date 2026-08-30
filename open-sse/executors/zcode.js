@@ -65,11 +65,63 @@ export class ZcodeExecutor extends GlmExecutor {
     return super.buildUrl(model, stream, urlIndex, credentials);
   }
 
+  async execute(args) {
+    // Store credentials for content-aware fallback decisions + error context.
+    this._lastCredentials = args?.credentials || {};
+    this._startPlanCaptchaBlocked = false;
+    return super.execute(args);
+  }
+
   shouldRetry(status, urlIndex) {
     if (ZCODE_ENDPOINT_FALLBACK_STATUSES.includes(status)) {
       return urlIndex + 1 < this.getFallbackCount();
     }
+    if (status === 400 && urlIndex === 0) {
+      // Captcha wall on the start-plan leg: leg 0's 400s are the Aliyun
+      // attestation (code 3007), never a client-body problem the coding legs
+      // would share. Fall through ONLY when the connection carries a coding
+      // key that can actually serve legs 1-2; Start-Plan-only connections get
+      // the terminal, actionable parseError message instead.
+      if (urlIndex + 1 < this.getFallbackCount() && this._lastCredentials?.providerSpecificData?.codingApiKey) {
+        this._startPlanCaptchaBlocked = true;
+        return true;
+      }
+      return false;
+    }
     return super.shouldRetry(status, urlIndex);
+  }
+
+  /**
+   * Captcha-aware error surfacing. The zcode-plan (Start Plan) leg is
+   * protected by Aliyun captcha attestation: the ZCode desktop app renders
+   * the captcha widget, and the engine attaches the resulting
+   * X-Aliyun-Captcha-Verify-Param as a runtime header before each model
+   * request (reason "model-request" / "captcha-retry" — verified in the app
+   * bundle). A router cannot mint that token, so HTTP 400 code 3007
+   * ("captcha verify failed") on this leg is terminal by design. Rewrite it
+   * into an actionable message instead of leaking the raw upstream body.
+   */
+  parseError(response, bodyText) {
+    const base = { status: response.status, message: bodyText || `HTTP ${response.status}` };
+    const CAPTCHA_NOTE =
+      " (Note: the ZCode Start Plan endpoint was skipped — it requires Aliyun captcha attestation only the ZCode desktop app provides, so Start Plan quota cannot be routed through a gateway. Route access needs a GLM Coding Plan key with an active plan.)";
+    if (this._startPlanCaptchaBlocked) {
+      return { ...base, message: `${base.message}${CAPTCHA_NOTE}` };
+    }
+    if (response.status !== 400) return base;
+    try {
+      const parsed = JSON.parse(bodyText);
+      const msg = String(parsed?.msg || "");
+      if (parsed?.code === 3007 || /captcha/i.test(msg)) {
+        return {
+          status: response.status,
+          message:
+            "ZCode Start Plan endpoint requires Aliyun captcha attestation that only the ZCode desktop app can provide (it solves the captcha and attaches X-Aliyun-Captcha-Verify-Param). " +
+            "Start Plan quota cannot be routed through a gateway — use a GLM Coding Plan key (id.secret from api.z.ai or open.bigmodel.cn) for ExtremeRouter access.",
+        };
+      }
+    } catch { /* non-JSON body — return as-is */ }
+    return base;
   }
 }
 

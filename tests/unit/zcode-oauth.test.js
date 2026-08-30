@@ -118,6 +118,29 @@ describe("zcode executor", () => {
     expect(executor.shouldRetry(429, 2)).toBe(false);
   });
 
+  it("falls through the leg-0 captcha wall only when a coding key exists", async () => {
+    // Start-Plan-only connection: 400 captcha is terminal (clear message).
+    const executor = getExecutor("zcode");
+    executor._lastCredentials = { providerSpecificData: { authMethod: "device" } };
+    expect(executor.shouldRetry(400, 0)).toBe(false);
+
+    // Connection with a coding key: fall through so the coding legs serve.
+    const executor2 = getExecutor("zcode");
+    executor2._lastCredentials = { providerSpecificData: { codingApiKey: "id.secret" } };
+    expect(executor2.shouldRetry(400, 0)).toBe(true);
+    expect(executor2._startPlanCaptchaBlocked).toBe(true);
+    // 400 on the coding legs stays terminal (bodies differ per leg).
+    expect(executor2.shouldRetry(400, 1)).toBe(false);
+  });
+
+  it("appends the captcha note to errors after a captcha fall-through", () => {
+    const executor = getExecutor("zcode");
+    executor._startPlanCaptchaBlocked = true;
+    const err = executor.parseError({ status: 429 }, JSON.stringify({ type: "error", error: { type: "rate_limit_error", code: "1113" } }));
+    expect(err.message).toMatch(/Aliyun captcha attestation/);
+    expect(err.message).toMatch(/GLM Coding Plan key/);
+  });
+
   it("sends the JWT on the zcode-plan leg and the coding key on the coding legs", () => {
     const executor = getExecutor("zcode");
     const credentials = {
@@ -150,6 +173,26 @@ describe("zcode executor", () => {
     const leg1 = executor.buildHeaders(credentials, true, "glm-5.3", null, 1);
     expect(leg1["x-api-key"]).toBe("zcode-jwt");
     expect(leg1["Authorization"]).toBe("Bearer zcode-jwt");
+  });
+
+  it("rewrites the 3007 captcha error into an actionable message", () => {
+    const executor = getExecutor("zcode");
+    const response = { status: 400 };
+    const body = JSON.stringify({ code: 3007, msg: "captcha verify failed" });
+    const err = executor.parseError(response, body);
+    expect(err.status).toBe(400);
+    expect(err.message).toMatch(/Aliyun captcha attestation/);
+    expect(err.message).toMatch(/GLM Coding Plan key/);
+  });
+
+  it("passes through non-captcha 400 bodies untouched", () => {
+    const executor = getExecutor("zcode");
+    // getExecutor caches the instance — clear state set by earlier tests.
+    executor._startPlanCaptchaBlocked = false;
+    const body = JSON.stringify({ code: 1113, msg: "Insufficient balance" });
+    expect(executor.parseError({ status: 400 }, body).message).toBe(body);
+    // non-JSON body
+    expect(executor.parseError({ status: 400 }, "plain text error").message).toBe("plain text error");
   });
 
   it("resolves glm-5.3 effort tiers", () => {

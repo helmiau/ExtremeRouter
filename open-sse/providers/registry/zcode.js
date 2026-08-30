@@ -14,9 +14,13 @@
 //   1. zcode-plan (start-plan runtime origin)
 //   2. BigModel coding plan (open.bigmodel.cn)
 //   3. Z.AI coding plan (api.z.ai)
-// The zcode-plan leg may additionally require the app's client-signing
-// protocol (X-Client-Sig / X-Client-Pow handshake); ZcodeExecutor therefore
-// falls through auth errors (401/403/404) to the next leg (Kiro-style).
+// The zcode-plan (Start Plan) leg requires Aliyun captcha attestation — the
+// desktop app solves the captcha in-app and attaches
+// X-Aliyun-Captcha-Verify-Param as a runtime header before every model
+// request. Routed requests cannot carry that token, so this leg answers
+// 400 code 3007 "captcha verify failed"; ZcodeExecutor surfaces a clear
+// terminal error (no fall-through) and the Coding Plan legs serve users
+// holding a GLM Coding Plan key.
 import { CLAUDE_API_HEADERS } from "../shared.js";
 
 // Full Anthropic-messages URLs (SDK base + /v1/messages), in fallback order.
@@ -40,7 +44,7 @@ export default {
     website: "https://zcode.z.ai",
     notice: {
       signupUrl: "https://zcode.z.ai",
-      text: "ZCode is Zhipu's coding agent powered by Z.ai. OAuth logs in with your Z.ai account and derives the coding-plan API key automatically; you can also paste an existing GLM Coding key (id.secret).",
+      text: "ZCode is Zhipu's coding agent powered by Z.ai. OAuth logs in with your Z.ai account. NOTE: Start Plan quota is exclusive to the ZCode desktop app — its endpoint requires Aliyun captcha attestation the app solves in-app, so routed requests fall back to the Coding Plan legs. For reliable gateway access use a GLM Coding Plan key (id.secret from api.z.ai or open.bigmodel.cn), or paste one via API Key.",
     },
   },
   category: "oauth",
