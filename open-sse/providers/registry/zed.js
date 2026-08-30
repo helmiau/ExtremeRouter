@@ -75,4 +75,10 @@ export default {
     // LLM tokens are short-lived (1h). Refresh 5 minutes before expiry.
     refreshLeadMs: 300000,
   },
+  // Plan + edit-prediction quota surfaced on /dashboard/quota via
+  // services/usage/zed.js (GET /client/users/me).
+  features: {
+    usage: true,
+    usageApikey: false,
+  },
 };

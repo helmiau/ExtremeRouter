@@ -70,8 +70,8 @@ function getSystemId(credentials) {
   );
 }
 
-async function fetchJson(url, options) {
-  const res = await proxyAwareFetch(url, options);
+async function fetchJson(url, options, proxyOptions = null) {
+  const res = await proxyAwareFetch(url, options, proxyOptions);
   const text = await res.text();
   let data = null;
   if (text) {
@@ -101,12 +101,15 @@ export async function fetchZedAuthenticatedUser(credentials, options = {}) {
   const systemId = getSystemId(credentials);
   if (systemId) headers[ZED_HEADERS.systemId] = systemId;
 
-  return fetchJson(zedUrl(config, "cloudBaseUrl", "/client/users/me", ZED_CLOUD_BASE_URL), {
-    method: "GET",
-    headers,
-    signal: options.signal ?? undefined,
-    proxyOptions: options.proxyOptions,
-  });
+  return fetchJson(
+    zedUrl(config, "cloudBaseUrl", "/client/users/me", ZED_CLOUD_BASE_URL),
+    {
+      method: "GET",
+      headers,
+      signal: options.signal ?? undefined,
+    },
+    options.proxyOptions ?? null,
+  );
 }
 
 function normalizeOrganizationId(value) {

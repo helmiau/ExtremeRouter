@@ -253,19 +253,25 @@ export default function ProviderCard({
             </span>
             <p className="mt-1.5 text-xs text-text-muted">{error}</p>
           </div>
-        ) : quota?.message ? (
-          <div className="text-center py-5">
-            <p className="text-xs text-text-muted">{quota.message}</p>
-          </div>
         ) : (
-          <QuotaTable
-            quotas={quota?.quotas}
-            compact
-            sortMode="default"
-            showSortLabel={
-              conn.provider === "codex" && quotaSortMode !== "default"
-            }
-          />
+          <>
+            <QuotaTable
+              quotas={quota?.quotas}
+              compact
+              sortMode="default"
+              showSortLabel={
+                conn.provider === "codex" && quotaSortMode !== "default"
+              }
+            />
+            {/* Non-blocking notes (e.g. Zed token-billing / overdue-invoice
+                notices) render alongside the quota rows instead of replacing
+                them. */}
+            {quota?.message && (
+              <p className="mt-2 px-1 text-[10px] leading-relaxed text-text-muted">
+                {quota.message}
+              </p>
+            )}
+          </>
         )}
       </div>
     </Card>

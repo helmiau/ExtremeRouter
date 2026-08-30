@@ -27,6 +27,7 @@ import { getGrokWebUsage } from "./usage/grok-web.js";
 import { getInfronUsage } from "./usage/infron.js";
 import { getKimchiUsage } from "./usage/kimchi.js";
 import { getKimiDesktopUsage } from "./usage/kimi-desktop.js";
+import { getZedUsage } from "./usage/zed.js";
 
 /**
  * Get usage data for a provider connection
@@ -74,10 +75,13 @@ const USAGE_HANDLERS = {
   kimchi: (c) => getKimchiUsage(c.accessToken, c.proxyOptions),
   // kimi-desktop stores the kimi-auth JWT as apiKey (oauth import route)
   "kimi-desktop": (c) => getKimiDesktopUsage(c.apiKey, c.proxyOptions),
+  // Zed: plan + edit-prediction quota from /client/users/me. refreshToken is
+  // the long-lived USER token (accessToken is the short-lived LLM token).
+  zed: (c) => getZedUsage(c.accessToken, c.providerSpecificData, c.proxyOptions, c.refreshToken),
 };
 
 export async function getUsageForProvider(connection, proxyOptions = null) {
-  const { provider, accessToken, apiKey, providerSpecificData, projectId, id } = connection;
+  const { provider, accessToken, apiKey, refreshToken, providerSpecificData, projectId, id } = connection;
   const providerDataWithProjectId = {
     ...(providerSpecificData || {}),
     ...(projectId ? { projectId } : {}),
@@ -91,6 +95,7 @@ export async function getUsageForProvider(connection, proxyOptions = null) {
     provider,
     accessToken,
     apiKey,
+    refreshToken,
     providerSpecificData,
     providerDataWithProjectId,
     proxyOptions,
