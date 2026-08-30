@@ -135,6 +135,11 @@ export async function initializeApp() {
     initAlertService();
     startKimchiQuotaReactivation();
     startBackgroundTokenRefresh();
+    // Dynamic model capability catalog — non-blocking background refresh of
+    // model metadata from models.dev. Failure-isolated; MODEL_CATALOG=off disables.
+    import("@/lib/modelCatalog/sync")
+      .then((m) => m.startModelCatalogSync())
+      .catch((err) => console.error("[model-catalog] startup failed:", err?.message || err));
   } catch (error) {
     console.error("[InitApp] Error:", error);
   }

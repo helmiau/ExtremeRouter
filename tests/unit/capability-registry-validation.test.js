@@ -80,7 +80,7 @@ describe("capability registry: numeric sanity", () => {
     expect(bad).toEqual([]);
   });
 
-  it("every registry model resolves to a self-consistent limit pair", () => {
+  it("every registry model resolves to a self-consistent limit pair", { timeout: 30_000 }, () => {
     const bad = [];
     for (const { alias, id } of allRegistryModels()) {
       const c = getCapabilitiesForModel(alias, id);

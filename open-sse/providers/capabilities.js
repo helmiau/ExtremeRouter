@@ -6,6 +6,19 @@
 //   3. PATTERN_CAPABILITIES                     — glob match, ordered specific -> generic
 //   4. DEFAULT_CAPABILITIES                     — safe floor (always returned)
 //
+// Two refinement layers then apply to tiers 2-4, and NEITHER can override an
+// explicit hand-written statement (tier 1 short-circuits before they run; a
+// key the matched tier declared explicitly is never touched):
+//   • the synced catalog — modalities are MODEL-level evidence (keyed by
+//     canonical base id, majority-voted across models.dev sources), limits are
+//     GATEWAY-level evidence (keyed provider + model). Sourced from models.dev
+//     in the background; injected via setCatalogSource() so this module stays
+//     free of filesystem imports (it is bundled into the browser through
+//     useModelCaps). Registry-declared limits still outrank catalog limits.
+//   • the PATTERN_CAPABILITIES family rules themselves — already the last
+//     name-heuristic tier; the catalog adds evidence BELOW the hand-written
+//     tables, never above them.
+//
 // ── HOW TO ADD / UPDATE A MODEL ──────────────────────────────────────
 // Authoritative data source: https://models.dev/api.json (145 providers, 4000+
 // models, MIT). Each model exposes the exact fields we map below:
@@ -515,6 +528,8 @@ export const CAPABILITY_SOURCE = {
   MODEL_EXACT: "model-exact",
   /** PATTERN_CAPABILITIES — verified family rule, applied by glob. */
   FAMILY_PATTERN: "family-pattern",
+  /** Synced models.dev catalog — external evidence, below all hand-written tiers. */
+  DYNAMIC_CATALOG: "dynamic-catalog",
   /** DEFAULT_CAPABILITIES — no evidence; a conservative assumption. */
   DEFAULT_FLOOR: "default-floor",
 };
@@ -544,8 +559,87 @@ const CONFIDENCE_BY_SOURCE = {
   [CAPABILITY_SOURCE.MODEL_EXACT]: CAPABILITY_CONFIDENCE.VERIFIED,
   [CAPABILITY_SOURCE.PROVIDER_REGISTRY]: CAPABILITY_CONFIDENCE.INFERRED,
   [CAPABILITY_SOURCE.FAMILY_PATTERN]: CAPABILITY_CONFIDENCE.INFERRED,
+  [CAPABILITY_SOURCE.DYNAMIC_CATALOG]: CAPABILITY_CONFIDENCE.INFERRED,
   [CAPABILITY_SOURCE.DEFAULT_FLOOR]: CAPABILITY_CONFIDENCE.UNKNOWN,
 };
+
+// ── Synced catalog injection (server installs; browser bundle stays fs-free) ─
+// External models.dev evidence. Strictly BELOW the hand-written tiers: it can
+// fill a capability the tables did not explicitly declare and can replace a
+// limit that differs meaningfully from the resolved one — it can never touch
+// tier 1, never flip an explicitly declared value, and never claim VERIFIED.
+let catalogSource = null;
+
+/**
+ * Install the synced catalog reader (server at startup; tests install fakes).
+ * @param {{ getModalities: Function, getLimits: Function } | null} source
+ */
+export function setCatalogSource(source) {
+  catalogSource = source && typeof source.getLimits === "function" ? source : null;
+}
+
+// Catalog-supplied limits apply only when they meaningfully differ from the
+// tier-resolved value: gateways round (200000 vs 202752) and churning every
+// entry would relabel provenance without changing behavior.
+const CATALOG_LIMIT_TOLERANCE = 0.1;
+
+/**
+ * Refine a tier-resolved result with synced catalog evidence.
+ *
+ * Precedence contract (§3): explicit > manual registry > catalog > heuristic > default.
+ *   - `explicitKeys` lists the fields the matched hand-written tier declared —
+ *     those are NEVER touched, so `manual vision:false + catalog vision:true`
+ *     stays false (and vice versa).
+ *   - Modalities (model-level) are filled when the catalog positively declares
+ *     them. Unknown stays unknown otherwise — the catalog never manufactures a
+ *     false, and a missing entry contributes nothing (§18).
+ *   - Limits (gateway-level) are replaced only on a >10% divergence.
+ *
+ * @returns {{ result: object, catalogLimits: object|null, catalogProvenance: object|null }}
+ */
+function refineWithCatalog(result, explicitKeys, provider, model, baseModel) {
+  if (!catalogSource) return { result, catalogLimits: null, catalogProvenance: null };
+
+  const provenance = { modalities: [], limits: false };
+  let contributed = false;
+  const refined = { ...result };
+
+  const modalities = catalogSource.getModalities?.(baseModel) || catalogSource.getModalities?.(model) || null;
+  if (modalities) {
+    for (const key of ["vision", "pdf", "audioInput", "videoInput"]) {
+      if (modalities[key] !== true) continue;              // unknown/absent → contributes nothing
+      if (explicitKeys.includes(key)) continue;            // hand-written statement wins
+      if (refined[key] === true) continue;                 // already true — nothing to add
+      refined[key] = true;
+      provenance.modalities.push(key);
+      contributed = true;
+    }
+  }
+
+  let catalogLimits = null;
+  const limits = catalogSource.getLimits?.(provider, model) || null;
+  if (limits) {
+    const delta = {};
+    for (const key of ["contextWindow", "maxOutput"]) {
+      if (explicitKeys.includes(key)) continue;            // hand-written value wins
+      const next = limits[key];
+      if (typeof next !== "number" || next <= 0) continue;
+      const current = refined[key];
+      if (typeof current !== "number" || !Number.isFinite(current) || current <= 0
+        || Math.abs(next - current) / current > CATALOG_LIMIT_TOLERANCE) {
+        delta[key] = next;
+      }
+    }
+    if (Object.keys(delta).length) {
+      catalogLimits = delta;
+      Object.assign(refined, delta);
+      provenance.limits = true;
+      contributed = true;
+    }
+  }
+
+  return { result: refined, catalogLimits, catalogProvenance: contributed ? provenance : null };
+}
 
 /** Attach provenance to a resolved capability object. */
 function withProvenance(caps, sourceType) {
@@ -553,7 +647,7 @@ function withProvenance(caps, sourceType) {
   return { ...caps, sourceType, confidence, known: confidence !== CAPABILITY_CONFIDENCE.UNKNOWN };
 }
 
-// Merge a resolved tier with any registry-declared limits.
+// Merge a resolved tier with whichever limits overlay won (registry > catalog).
 //
 // The overlay can narrow only one side of the pair — forge declares a 1M window
 // for kimi-k3 while the *kimi-k3* pattern declares a 1,048,576 output — which
@@ -561,14 +655,15 @@ function withProvenance(caps, sourceType) {
 // Clamping here keeps every resolved result self-consistent, so Token Budget
 // never receives an unreachable ceiling.
 //
-// When the overlay applies it becomes the source of record for the limits, so
-// an exact-id match whose ceiling actually came from a provider catalog reports
-// `provider-registry` / `inferred` rather than claiming to be verified.
-function withLimits(base, limits, sourceType) {
+// When an overlay applies it becomes the source of record for the limits, so
+// an exact-id match whose ceiling came from a registry entry reports
+// `provider-registry`, and one whose ceiling came from the synced catalog
+// reports `dynamic-catalog` — both `inferred`, never `verified`.
+function withLimits(base, limits, sourceType, limitsSourceType = CAPABILITY_SOURCE.PROVIDER_REGISTRY) {
   if (!limits) return withProvenance(base, sourceType);
   const merged = { ...base, ...limits };
   if (merged.maxOutput > merged.contextWindow) merged.maxOutput = merged.contextWindow;
-  return withProvenance(merged, CAPABILITY_SOURCE.PROVIDER_REGISTRY);
+  return withProvenance(merged, limitsSourceType);
 }
 
 /**
@@ -581,13 +676,16 @@ function withLimits(base, limits, sourceType) {
  *   3. PATTERN_CAPABILITIES                   — glob, ordered specific -> generic
  *   4. DEFAULT_CAPABILITIES                   — unverified safety floor
  *
- * Registry-declared limits (registryLimits.js) are overlaid on tiers 2-4. They
- * are provider+model specific evidence for contextWindow / maxOutput only, so
- * they outrank a family wildcard but not an explicit provider override.
+ * Two limits/modalities overlays apply to tiers 2-4, most specific first:
+ *   a. registryLimits.js — provider+model declared in the registry (wins)
+ *   b. synced models.dev catalog — provider+model limits + model modalities,
+ *      filling only what the hand-written tier did not explicitly declare
  *
  * Every result carries `sourceType`, `confidence` and `known` — see
  * CAPABILITY_SOURCE and CAPABILITY_CONFIDENCE. `known: true` means evidence
  * applied, NOT that the data is confirmed; inferred results are also `known`.
+ * When the synced catalog contributed, `catalog: { modalities, limits }`
+ * records exactly what it contributed.
  *
  * @param {string} provider
  * @param {string} model
@@ -601,7 +699,8 @@ export function getCapabilitiesForModel(provider, model) {
   provider = resolveProviderAlias(provider);
 
   // 1. Provider-specific override — the most specific statement available about
-  // this provider serving this model, so registry limits must not override it.
+  //    this provider serving this model. Short-circuits: neither registry nor
+  //    catalog evidence may override an explicit hand-written entry.
   if (provider && PROVIDER_CAPABILITIES[provider]?.[model]) {
     return withProvenance(
       { ...DEFAULT_CAPABILITIES, ...PROVIDER_CAPABILITIES[provider][model] },
@@ -610,13 +709,19 @@ export function getCapabilitiesForModel(provider, model) {
   }
 
   // Registry limits are provider+model scoped, so they win over tiers 2-4.
-  const limits = getRegistryLimits(provider, model);
+  const registryLimits = getRegistryLimits(provider, model);
 
   // 2. Canonical exact (strip vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7")
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
   const exact = MODEL_CAPABILITIES[baseModel] ?? MODEL_CAPABILITIES[model];
   if (exact) {
-    return withLimits({ ...DEFAULT_CAPABILITIES, ...exact }, limits, CAPABILITY_SOURCE.MODEL_EXACT);
+    const { result, catalogLimits, catalogProvenance } = refineWithCatalog(
+      { ...DEFAULT_CAPABILITIES, ...exact }, Object.keys(exact), provider, model, baseModel,
+    );
+    const limits = registryLimits ?? catalogLimits;
+    const resolved = withLimits(result, limits, CAPABILITY_SOURCE.MODEL_EXACT,
+      registryLimits ? CAPABILITY_SOURCE.PROVIDER_REGISTRY : CAPABILITY_SOURCE.DYNAMIC_CATALOG);
+    return catalogProvenance ? { ...resolved, catalog: catalogProvenance } : resolved;
   }
 
   // 3. Pattern match (first match wins). Entries may carry an optional
@@ -625,11 +730,27 @@ export function getCapabilitiesForModel(provider, model) {
   for (const { pattern, caps, provider: patternProvider } of PATTERN_CAPABILITIES) {
     if (patternProvider && patternProvider !== provider) continue;
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return withLimits({ ...DEFAULT_CAPABILITIES, ...caps }, limits, CAPABILITY_SOURCE.FAMILY_PATTERN);
+      const { result, catalogLimits, catalogProvenance } = refineWithCatalog(
+        { ...DEFAULT_CAPABILITIES, ...caps }, Object.keys(caps), provider, model, baseModel,
+      );
+      const limits = registryLimits ?? catalogLimits;
+      const resolved = withLimits(result, limits, CAPABILITY_SOURCE.FAMILY_PATTERN,
+        registryLimits ? CAPABILITY_SOURCE.PROVIDER_REGISTRY : CAPABILITY_SOURCE.DYNAMIC_CATALOG);
+      return catalogProvenance ? { ...resolved, catalog: catalogProvenance } : resolved;
     }
   }
 
-  // 4. Floor. Registry limits still count as evidence for the two fields they
-  // cover; everything else remains an unverified assumption.
-  return withLimits({ ...DEFAULT_CAPABILITIES }, limits, CAPABILITY_SOURCE.DEFAULT_FLOOR);
+  // 4. Floor. Registry/catalog limits still count as evidence for the fields
+  // they cover; everything else remains an unverified assumption. A floor
+  // result the catalog contributed to (modalities or limits) is upgraded to
+  // `dynamic-catalog` / inferred — evidence applied, not a bare assumption.
+  const { result, catalogLimits, catalogProvenance } = refineWithCatalog(
+    { ...DEFAULT_CAPABILITIES }, [], provider, model, baseModel,
+  );
+  const limits = registryLimits ?? catalogLimits;
+  const floorSource = registryLimits
+    ? CAPABILITY_SOURCE.PROVIDER_REGISTRY
+    : catalogProvenance ? CAPABILITY_SOURCE.DYNAMIC_CATALOG : CAPABILITY_SOURCE.DEFAULT_FLOOR;
+  const resolved = withLimits(result, limits, floorSource, floorSource);
+  return catalogProvenance ? { ...resolved, catalog: catalogProvenance } : resolved;
 }

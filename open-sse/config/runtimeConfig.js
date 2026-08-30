@@ -97,3 +97,28 @@ export function resolveRetryEntry(entry) {
 export const SKIP_PATTERNS = [
   "Please write a 5-10 word title for the following conversation:"
 ];
+
+// ── Dynamic Model Capability Catalog (models.dev background sync) ────────────
+// External metadata is an ENHANCEMENT below the hand-written capability tiers:
+// sync failures keep the last-known-good snapshot, and the request hot path
+// never touches the network or disk for capability lookups.
+export const MODEL_CATALOG_CONFIG = {
+  // MODEL_CATALOG=off disables the background sync entirely (local tables only).
+  enabled: !/^(off|false|0)$/i.test(process.env.MODEL_CATALOG || ""),
+  url: process.env.MODEL_CATALOG_URL || "https://models.dev/api.json",
+  // Let the server boot and serve first requests before the first sync.
+  startupDelayMs: envMs("MODEL_CATALOG_STARTUP_DELAY", 60 * 1000),
+  refreshIntervalMs: envMs("MODEL_CATALOG_REFRESH_INTERVAL", 24 * 60 * 60 * 1000),
+  retryBackoffMs: envMs("MODEL_CATALOG_RETRY_BACKOFF", 30 * 60 * 1000),
+  requestTimeoutMs: envMs("MODEL_CATALOG_REQUEST_TIMEOUT", 60 * 1000),
+  workerTimeoutMs: envMs("MODEL_CATALOG_WORKER_TIMEOUT", 120 * 1000),
+  // Hard cap on the upstream payload — reject absurd/bomb responses (§38).
+  maxPayloadBytes: 25 * 1024 * 1024,
+  // A modality needs a majority of catalog sources to declare it, so one
+  // reseller mislabelling a text model cannot flip vision on (§17 guard).
+  minModalityShare: 0.5,
+  // Ignore limit deltas below this share: gateways round 200000 vs 202752.
+  limitTolerance: 0.1,
+  // Freshness reporting only — a stale catalog remains usable (§35).
+  maxStalenessMs: envMs("MODEL_CATALOG_MAX_STALENESS", 7 * 24 * 60 * 60 * 1000),
+};

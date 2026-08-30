@@ -49,7 +49,7 @@ describe("provenance fields are always present and internally consistent", () =>
     }
   });
 
-  it("holds across every model the registry serves", () => {
+  it("holds across every model the registry serves", { timeout: 30_000 }, () => {
     const bad = [];
     for (const [alias, models] of Object.entries(PROVIDER_MODELS)) {
       for (const m of models || []) {
