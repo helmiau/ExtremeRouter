@@ -2,9 +2,11 @@
 // `getVideoAdapter(provider)` resolves a provider id to its video adapter, or
 // null when the provider does not implement text-to-video generation.
 import runwayml from "./runwayml.js";
+import bynara from "./bynara.js";
 
 const ADAPTERS = {
   runwayml,
+  bynara,
 };
 
 export function getVideoAdapter(provider) {

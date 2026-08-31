@@ -70,7 +70,13 @@ export default {
     },
   ],
   // Live discovery — /v1/models exposes whatever the key has access to.
-  models: [],
+  // agnes-video-v2.0 is a static override so `getModelType` classifies it as a
+  // video (T2V) model: the dynamic /v1/models fetcher does not expose media
+  // `kind`, and a video-input modality is NOT text-to-video proof. LLM models
+  // remain dynamic/passthrough — only this entry is pinned.
+  models: [
+    { id: "agnes-video-v2.0", name: "Agnes Video 2.0", kind: "video", params: ["mode", "duration", "ratio", "resolution"] },
+  ],
   passthroughModels: true,
   modelsFetcher: {
     url: "https://router.bynara.id/v1/models",
@@ -79,11 +85,18 @@ export default {
     // generic OpenAI shape which only understands context_length.
     type: "bynara",
   },
-  // Image generation via separate host.
-  serviceKinds: ["llm", "image"],
+  // Image and video generation via the separate media host.
+  serviceKinds: ["llm", "image", "video"],
   imageConfig: {
     baseUrl: "https://api-images.bynara.id/v1/images/generations",
     editUrl: "https://api-images.bynara.id/v1/images/edits",
     bodyFields: ["model", "prompt", "n", "size", "response_format"],
+  },
+  // Verified contract (router.bynara.id/docs): POST /v1/videos with mode=t2v,
+  // Bearer sk-nry-… auth; poll GET /v1/videos/{id}; result url is a relative
+  // /v1/videos/{id}/download resolved against this host (expiring).
+  videoConfig: {
+    baseUrl: "https://api-images.bynara.id/v1/videos",
+    bodyFields: ["model", "mode", "prompt", "negative_prompt", "resolution", "ratio", "duration", "seed", "watermark"],
   },
 };
