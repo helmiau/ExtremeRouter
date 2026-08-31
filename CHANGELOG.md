@@ -1,3 +1,41 @@
+# v0.8.7 (2026-08-31)
+
+## Features
+- **Canonical Attempt architecture** — every ChatResult now carries a `canonicalAttempt` evidence hold (logical success, usable output, transport/finish/terminal evidence, observational stream state) unified across streaming, forced-SSE and non-streaming paths. `classifyCanonicalAttempt` derives a deterministic outcome class (success / transport_failure / provider_failure / empty_output / incomplete / cancelled) from the finalized evidence only.
+- **Canonical policy engine** — `canonicalPolicy` derives one authoritative `{fallbackEligible, retryable, stopProgression, health}` decision per attempt, replacing scattered status-based re-derivation. Health execution is isolated from fallback decisions (health side-effect stays, its return no longer drives fallback).
+- **Combo consumes canonical retry/fallback policy** — candidate progression and same-account retry in `handleComboChat` and the single-model account loop now read the finalized policy: non-retryable client errors (400/405/406/413/415/422) and client abort stop; 401/403/404/provider_error/malformed/429/5xx/empty-output fall back to the next candidate with no new same-account retry loop. Fusion/Swarm/Cascade gate on `candidateServed` (logical success) unchanged.
+- **Dynamic model capability catalog** — background sync from models.dev with ETag caching, `validatedAt` freshness (304 Not Modified extends freshness instead of restarting the clock), and one vote per provider in modality majority. Wired through `/api/models/catalog-sync`, the catalog worker, and a frozen provenance contract (sourceType/confidence/known semantics).
+- **contextWindow/maxOutput audit + canonical token budget** — canonical `resolveOutputBudget` with hard/soft constraint separation and provider output ceilings (`providerOutputLimits`); `max_output_tokens > max_completion_tokens > max_tokens` precedence unified across every translator path.
+- **New OAuth Provider: ZCode (zcode.z.ai)** — device-style browser OAuth; chat routed through Anthropic legs with auth-error fallback; credentials sent as `x-api-key` + `Authorization: Bearer`; Start Plan captcha wall surfaced as an actionable error.
+- **New Provider: Alibaba Token Plan (alitp-intl)** — ported with golden URL/header snapshots.
+- **Zed usage handler** — connected Zed accounts now appear on `/dashboard/quota` with plan label, edit predictions, and billing-cycle reset.
+- **Kiro gateway-first** — `runtime.us-east-1.kiro.dev` attempted first, with 401/403/404 fallback to the AWS host.
+- **Antigravity quota consolidation** — quota display reduced to 4 resource families (Claude Sonnet 4.6 Thinking, Claude Opus 4.6 Thinking, GPT-OSS 120B Medium, Gemini Family).
+- **Bynara moved to the free tab** with live model capability catalog sync.
+- **Gemini 3.7 Flash tiered models** (port from 9router) with plain wire model IDs.
+- **xAI Grok 4.5/4.6 catalog + quota tracker improvements**.
+- **OpenCode Muse Spark routing** — muse-spark models route via `/zen/v1/responses` (Responses executor path); request-scoped session/request identity removes executor singleton state.
+- **Provider capability hardening** — provider-scoped limits, unverified-capability marker, output ceiling; tokenrouter qwen reasoning clamped to low/medium.
+- **Streaming request details** — start non-terminal (`streaming`) and finalize from the canonical outcome; SSE emission counter hardened.
+- **Usage API-key hashing + opt-in observability** — gateway keys hashed at rest (migration 006), opt-in sampling, unified status constants (migration 007).
+- **Circuit breaker toggle** on the Profile page.
+- **Real brand icons** — 35 letter-avatar placeholders replaced with real provider logos.
+- **Console-log redesign** — structured live log viewer with level filters, component tags, search highlight, pause/resume, scroll pinning, wrap/timestamp toggles, copy/download, and ANSI-code stripping.
+
+## Fixes
+- **limits audit (3 confirmed bugs)** — 7 registries declaring limits as `contextLength`/`maxOutputTokens` had them silently dropped (kiro/windsurf/aihorde/bazaarlink/hyperagent/theoldllm/mimocode); `translateRequest` honored the lowest-precedence token budget instead of `max_output_tokens > max_completion_tokens > max_tokens`; openai-to-cursor/commandcode re-clamped capability-less models against the 200K floor. All corrected; canonical name wins when a model declares both spellings.
+- **ZCode start-plan auth** — authenticate with the OAuth JWT, not the coding key; send credential as `x-api-key` + `Authorization: Bearer`; surface the captcha wall as an actionable error instead of a silent 400.
+- **Provider statuses** — orcarouter 404, bynara 400, and hcnsec 429 resolved; UI model strings routed by canonical alias rather than `uiAlias`.
+- **Antigravity 404** — `gemini-3.7-flash-high` quota detail now resolves the plain wire model ID for the CodeAssist API.
+- **projectId onboardUser** — skipped for the `daily-cloudcode-pa` endpoint and the antigravity provider.
+- **Token refresh** — added cline/clinepass handlers using a JSON refresh body.
+- **Claude cache** — breakpoints re-anchored on passthrough responses.
+- **Streaming** — undeclared `openAIResponsesTerminalSent` replaced; redundant `streamDoneSent` removed; malformed forced-SSE now persists a canonical failure instead of being dropped.
+- **Translator** — output tokens clamped by model capabilities with alias field mapping.
+
+## Tests
+- 54 new suites covering the canonical-attempt/policy/retry boundary (canonical-attempt, canonical-classification, canonical-policy, canonical-retry-gate, retry-eligibility-boundary, combo-policy-retry-fallback, candidate-served, combo-canonical-success, chat-result-1b/1c), the token-budget resolver integration, the model catalog sync/normalize, streaming lifecycle + emission counter, open-code Muse/identity, ZCode OAuth + import route, Zed usage, usage key-hash/status, limits audit, Antigravity quota families/wire-model, Bynara, Grok, Kiro fallback, Alibaba Token Plan, circuit-breaker toggle, capability-provider limits, and the console-log parser. Full suite green.
+
 # v0.8.6 (2026-08-17)
 
 ## Features
