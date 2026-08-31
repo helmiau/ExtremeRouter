@@ -66,13 +66,24 @@ export async function handleVideoGenerationCore({
   }
 
   const buildRequest = async () => {
-    const url = adapter.buildUrl(model, credentials);
-    const requestBody = await adapter.buildBody(model, body);
-    const headers = adapter.buildHeaders(credentials, requestBody, model, body);
-    return { url, headers, requestBody };
+    const u = adapter.buildUrl(model, credentials);
+    const rb = await adapter.buildBody(model, body);
+    const h = adapter.buildHeaders(credentials, rb, model, body);
+    return { url: u, headers: h, requestBody: rb };
   };
 
-  let { url, headers, requestBody } = await buildRequest();
+  let url;
+  let headers;
+  let requestBody;
+  try {
+    const built = await buildRequest();
+    url = built.url;
+    headers = built.headers;
+    requestBody = built.requestBody;
+  } catch (error) {
+    // Adapter validation (unsupported ratio/duration, etc.) → 400 invalid request.
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, error.message || "Invalid video request");
+  }
   log?.debug?.("VIDEO", `${provider.toUpperCase()} | ${model} | prompt="${body.prompt.slice(0, 50)}..."`);
 
   let providerResponse;

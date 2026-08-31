@@ -1,15 +1,16 @@
 /**
- * Registry + dashboard wiring tests for Text-to-Video.
+ * Registry + dashboard wiring tests for Text-to-Video (Runway, verified contract).
  *
- * Verifies model-level capability granularity: the `video` kind + `/v1/video/generations`
- * route exist, Runway advertises the video service, its video models are `kind: video`
- * while image models stay image-only, and `getProvidersByKind("video")` surfaces Runway.
+ * Verifies model-level capability granularity: `gen4.5` is the T2V video model
+ * while I2V models (gen4_turbo / gen3a_turbo / gen4_image*) are image-pipeline
+ * models and never T2V-eligible; the video kind + route exist; Runway advertises
+ * the video service and appears in getProvidersByKind("video").
  */
 import { describe, it, expect } from "vitest";
 import { MEDIA_PROVIDER_KINDS, AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
 import { getModelType } from "open-sse/config/providerModels.js";
 
-describe("Text-to-Video registry + dashboard wiring", () => {
+describe("Text-to-Video registry + dashboard wiring (Runway gen4.5)", () => {
   it("declares the video kind mapped to POST /v1/video/generations", () => {
     const video = MEDIA_PROVIDER_KINDS.find((k) => k.id === "video");
     expect(video).toBeDefined();
@@ -29,10 +30,14 @@ describe("Text-to-Video registry + dashboard wiring", () => {
     expect(ids).not.toContain("black-forest-labs");
   });
 
-  it("video models are kind=video and image models stay image-only (model-level gate)", () => {
-    expect(getModelType("runwayml", "gen4_turbo")).toBe("video");
-    expect(getModelType("runwayml", "gen3a_turbo")).toBe("video");
+  it("only gen4.5 is classified as a T2V (kind=video) model", () => {
+    expect(getModelType("runwayml", "gen4.5")).toBe("video");
+    // I2V / image models are kind=image and therefore never T2V-eligible.
+    expect(getModelType("runwayml", "gen4_turbo")).toBe("image");
+    expect(getModelType("runwayml", "gen3a_turbo")).toBe("image");
     expect(getModelType("runwayml", "gen4_image")).toBe("image");
-    expect(AI_PROVIDERS.runwayml.serviceKinds).toContain("image");
+    expect(getModelType("runwayml", "gen4_image_turbo")).toBe("image");
+    // The provider still supports both services.
+    expect(AI_PROVIDERS.runwayml.serviceKinds.sort()).toEqual(["image", "video"]);
   });
 });
