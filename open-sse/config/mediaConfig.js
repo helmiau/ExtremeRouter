@@ -25,3 +25,18 @@ export const BLOCKED_HOSTS = new Set([
   "169.254.169.254", // AWS/GCP/Azure IMDS
   "metadata.google.internal",
 ]);
+
+// Max bytes accepted from a remote generated-video fetch. Kept bounded to defend
+// memory DoS while still allowing typical T2V/I2V clips (seconds-long MP4s).
+export const MAX_VIDEO_BYTES = 512 * 1024 * 1024; // 512MB
+
+// Content-Types accepted as successful generated-video output. `octet-stream`
+// is allowed only as a fallback because some CDN/object stores send it for
+// signed artifacts; it is never treated as proof the body is video on its own.
+export const VIDEO_CONTENT_TYPES = new Set([
+  "video/mp4",
+  "video/webm",
+  "video/quicktime",
+  "video/mov",
+  "application/octet-stream",
+]);

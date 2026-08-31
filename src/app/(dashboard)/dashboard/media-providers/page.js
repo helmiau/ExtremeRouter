@@ -12,6 +12,7 @@ import { getProviderIconPath } from "@/shared/utils/providerIcon";
 // intentionally omitted — image/tts combo creation is disabled (COMBO_KINDS empty).
 const SECTIONS = [
   { kind: "image", title: "Text to Image", icon: "brush", nodeType: null, addLabel: "" },
+  { kind: "video", title: "Text to Video", icon: "movie", nodeType: null, addLabel: "" },
   { kind: "stt", title: "Speech To Text", icon: "mic", nodeType: "custom-stt", addLabel: "STT" },
   { kind: "tts", title: "Text To Speech", icon: "record_voice_over", nodeType: "custom-tts", addLabel: "TTS" },
 ];
