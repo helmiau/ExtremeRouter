@@ -72,16 +72,24 @@ export async function resolvePublicIps(hostname) {
  * (bad scheme, private/reserved host, private DNS, redirect, oversized body,
  * disallowed Content-Type, timeout, network error).
  *
+ * Authentication headers (e.g. `Authorization: Bearer <provider-key>`) may be
+ * supplied via `headers` for server-side retrieval of provider-protected
+ * artifacts. These headers are attached to the outbound fetch while every SSRF /
+ * DNS / scheme / size / Content-Type check stays active. They are SERVER-supplied:
+ * the media-result route resolves them from provider credentials, and no client
+ * can inject arbitrary outbound headers.
+ *
  * @param {string} url - Absolute http(s) artifact URL
  * @param {object} [options]
  * @param {AbortSignal} [options.signal] - Caller-owned abort signal (client cancellation)
  * @param {number} [options.timeoutMs] - Override timeout (defaults to mediaConfig)
  * @param {number} [options.maxBytes] - Override byte cap (defaults to mediaConfig image cap)
  * @param {Set<string>} [options.allowedTypes] - Allowed Content-Types (defaults to video set)
+ * @param {object} [options.headers] - Server-side request headers (e.g. Authorization)
  * @returns {Promise<{buffer: Buffer, mimeType: string, url: string}|null>}
  */
 export async function safeFetchMediaResult(url, options = {}) {
-  const { signal, timeoutMs = FETCH_TIMEOUT_MS, maxBytes, allowedTypes } = options;
+  const { signal, timeoutMs = FETCH_TIMEOUT_MS, maxBytes, allowedTypes, headers } = options;
   const max = maxBytes ?? 512 * 1024 * 1024;
 
   if (typeof url !== "string") return null;
@@ -107,7 +115,11 @@ export async function safeFetchMediaResult(url, options = {}) {
   try {
     // `redirect:"manual"` — never follow a redirect to a different (possibly
     // private) target. Generated-artifact URLs are direct; a 3xx is rejected.
-    const response = await fetch(url, { signal: fetchSignal, redirect: "manual" });
+    const response = await fetch(url, {
+      signal: fetchSignal,
+      redirect: "manual",
+      ...(headers && typeof headers === "object" ? { headers } : {}),
+    });
     if (response.status >= 300 || !response.ok || !response.body) return null;
 
     const mimeType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();

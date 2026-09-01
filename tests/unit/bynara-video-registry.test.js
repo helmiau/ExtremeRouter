@@ -78,7 +78,7 @@ describe("handleVideoGenerationCore — bynara gate", () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  it("routes agnes-video-v2.0 through submit+poll and normalizes the result", async () => {
+  it("routes agnes-video-v2.0 through submit+poll and exposes an ExtremeRouter media-result URL (never the raw provider URL)", async () => {
     global.fetch
       .mockResolvedValueOnce(jsonResponse({ id: "t1", status: "pending", created: 123 })) // submit
       .mockResolvedValueOnce(jsonResponse({ id: "t1", status: "succeeded", url: "/v1/videos/t1/download", created: 123 })); // poll
@@ -86,12 +86,17 @@ describe("handleVideoGenerationCore — bynara gate", () => {
       body: { model: "bynara/agnes-video-v2.0", prompt: "a red ball rolling" },
       modelInfo: { provider: "bynara", model: "agnes-video-v2.0" },
       credentials: { apiKey: "k" },
+      mediaResultOrigin: "http://localhost:20128",
       log: null,
     });
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
     const result = await promise;
     expect(result.success).toBe(true);
     const body = await result.response.json();
-    expect(body.data).toEqual([{ url: "https://router.bynara.id/v1/videos/t1/download" }]);
+    // The client only ever sees the ExtremeRouter-owned media-result URL; the
+    // provider download URL (which needs the Bynara key) is kept server-side.
+    const url = body.data[0].url;
+    expect(url).toMatch(/^http:\/\/localhost:20128\/api\/v1\/media\/results\/[0-9a-f-]{36}$/);
+    expect(url).not.toContain("router.bynara.id");
   });
 });

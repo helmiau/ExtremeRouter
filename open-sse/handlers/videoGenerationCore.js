@@ -5,6 +5,7 @@ import { getExecutor } from "../executors/index.js";
 import { getVideoAdapter } from "./videoProviders/index.js";
 import { getModelType } from "../config/providerModels.js";
 import { safeFetchMediaResult } from "../utils/mediaResultDownload.js";
+import { registerMediaResult, mediaResultPath } from "../services/mediaResultStore.js";
 
 function serializeRequestBody(requestBody) {
   if (typeof FormData !== "undefined" && requestBody instanceof FormData) return requestBody;
@@ -37,6 +38,7 @@ export async function handleVideoGenerationCore({
   credentials,
   log,
   binaryOutput = false,
+  mediaResultOrigin = "",
   onCredentialsRefreshed,
   onRequestSuccess,
 }) {
@@ -154,14 +156,23 @@ export async function handleVideoGenerationCore({
   if (onRequestSuccess) await onRequestSuccess();
 
   const normalized = adapter.normalize(parsed);
-  const finalBody = normalized?.created && Array.isArray(normalized?.data) ? normalized : parsed;
+  let finalBody = normalized?.created && Array.isArray(normalized?.data) ? normalized : parsed;
+
+  // Server-side auth header for authenticated-download provider artifacts.
+  // Used to fetch bytes for binary output and (via the media route) playback,
+  // without ever exposing the provider key to the client.
+  const artifactAuthHeaders = () => {
+    if (!adapter.requiresAuthenticatedDownload || !credentials) return undefined;
+    const key = credentials.apiKey || credentials.accessToken;
+    return key ? { Authorization: `Bearer ${key}` } : undefined;
+  };
 
   // Binary output: proxy the completed video bytes through the SSRF-hardened
   // downloader (never the unguarded urlToBase64 path).
   if (binaryOutput) {
     const firstUrl = Array.isArray(finalBody?.data) ? finalBody.data[0]?.url : null;
     if (firstUrl) {
-      const media = await safeFetchMediaResult(firstUrl);
+      const media = await safeFetchMediaResult(firstUrl, { headers: artifactAuthHeaders() });
       if (media) {
         return {
           success: true,
@@ -177,7 +188,30 @@ export async function handleVideoGenerationCore({
     }
   }
 
-  // Default: return provider URLs (same convention as the image pipeline).
+  // Authenticated-download providers: never expose the raw provider URL. Register
+  // each artifact under an opaque ExtremeRouter media-result URL instead.
+  if (adapter.requiresAuthenticatedDownload && Array.isArray(finalBody?.data)) {
+    finalBody = {
+      ...finalBody,
+      data: finalBody.data.map((item) => {
+        const u = item?.url;
+        if (typeof u === "string" && /^https?:\/\//.test(u)) {
+          const rec = registerMediaResult({
+            provider,
+            mediaType: "video",
+            source: { kind: "remote-url", url: u },
+            connectionId: credentials?.connectionId,
+          });
+          const path = mediaResultPath(rec.id);
+          return { ...item, url: mediaResultOrigin ? `${mediaResultOrigin}${path}` : path };
+        }
+        return item;
+      }),
+    };
+  }
+
+  // Default: ExtremeRouter media-result URLs for authenticated providers, or the
+  // provider's (public) URL for providers whose artifacts are safe to expose.
   return {
     success: true,
     response: new Response(JSON.stringify(finalBody), {

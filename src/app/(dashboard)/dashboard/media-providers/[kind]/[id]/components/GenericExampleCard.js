@@ -532,6 +532,26 @@ export function GenericExampleCard({ providerId, kind }) {
               />
             </div>
           )}
+          {kind === "video" && result?.data?.data?.[0]?.url && (
+            <div className="mt-2">
+              <div className="flex items-center justify-end mb-1.5">
+                <a
+                  href={result.data.data[0].url}
+                  download="video.mp4"
+                  className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[14px]">download</span>
+                  Download
+                </a>
+              </div>
+              <video
+                src={result.data.data[0].url}
+                controls
+                playsInline
+                className="max-w-full rounded-lg border border-border"
+              />
+            </div>
+          )}
         </div>
       </div>
     </Card>

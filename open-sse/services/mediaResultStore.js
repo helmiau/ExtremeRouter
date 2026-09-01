@@ -1,0 +1,112 @@
+// Provider-agnostic media-result registry + retrieval (delivery abstraction).
+//
+// Goal: generated media that requires provider-authenticated download must never
+// be exposed directly to clients as the raw provider URL. A provider artifact is
+// registered here and the client only ever receives an ExtremeRouter-owned URL
+// (/api/v1/media/results/<opaque-id>). This layer is reusable by Bynara, Runway,
+// and future image/audio providers — it contains NO provider-specific branches.
+//
+// v1 storage: an in-memory Map (process-local). Generated artifacts have short
+// lifetimes and the media pipeline is process-local, so in-memory is acceptable.
+// State is LOST on restart (documented). No permanent media database or object
+// storage is introduced.
+//
+// Access model: playback is capability-based — the opaque id (a random UUID) IS the
+// access token, because a browser <video> tag cannot send an Authorization header.
+// The originating principal / connection id is recorded for auditing; it is NOT
+// required (or used) to gate playback, which would break inline <video> rendering.
+//
+// Provider credentials are resolved server-side at retrieval time via an injected
+// `getCredentials(provider, ...)` function (the route passes the real provider
+// connection lookup). This keeps the generic layer decoupled from src auth code,
+// and the client never receives provider secrets.
+
+import { randomUUID } from "node:crypto";
+import { safeFetchMediaResult } from "../utils/mediaResultDownload.js";
+
+// Internal lifetime for a registered result (expiring-provider URLs are bounded
+// by this too — we never keep a provider URL forever). 30 minutes is plenty for an
+// inline <video> preview and avoids unbounded retention.
+export const DEFAULT_MEDIA_RESULT_TTL_MS = 30 * 60 * 1000;
+
+const store = new Map();
+
+export function mediaResultPath(id) {
+  return `/api/v1/media/results/${id}`;
+}
+
+/**
+ * Register a provider artifact as an ExtremeRouter media resource.
+ * @param {object} p
+ * @param {string} p.provider - provider id
+ * @param {string} p.mediaType - "video" | "image" | "audio" (carry-through, future-proof)
+ * @param {{kind: string, url: string}} p.source - provider artifact reference (remote-url)
+ * @param {string} [p.connectionId] - originating provider connection (for the exact credential)
+ * @param {string} [p.contentType] - expected MIME (optional; verified at retrieval)
+ * @param {number} [p.ttlMs] - override internal TTL
+ * @returns {{id: string, expiresAt: number}}
+ */
+export function registerMediaResult({ provider, mediaType = "video", source, connectionId, contentType, ttlMs = DEFAULT_MEDIA_RESULT_TTL_MS }) {
+  const id = randomUUID(); // opaque — never the provider task id
+  const expiresAt = Date.now() + ttlMs;
+  store.set(id, { id, provider, mediaType, source, connectionId, contentType, expiresAt, createdAt: Date.now() });
+  return { id, expiresAt };
+}
+
+export function getMediaResult(id) {
+  return store.get(id) || null;
+}
+
+export function deleteMediaResult(id) {
+  return store.delete(id);
+}
+
+export function clearMediaResults() {
+  store.clear();
+}
+
+export function sizeMediaResults() {
+  return store.size;
+}
+
+/**
+ * Resolve a registered provider artifact and fetch it server-side, defensively.
+ * @param {string} id - opaque result id
+ * @param {object} [options]
+ * @param {Function} [options.getCredentials] - `getProviderCredentials(provider, exclude, model, opts)` (from src auth)
+ * @param {number} [options.nowMs] - injectable clock for deterministic expiry tests
+ * @returns {Promise<{ok:true, buffer: Buffer, mimeType: string} | {ok:false, status: number, message: string}>}
+ */
+export async function resolveMediaResult(id, options = {}) {
+  const { nowMs = Date.now() } = options;
+  const rec = getMediaResult(id);
+  if (!rec) return { ok: false, status: 404, message: "Media result not found" };
+  if (typeof rec.expiresAt === "number" && nowMs > rec.expiresAt) {
+    deleteMediaResult(id);
+    return { ok: false, status: 410, message: "Media result expired" };
+  }
+  if (typeof rec.source?.url !== "string" || !rec.source.url) {
+    return { ok: false, status: 502, message: "Media result has no source artifact" };
+  }
+
+  // Resolve the provider credential server-side for authenticated artifacts.
+  let credentials = null;
+  const getCredentials = options.getCredentials;
+  if (getCredentials) {
+    try {
+      credentials = await getCredentials(rec.provider, null, null, { preferredConnectionId: rec.connectionId });
+    } catch {
+      credentials = null;
+    }
+  }
+
+  const headers = {};
+  const key = credentials?.apiKey || credentials?.accessToken;
+  if (credentials && key) headers.Authorization = `Bearer ${key}`;
+
+  const media = await safeFetchMediaResult(rec.source.url, { headers });
+  if (!media) {
+    return { ok: false, status: 502, message: "Failed to retrieve media artifact" };
+  }
+  return { ok: true, buffer: media.buffer, mimeType: media.mimeType };
+}

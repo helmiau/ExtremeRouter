@@ -31,6 +31,7 @@ export async function handleVideoGeneration(request) {
   const url = new URL(request.url);
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const binaryOutput = url.searchParams.get("response_format") === "binary";
+  const origin = url.origin;
   const modelStr = body.model;
 
   const apiKey = extractApiKey(request);
@@ -50,10 +51,10 @@ export async function handleVideoGeneration(request) {
     if (denied) return denied;
   }
 
-  return handleSingleModelVideo(body, modelStr, { preferredConnectionId, binaryOutput });
+  return handleSingleModelVideo(body, modelStr, { preferredConnectionId, binaryOutput, origin });
 }
 
-async function handleSingleModelVideo(body, modelStr, { preferredConnectionId, binaryOutput } = {}) {
+async function handleSingleModelVideo(body, modelStr, { preferredConnectionId, binaryOutput, origin } = {}) {
   const modelInfo = await getModelInfo(modelStr).catch(() => null);
   if (!modelInfo?.provider) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
@@ -88,6 +89,7 @@ async function handleSingleModelVideo(body, modelStr, { preferredConnectionId, b
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       binaryOutput,
+      mediaResultOrigin: origin || "",
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,

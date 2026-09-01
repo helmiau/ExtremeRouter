@@ -103,6 +103,10 @@ function normalizeFailure(s) {
 
 export default {
   async: true,
+  // Bynara result download URLs require the provider API key. The generic layer
+  // therefore exposes artifacts through ExtremeRouter media-result URLs and
+  // fetches them server-side with the provider Bearer credential.
+  requiresAuthenticatedDownload: true,
   buildUrl: () => BASE_URL,
   buildHeaders: (creds) => {
     const key = creds?.apiKey || creds?.accessToken;
