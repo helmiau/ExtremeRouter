@@ -9,6 +9,11 @@ export const dynamic = "force-dynamic";
  * Streams/proxies a registered provider media artifact to the client without ever
  * exposing the provider URL, task id, or credentials. Provider credentials are
  * resolved server-side and attached to a defensive (SSRF-hardened) fetch.
+ *
+ * Error codes are media-specific (not the generic 404 "model_not_found"):
+ *   404 → media_result_not_found   unknown/unguessable id
+ *   410 → media_result_expired     registration TTL elapsed
+ *   502 → media_result_unavailable source artifact missing or fetch failed
  */
 export async function GET(request, { params }) {
   const { id } = await params;
@@ -16,7 +21,12 @@ export async function GET(request, { params }) {
   const result = await resolveMediaResult(id, { getCredentials: getProviderCredentials });
 
   if (!result.ok) {
-    return errorResponse(result.status, result.message);
+    const code = {
+      404: "media_result_not_found",
+      410: "media_result_expired",
+      502: "media_result_unavailable",
+    }[result.status];
+    return errorResponse(result.status, result.message, code);
   }
 
   return new Response(result.buffer, {

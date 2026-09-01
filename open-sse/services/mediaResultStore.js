@@ -6,15 +6,24 @@
 // (/api/v1/media/results/<opaque-id>). This layer is reusable by Bynara, Runway,
 // and future image/audio providers — it contains NO provider-specific branches.
 //
-// v1 storage: an in-memory Map (process-local). Generated artifacts have short
-// lifetimes and the media pipeline is process-local, so in-memory is acceptable.
-// State is LOST on restart (documented). No permanent media database or object
-// storage is introduced.
+// STORAGE MODEL — process-global singleton:
+//   Each App Router route is compiled by webpack as its OWN bundle. A top-level
+//   `const store = new Map()` would therefore exist ONCE PER BUNDLE, so a UUID
+//   registered by the video-generation POST route would be invisible to the
+//   media-results GET route (they live in different bundles) — the cross-route
+//   404 bug. To keep ONE store per process, the Map is held on a well-known
+//   globalThis key (via Symbol.for, so every duplicated module instance reads
+//   the same property). All route bundles share the same underlying Map.
 //
-// Access model: playback is capability-based — the opaque id (a random UUID) IS the
-// access token, because a browser <video> tag cannot send an Authorization header.
-// The originating principal / connection id is recorded for auditing; it is NOT
-// required (or used) to gate playback, which would break inline <video> rendering.
+//   v1 storage: in-memory Map, process-local. Generated artifacts have short
+//   lifetimes, so in-memory is acceptable. State is LOST on restart and is not
+//   shared across multiple Node processes (documented). No permanent media
+//   database or object storage is introduced.
+//
+// Access model: playback is capability-based — the opaque id (a random UUID) IS
+// the access token, because a browser <video> tag cannot send an Authorization
+// header. The originating principal / connection id is recorded for auditing; it
+// is NOT required (or used) to gate playback, which would break inline <video>.
 //
 // Provider credentials are resolved server-side at retrieval time via an injected
 // `getCredentials(provider, ...)` function (the route passes the real provider
@@ -29,7 +38,23 @@ import { safeFetchMediaResult } from "../utils/mediaResultDownload.js";
 // inline <video> preview and avoids unbounded retention.
 export const DEFAULT_MEDIA_RESULT_TTL_MS = 30 * 60 * 1000;
 
-const store = new Map();
+// Symbol.for → the SAME symbol from every duplicated module instance, so all of
+// them address one global property even though each bundle re-evaluates the file.
+const MEDIA_RESULT_STORE_KEY = Symbol.for("extremerouter.mediaResultStore.map");
+
+// process-global singleton. The first module instance to run creates the Map and
+// publishes it; every later (duplicated) instance finds it already published and
+// reuses it. HMR reloads re-evaluate the module but reuse the SAME map — they can
+// never spawn a second store.
+function getProcessStore() {
+  const g = globalThis;
+  if (!g[MEDIA_RESULT_STORE_KEY] || !(g[MEDIA_RESULT_STORE_KEY] instanceof Map)) {
+    g[MEDIA_RESULT_STORE_KEY] = new Map();
+  }
+  return g[MEDIA_RESULT_STORE_KEY];
+}
+
+const store = getProcessStore();
 
 export function mediaResultPath(id) {
   return `/api/v1/media/results/${id}`;
@@ -79,10 +104,10 @@ export function sizeMediaResults() {
  */
 export async function resolveMediaResult(id, options = {}) {
   const { nowMs = Date.now() } = options;
-  const rec = getMediaResult(id);
+  const rec = store.get(id);
   if (!rec) return { ok: false, status: 404, message: "Media result not found" };
   if (typeof rec.expiresAt === "number" && nowMs > rec.expiresAt) {
-    deleteMediaResult(id);
+    store.delete(id);
     return { ok: false, status: 410, message: "Media result expired" };
   }
   if (typeof rec.source?.url !== "string" || !rec.source.url) {

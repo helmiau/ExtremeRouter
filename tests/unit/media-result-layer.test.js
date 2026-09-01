@@ -16,6 +16,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn() }));
 
 import { lookup } from "node:dns/promises";
+import { buildErrorBody } from "../../open-sse/utils/error.js";
 import { POLL_INTERVAL_MS } from "../../open-sse/handlers/imageProviders/_base.js";
 import { handleVideoGenerationCore } from "../../open-sse/handlers/videoGenerationCore.js";
 import {
@@ -186,5 +187,63 @@ describe("videoGenerationCore → media-result URL (authenticated providers)", (
     const body = await result.response.json();
     expect(body.data[0].url).toBe("https://cdn.example/v.mp4");
     expect(sizeMediaResults()).toBe(before); // not registered
+  });
+});
+
+describe("process-global singleton (cross module-context visibility)", () => {
+  beforeEach(() => clearMediaResults());
+  afterEach(() => clearMediaResults());
+
+  // A. registerMediaResult() from one imported module context is resolvable from a
+  // DIFFERENT imported module context. Next.js webpack bundles each server route, so
+  // the file is re-evaluated once per route (a "new" module-level `new Map()` per
+  // bundle was the original cross-route 404). vi.resetModules() forces a fresh module
+  // instance — the regression is that both share ONE process-global Map.
+  it("A: an id registered in one module context is resolved from a separate module context", async () => {
+    const modRegister = await import("../../open-sse/services/mediaResultStore.js");
+    const { id } = modRegister.registerMediaResult({ provider: "bynara", source: { url: "https://x/v.mp4" } });
+
+    vi.resetModules(); // fresh evaluation → would be a second `new Map()` if the store were module-scoped
+    const modResolve = await import("../../open-sse/services/mediaResultStore.js");
+
+    expect(modResolve.getMediaResult(id)).not.toBeNull();
+    expect(modResolve.getMediaResult(id).id).toBe(id);
+  });
+
+  // B. What a generation round-trip needs: the id the POST path returns is resolved by
+  // the GET path in the same process. At the store layer this is register→resolve; the
+  // route-bundle bridging is covered by the live dev-server E2E.
+  it("B: the id returned at registration resolves through the retrieval path", async () => {
+    const originalFetch = global.fetch;
+    // deterministic: provider artifact fetch yields a disallowed Content-Type, so
+    // safeFetch returns null → 502. Reaching the downloader (not 404) is the assertion.
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      new Response("nope", { status: 200, headers: { "Content-Type": "text/html" } })
+    );
+    try {
+      const { id } = registerMediaResult({ provider: "bynara", source: { url: "https://x/v.mp4" }, connectionId: "c" });
+      const r = await resolveMediaResult(id, {
+        nowMs: Date.now(),
+        getCredentials: async () => ({ apiKey: "k", connectionId: "c" }),
+      });
+      expect(r.ok).toBe(false);
+      expect(r.status).toBe(502); // id found → fetch attempted → disallowed type
+      expect(global.fetch).toHaveBeenCalled();
+      expect(r.message).not.toMatch(/not found/);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+});
+
+describe("media-result error codes (media-specific, not model_not_found)", () => {
+  it("allows an explicit code override for status codes that otherwise map generically", () => {
+    const notFound = buildErrorBody(404, "Media result not found", "media_result_not_found");
+    expect(notFound.error.code).toBe("media_result_not_found");
+    expect(notFound.error.type).toBe("invalid_request_error");
+    expect(buildErrorBody(410, "expired", "media_result_expired").error.code).toBe("media_result_expired");
+    expect(buildErrorBody(502, "unavailable", "media_result_unavailable").error.code).toBe("media_result_unavailable");
+    // a plain 404 (no override) still reports the established generic code
+    expect(buildErrorBody(404, "x").error.code).toBe("model_not_found");
   });
 });
