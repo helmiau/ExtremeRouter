@@ -1,23 +1,26 @@
 // Bynara — text-to-video via async submit + poll.
 //
-// Verified contract (router.bynara.id/docs):
-//   Submit  : POST https://api-images.bynara.id/v1/videos  → 202 { id, status:"pending", created }
+// Verified contract (router.bynara.id/docs + live probe):
+//   Submit  : POST /v1/videos  → 202 { id, status:"pending", created }
+//   Host    : router.bynara.id (the docs list api-images.bynara.id, but a live
+//             probe returns nginx HTML 404 there; router.bynara.id answers with
+//             a proper JSON API response — the working endpoint)
 //   Auth    : Authorization: Bearer <sk-nry-…> (same key as Bynara LLM)
 //   Body    : { model, mode:"t2v", prompt, negative_prompt?, resolution?, ratio?, duration?, seed?, watermark? }
 //             Text-to-video is an explicit `mode:"t2v"` — no image input is ever sent.
-//   Poll    : GET https://api-images.bynara.id/v1/videos/{id} (~5s)
+//   Poll    : GET /v1/videos/{id} (~5s)
 //             statuses: pending/processing → continue; succeeded → output; failed/error/cancelled → failure
-//   Result  : on `succeeded`, a RELATIVE url `/v1/videos/{id}/download` (expiring) → resolve against the media host.
+//   Result  : on `succeeded`, a RELATIVE url `/v1/videos/{id}/download` (expiring) → resolve against the host.
 //
-// Live verification was NOT possible (no Bynara credential in this environment);
-// the contract above is docs-verified. Job-level failure payload shape is not
-// fully documented, so failure extraction is defensive (see normalizeFailure) and
-// an unknown/terminal state is never treated as success.
+// Live verification of a full generation was NOT possible (no Bynara credential);
+// the host correction is based on a live unauthenticated probe. Job-level failure
+// payload shape is not fully documented, so failure extraction is defensive and an
+// unknown/terminal state is never treated as success.
 import { sleep, nowSec, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "../imageProviders/_base.js";
 import { PROVIDER_MEDIA } from "../../providers/index.js";
 
 const BASE_URL = PROVIDER_MEDIA["bynara"]?.videoConfig?.baseUrl;
-const MEDIA_ORIGIN = BASE_URL ? new URL(BASE_URL).origin : "https://api-images.bynara.id";
+const MEDIA_ORIGIN = BASE_URL ? new URL(BASE_URL).origin : "https://router.bynara.id";
 
 // Verified Bynara T2V constraints.
 const MAX_PROMPT_LENGTH = 3500;

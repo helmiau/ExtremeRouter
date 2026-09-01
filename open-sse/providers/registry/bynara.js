@@ -92,11 +92,16 @@ export default {
     editUrl: "https://api-images.bynara.id/v1/images/edits",
     bodyFields: ["model", "prompt", "n", "size", "response_format"],
   },
-  // Verified contract (router.bynara.id/docs): POST /v1/videos with mode=t2v,
-  // Bearer sk-nry-… auth; poll GET /v1/videos/{id}; result url is a relative
-  // /v1/videos/{id}/download resolved against this host (expiring).
+// Video contract: POST /v1/videos with mode=t2v, Bearer sk-nry-... auth; poll
+  // GET /v1/videos/{id}; result url is a relative /v1/videos/{id}/download
+  // resolved against this host (expiring).
+  //
+  // HOST NOTE: Bynara docs list api-images.bynara.id, but a live probe showed that
+  // host returns an nginx HTML 404 for POST /v1/videos, whereas
+  // router.bynara.id/v1/videos answers with a proper JSON API response (401 with
+  // a valid route). The working video endpoint is router.bynara.id (same key).
   videoConfig: {
-    baseUrl: "https://api-images.bynara.id/v1/videos",
+    baseUrl: "https://router.bynara.id/v1/videos",
     bodyFields: ["model", "mode", "prompt", "negative_prompt", "resolution", "ratio", "duration", "seed", "watermark"],
   },
 };

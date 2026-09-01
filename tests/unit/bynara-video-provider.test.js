@@ -1,7 +1,7 @@
 /**
  * Unit tests for the Bynara text-to-video adapter (verified contract).
  *
- * Contract (router.bynara.id/docs): POST api-images.bynara.id/v1/videos with
+ * Contract (router.bynara.id/docs): POST router.bynara.id/v1/videos with
  * mode=t2v; poll GET /v1/videos/{id} to `succeeded`; result url is relative.
  *
  * Covers endpoint/headers/exact payload (never image fields), Bynara-specific
@@ -37,8 +37,12 @@ describe("bynara video adapter (agnes-video-v2.0 T2V)", () => {
     vi.useRealTimers();
   });
 
-  it("submits to the verified media-host endpoint with Bearer auth", () => {
-    expect(bynara.buildUrl()).toBe("https://api-images.bynara.id/v1/videos");
+it("submits to the verified router.bynara.id endpoint with Bearer auth", () => {
+    // Live probe: api-images.bynara.id/v1/videos returns an nginx HTML 404, but
+    // router.bynara.id/v1/videos answers with the JSON API. Guard against
+    // regressing to the stale docs host.
+    expect(bynara.buildUrl()).toBe("https://router.bynara.id/v1/videos");
+    expect(bynara.buildUrl()).not.toContain("api-images.bynara.id");
     expect(bynara.buildHeaders({ apiKey: "k" })).toEqual({
       "Content-Type": "application/json",
       Authorization: "Bearer k",
@@ -134,7 +138,7 @@ describe("bynara video adapter (agnes-video-v2.0 T2V)", () => {
     await vi.advanceTimersByTimeAsync(POLL_INTERVAL_MS * 3);
     const s = await promise;
     const normalized = bynara.normalize(s);
-    expect(normalized.data).toEqual([{ url: "https://api-images.bynara.id/v1/videos/t1/download" }]);
+    expect(normalized.data).toEqual([{ url: "https://router.bynara.id/v1/videos/t1/download" }]);
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringContaining("/v1/videos/t1"),
       expect.objectContaining({ headers: HEADERS })
@@ -153,7 +157,7 @@ describe("bynara video adapter (agnes-video-v2.0 T2V)", () => {
   it("normalizes a relative url to the media origin, never an attacker host", () => {
     const n = bynara.normalize({ url: "/v1/videos/abc/download", created: 999 });
     expect(n.created).toBe(999);
-    expect(n.data[0].url).toBe("https://api-images.bynara.id/v1/videos/abc/download");
+    expect(n.data[0].url).toBe("https://router.bynara.id/v1/videos/abc/download");
     // absolute passthrough + empty guard
     expect(bynara.normalize({}).data).toEqual([]);
   });

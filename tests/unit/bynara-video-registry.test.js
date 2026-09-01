@@ -29,7 +29,7 @@ describe("bynara T2V registry + dashboard wiring", () => {
     expect(AI_PROVIDERS.bynara.serviceKinds).toContain("video");
     expect(AI_PROVIDERS.bynara.serviceKinds).toContain("image");
     expect(AI_PROVIDERS.bynara.serviceKinds).toContain("llm");
-    expect(AI_PROVIDERS.bynara.videoConfig?.baseUrl).toBe("https://api-images.bynara.id/v1/videos");
+    expect(AI_PROVIDERS.bynara.videoConfig?.baseUrl).toBe("https://router.bynara.id/v1/videos");
   });
 
   it("Bynara appears under getProvidersByKind('video')", () => {
@@ -92,6 +92,6 @@ describe("handleVideoGenerationCore — bynara gate", () => {
     const result = await promise;
     expect(result.success).toBe(true);
     const body = await result.response.json();
-    expect(body.data).toEqual([{ url: "https://api-images.bynara.id/v1/videos/t1/download" }]);
+    expect(body.data).toEqual([{ url: "https://router.bynara.id/v1/videos/t1/download" }]);
   });
 });
