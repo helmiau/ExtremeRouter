@@ -54,10 +54,14 @@ export default {
     { id: "grok-imagine-image-2.0", name: "Grok Imagine Image 2.0", params: ["n","response_format"], kind: "image" },
     { id: "grok-2-image-1212", name: "Grok 2 Image", params: ["n","response_format"], kind: "image" },
     // Image-to-Video
-    { id: "grok-imagine-video-1.5", name: "Grok Imagine Video 1.5", kind: "video" },
+    { id: "grok-imagine-video-1.5", name: "Grok Imagine Video 1.5", params: ["duration", "aspect_ratio", "resolution"], kind: "video" },
   ],
   serviceKinds: ["llm","imageToText","webSearch","image","video"],
   imageConfig: { baseUrl: "https://api.x.ai/v1/images/generations", bodyFields: ["model","prompt","n","response_format"] },
+  videoConfig: {
+    baseUrl: "https://api.x.ai/v1/videos",
+    bodyFields: ["model", "prompt", "duration", "seconds", "aspect_ratio", "resolution"],
+  },
   searchViaChat: {
     defaultModel: "grok-4.20-reasoning",
     endpoint: "https://api.x.ai/v1/responses",
