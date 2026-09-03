@@ -1,6 +1,11 @@
 // Public API barrel — all DB functions
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
+// Explicit local bindings for functions used in this file (importDb). The
+// `export ... from` re-exports below do NOT create local bindings in ESM, so
+// calling them bare here throws ReferenceError in the prod build.
+import { invalidateSettingsCache } from "./repos/settingsRepo.js";
+import { invalidateConnectionsCache } from "./repos/connectionsRepo.js";
 
 // Settings
 export {
