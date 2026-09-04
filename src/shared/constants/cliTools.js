@@ -9,6 +9,7 @@ export const MITM_TOOLS = {
     configType: "mitm",
     mitmDomain: "daily-cloudcode-pa.googleapis.com",
     modelAliases: [
+      "gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low", "gemini-3.8-flash",
       "gemini-3.7-flash-high", "gemini-3.7-flash-medium", "gemini-3.7-flash-low",
       "gemini-3.6-flash-high", "gemini-3.6-flash-medium", "gemini-3.6-flash-low",
       "gemini-3.5-flash-low", "gemini-3-flash-agent", "gemini-3.5-flash-extra-low",
@@ -18,6 +19,10 @@ export const MITM_TOOLS = {
     defaultModels: [
       // Keep gemini-3.5-flash-low first: live AG agent loop still sends it as Default.
       { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium) / Default", alias: "gemini-3.5-flash-low" },
+      { id: "gemini-3.8-flash-high", name: "Gemini 3.8 Flash (High)", alias: "gemini-3.8-flash-high" },
+      { id: "gemini-3.8-flash-medium", name: "Gemini 3.8 Flash (Medium)", alias: "gemini-3.8-flash-medium" },
+      { id: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)", alias: "gemini-3.8-flash-low" },
+      { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", alias: "gemini-3.8-flash" },
       { id: "gemini-3.7-flash-high", name: "Gemini 3.7 Flash (High)", alias: "gemini-3.7-flash-high" },
       { id: "gemini-3.7-flash-medium", name: "Gemini 3.7 Flash (Medium)", alias: "gemini-3.7-flash-medium" },
       { id: "gemini-3.7-flash-low", name: "Gemini 3.7 Flash (Low)", alias: "gemini-3.7-flash-low" },

@@ -59,6 +59,14 @@ export default {
     clientSecret: ANTIGRAVITY_OAUTH_CLIENT.clientSecret,
   },
   models: [
+    // Tiered Gemini 3.8 Flash. Same upstream contract as 3.7/3.6: the wire sends
+    // the single plain tiered id (gemini-3.8-flash-tiered); the (high)/(medium)/
+    // (low) tier only drives router-side pricing/UX. Sending a parenthesized id
+    // 404s upstream (see lock in antigravity-wire-model.test.js).
+    { id: "gemini-3.8-flash-high", name: "Gemini 3.8 Flash (High)", upstreamModelId: "gemini-3.8-flash-tiered" },
+    { id: "gemini-3.8-flash-medium", name: "Gemini 3.8 Flash (Medium)", upstreamModelId: "gemini-3.8-flash-tiered" },
+    { id: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)", upstreamModelId: "gemini-3.8-flash-tiered" },
+    { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", upstreamModelId: "gemini-3.8-flash-tiered" },
     // Tiered Gemini 3.7 / 3.6 Flash. The upstream CodeAssist API uses a SINGLE
     // plain model id for every tier (no -high/-low suffix): the parenthesized
     // "gemini-3.7-flash-tiered(high)" form does not exist and 404s with
