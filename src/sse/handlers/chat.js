@@ -522,6 +522,11 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
   let lastError = null;
   let lastStatus = null;
 
+  // One forensic requestId per logical request. Semantic re-executions and
+  // account fallbacks share it; combo dispatches override it (they own the
+  // combo-level requestId in opts.forensicMeta).
+  const logicalRequestId = createForensicId("req");
+
   // Fetch settings once before the retry loop. The early-exit branches below
   // (allRateLimited / no-credentials / exhausted-accounts) call recordHealthSample
   // which needs chatSettings, so it must exist before the loop body executes —
@@ -638,15 +643,15 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
       // OpenCode identity resolved once per logical request (see above) —
       // carried as data through the executor, never stored on singletons.
       opencodeIdentity,
-      // Combo observability: which combo/strategy/role/trafficClass produced
-      // this provider call (undefined for plain single-model requests).
-      comboContext: {
-        name: comboName,
-        strategy,
-        role: opts.role || (opts.isPanel ? "panel" : null),
-        trafficClass: opts.trafficClass || (opts.isPanel ? "panel" : "user"),
-      },
+      // Combo observability: combo name/strategy/role/trafficClass are built by
+      // the caller (dispatchResolvedCombo) and threaded through handleSingleModelChat;
+      // re-inlining them here would reference out-of-scope identifiers.
+      comboContext: opts.comboContext,
       forensicMeta: {
+        // One requestId per LOGICAL request (this handleSingleModelChat
+        // invocation). Semantic re-executions and account fallbacks share it;
+        // combo flows override with the dispatch-level combo requestId below.
+        requestId: logicalRequestId,
         ...(opts.forensicMeta || {}),
         attemptId: createForensicId("attempt"),
       },

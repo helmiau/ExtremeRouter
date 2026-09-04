@@ -283,4 +283,22 @@ describe("handleSingleModelChat — semantic retry handoff (integration)", () =>
     expect(executeMock).toHaveBeenCalledTimes(1);
     expect(res.success).toBe(true);
   });
+
+  it("forensic: semantic retry keeps requestId stable, gives each execution a distinct attemptId", async () => {
+    const saveRequestDetailMock = (await import("../../src/lib/usageDb.js")).saveRequestDetail;
+    executeMock
+      .mockResolvedValueOnce({ response: jsonRes(usageOnlyBody()), url: "u1", headers: {}, transformedBody: null })
+      .mockResolvedValueOnce({ response: jsonRes(okBody()), url: "ok", headers: {}, transformedBody: null });
+    const res = await baseChat();
+    expect(executeMock).toHaveBeenCalledTimes(2);
+    expect(res.success).toBe(true);
+
+    const saved = saveRequestDetailMock.mock.calls;
+    const attempts = saved.flatMap(([detail]) => detail.correlation ? [detail.correlation] : []);
+    // Attempt 1 + attempt 2 non-streaming successes both persist a correlation.
+    const requestIds = new Set(attempts.map((c) => c.requestId));
+    const attemptIds = new Set(attempts.map((c) => c.attemptId));
+    expect(requestIds.size).toBe(1); // one logical requestId across both executions
+    expect(attemptIds.size).toBe(2); // distinct attemptId per physical execution
+  });
 });

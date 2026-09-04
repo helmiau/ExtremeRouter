@@ -69,8 +69,20 @@ const SECRET_PATTERNS = [
   /\bsk-[A-Za-z0-9_-]{8,}\b/g,
   /\bBearer\s+[A-Za-z0-9._~+/=-]+/gi,
   /\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\b/g,
+  // Inline key=value shapes (cookie headers, captcha proof parameters, session
+  // ids embedded in a larger string) — value redacted even when the string as a
+  // whole matches no key shape above.
+  /\b[Cc]ookie\s*[=:]\s*[^;\s,]+/g,
+  /\b(?:access[_-]?token|refresh[_-]?token|captcha[_-]?(?:verify[_-]?)?(?:param|token|id)|captcha[_-]?proof|turnstile[_-]?token|hcaptcha[_-]?token|recaptcha[_-]?token|cf[_-]clearance)\s*[=:]\s*[^;\s,]+/g,
 ];
 const REDACTED = "[REDACTED]";
+
+// Forensics can carry credential-shaped objects whose VALUES are unrecognized
+// patterns (e.g. authorization: "Basic ...", captchaVerifyParam, short tokens).
+// A sensitive KEY redacts its value even when no value pattern matches.
+// Compounds use optional separators ([_-]?) so camelCase, snake_case and
+// kebab-case all match field names like captchaVerifyParam / xApiKey.
+const SENSITIVE_KEY_PATTERN = /\b(?:authorization|x[-_]?api[-_]?key|api[-_]?key|apikey|cookie|set[-_]?cookie|session[-_]?(?:id|token)?|access[-_]?token|refresh[-_]?token|captcha[-_]?(?:verify[-_]?)?(?:param|token|id)|captcha[-_]?proof|turnstile[-_]?token|hcaptcha[-_]?token|recaptcha[-_]?token|cf[-_]?clearance|token|secret|password|credential|proof)\b/i;
 
 export function redactSecretsDeep(value, depth = 0) {
   if (depth > 12) return value;
@@ -82,7 +94,9 @@ export function redactSecretsDeep(value, depth = 0) {
   if (Array.isArray(value)) return value.map((v) => redactSecretsDeep(v, depth + 1));
   if (value && typeof value === "object") {
     const out = {};
-    for (const [k, v] of Object.entries(value)) out[k] = redactSecretsDeep(v, depth + 1);
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = SENSITIVE_KEY_PATTERN.test(k) ? REDACTED : redactSecretsDeep(v, depth + 1);
+    }
     return out;
   }
   return value;
@@ -284,6 +298,29 @@ export async function getRequestDetailById(id) {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM requestDetails WHERE id = ?`, [id]);
   return row ? parseJson(row.data, null) : null;
+}
+
+/**
+ * Locate every leaf evidence row correlated with one forensic root request.
+ * Root ledger rows are stored under `id = forensic.requestId` (embedding the
+ * ordered attempts[]); streaming/error leaves are stored under their own ids
+ * but carry `correlation: { requestId, attemptId, ... }`. This returns those
+ * leaves so a forensic drill-down can reconstruct
+ * requestId -> attempts[i] -> correlation.attemptId -> leaf evidence.
+ * Retention-pruned (maxRecords), so the scan is bounded, not a hot path.
+ */
+export async function getRequestDetailsByCorrelation(requestId) {
+  if (!requestId) return [];
+  const config = await getObservabilityConfig();
+  if (!config.enabled) return [];
+  const db = await getAdapter();
+  const rows = db.all(`SELECT data FROM requestDetails ORDER BY timestamp ASC`);
+  const out = [];
+  for (const row of rows) {
+    const data = parseJson(row.data, {});
+    if (data.correlation?.requestId === requestId) out.push(data);
+  }
+  return out;
 }
 
 // Distinct provider ids seen in request details (compact SELECT DISTINCT, no row load).
