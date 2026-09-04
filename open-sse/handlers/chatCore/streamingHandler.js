@@ -51,7 +51,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, streamController, onStreamComplete, streamDetailId, savedTokens, combo }) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, streamController, onStreamComplete, streamDetailId, savedTokens, combo, forensic }) {
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
@@ -131,8 +131,14 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       providerResponse: "[Streaming - raw response not captured]",
       response: { content: "[Stream terminated before completion]", thinking: null, type: "streaming" },
       status,
-      combo
-    }, { id: streamDetailId, canonicalAttempt: attempt })).catch(err => {
+      combo,
+    }, {
+      id: streamDetailId,
+      correlation: forensic || null,
+      transport: { status: providerResponse.status, contentType: upstreamContentType, streamMode: "streaming", sourceFormat, targetFormat },
+      canonicalAttempt: attempt,
+      streamObservability: pickStreamObservability(streamState, { sourceFormat, targetFormat, mode: "streaming" }),
+    })).catch(err => {
       console.error("[RequestDetail] Failed to finalize streaming request:", err.message);
     });
     console.log(`[RequestDetail] lifecycle: streaming → ${status} | provider=${provider} | model=${model} | reason=${terminationReason} | classification=${attempt.classification ?? "null"}${combo ? ` | combo=${combo.id || "custom"}` : ""}`);
@@ -187,8 +193,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     providerResponse: "[Streaming - raw response not captured]",
     response: { content: "[Streaming in progress...]", thinking: null, type: "streaming" },
     status: REQUEST_DETAIL_STREAMING_STATUS,
-    combo
-  }, { id: streamDetailId })).catch(err => {
+      combo,
+    }, {
+      id: streamDetailId,
+      correlation: forensic || null,
+      transport: { status: providerResponse.status, contentType: upstreamContentType, streamMode: "streaming", sourceFormat, targetFormat },
+      streamObservability: pickStreamObservability(streamState, { sourceFormat, targetFormat, mode: "streaming" }),
+    })).catch(err => {
     console.error("[RequestDetail] Failed to save streaming request:", err.message);
   });
 
@@ -206,9 +217,17 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
  * Wave 2/2 adds the derived semantic fields (usableOutput / logicalSuccess /
  * outcome) — informational, consulted by no production behavior.
  */
-function pickStreamObservability(state) {
+function pickStreamObservability(state, meta = {}) {
   if (!state) return undefined;
+  const hasCounters = Number.isFinite(state.recvLines) || Number.isFinite(state.dataLines) || Number.isFinite(state.eventLines) || Number.isFinite(state.emitted);
   return {
+    sourceFormat: meta.sourceFormat || null,
+    targetFormat: meta.targetFormat || null,
+    mode: meta.mode || "streaming",
+    recvLines: hasCounters && Number.isFinite(state.recvLines) ? state.recvLines : null,
+    dataLines: hasCounters && Number.isFinite(state.dataLines) ? state.dataLines : null,
+    eventLines: hasCounters && Number.isFinite(state.eventLines) ? state.eventLines : null,
+    emitted: hasCounters && Number.isFinite(state.emitted) ? state.emitted : null,
     streamStarted: !!state.streamStarted,
     hasText: !!state.hasText,
     hasReasoning: !!state.hasReasoning,
@@ -230,7 +249,7 @@ function pickStreamObservability(state) {
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, savedTokens, savedTokensByMechanism, savedBytesByMechanism, cavemanActive, ponytailActive, retryCount, combo }) {
+export function buildOnStreamComplete({ provider, model, sourceFormat, targetFormat, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, savedTokens, savedTokensByMechanism, savedBytesByMechanism, cavemanActive, ponytailActive, retryCount, combo, forensic }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
   // Wave 2: the transform appends the observational streamState as the 4th
@@ -242,7 +261,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     };
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
-    const observability = pickStreamObservability(streamState);
+    const observability = pickStreamObservability(streamState, { sourceFormat, targetFormat, mode: "streaming" });
     // Canonical attempt: pure derivation composed with transport status at
     // the integration boundary (status only — body never touched). This is
     // the FINAL outcome evidence for the request detail: the persisted status
@@ -262,9 +281,11 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       providerResponse: safeContent,
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       status: finalStatus,
-      combo
+      combo,
     }, {
       id: streamDetailId,
+      correlation: forensic || null,
+      transport: { status: transportStatus ?? null, contentType: null, streamMode: "streaming" },
       ...(observability ? { streamObservability: observability } : {}),
       ...(canonicalAttempt ? { canonicalAttempt } : {}),
     })).catch(err => {

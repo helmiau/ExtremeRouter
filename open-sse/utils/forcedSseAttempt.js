@@ -111,6 +111,7 @@ export function createCanonicalAttemptFromForcedSse({
   const classification = classifyCanonicalAttempt({
     completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
     completionType, usableOutput, logicalSuccess, responseStatus: status ?? null,
+    hasUsage: ev.hasUsage, usagePresent: ev.hasUsage,
   });
 
   return {
@@ -137,6 +138,7 @@ export function createCanonicalAttemptFromForcedSse({
     policy: decideAttemptPolicy({
       source: "provider", completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
       completionType, usableOutput, logicalSuccess,
+      hasUsage: ev.hasUsage, usagePresent: ev.hasUsage,
       ...classification,
     }),
   };

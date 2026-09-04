@@ -419,6 +419,57 @@ export default function RequestDetailsTab() {
             </div>
             
             <div className="space-y-4">
+              {(selectedDetail.correlation || selectedDetail.transport || selectedDetail.canonicalAttempt || selectedDetail.streamObservability || (Array.isArray(selectedDetail.attempts) && selectedDetail.attempts.length > 0)) && (
+                <div className="space-y-4">
+                  {selectedDetail.correlation && (
+                    <CollapsibleSection title="Correlation" icon="hub">
+                      <pre className="max-h-[260px] max-w-full overflow-auto rounded-lg border border-black/5 bg-surface-2 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/0 sm:p-4">
+                        {JSON.stringify(selectedDetail.correlation, null, 2)}
+                      </pre>
+                    </CollapsibleSection>
+                  )}
+                  {selectedDetail.transport && (
+                    <CollapsibleSection title="Transport" icon="swap_horiz">
+                      <pre className="max-h-[220px] max-w-full overflow-auto rounded-lg border border-black/5 bg-surface-2 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/0 sm:p-4">
+                        {JSON.stringify(selectedDetail.transport, null, 2)}
+                      </pre>
+                    </CollapsibleSection>
+                  )}
+                  {selectedDetail.canonicalAttempt && (
+                    <CollapsibleSection title="Canonical Attempt" icon="fact_check">
+                      <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-surface-2 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/0 sm:p-4">
+                        {JSON.stringify(selectedDetail.canonicalAttempt, null, 2)}
+                      </pre>
+                    </CollapsibleSection>
+                  )}
+                  {selectedDetail.streamObservability && (
+                    <CollapsibleSection title="Stream Observability" icon="stream">
+                      <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-surface-2 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/0 sm:p-4">
+                        {JSON.stringify(selectedDetail.streamObservability, null, 2)}
+                      </pre>
+                    </CollapsibleSection>
+                  )}
+                  {Array.isArray(selectedDetail.attempts) && selectedDetail.attempts.length > 0 && (
+                    <CollapsibleSection title={`Fallback Attempts (${selectedDetail.attempts.length})`} icon="route">
+                      <div className="space-y-3">
+                        {selectedDetail.attempts.map((attempt, index) => (
+                          <div key={attempt.attemptId || index} className="rounded-lg border border-border-subtle bg-surface-2 p-3 text-xs">
+                            <div className="mb-2 flex flex-wrap gap-x-4 gap-y-1 font-medium text-text-main">
+                              <span>#{attempt.candidateIndex ?? index}</span>
+                              <span>{attempt.candidateModel || "unknown model"}</span>
+                              <span>{attempt.fallbackDecision || "—"}</span>
+                            </div>
+                            <pre className="max-h-[240px] overflow-auto font-mono text-text-muted">
+                              {JSON.stringify(attempt, null, 2)}
+                            </pre>
+                          </div>
+                        ))}
+                      </div>
+                    </CollapsibleSection>
+                  )}
+                </div>
+              )}
+
               <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
                 <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-surface-2 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/0 sm:p-4">
                   {JSON.stringify(selectedDetail.request, null, 2)}

@@ -19,6 +19,8 @@ import {
   markRunError,
   markRunComplete,
 } from "./smartRoutingTelemetry.js";
+import { saveRequestDetail } from "@/lib/usageDb.js";
+import { mapCanonicalAttemptToRequestStatus } from "../utils/requestDetailStatus.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -420,19 +422,53 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  const persistAttempt = ({ forensic, result = null, attempt = null, fallbackDecision }) => {
+    if (!forensic?.attemptId || !forensic?.requestId) return;
+    const record = {
+      ...forensic,
+      status: result?.status ?? result?.response?.status ?? null,
+      classification: attempt?.classification || null,
+      reason: attempt?.reason || null,
+      outcome: attempt?.outcome || null,
+      logicalSuccess: attempt?.logicalSuccess === true,
+      completionState: attempt?.completionState || null,
+      completionType: attempt?.completionType || null,
+      terminalState: attempt?.terminalState || null,
+      terminalType: attempt?.terminalType || null,
+      finishReason: attempt?.finishReason || null,
+      usableOutput: attempt?.usableOutput === true,
+        fallbackDecision,
+        streamObservability: result?.streamObservability || null,
+        canonicalAttempt: attempt || null,
+    };
+    saveRequestDetail({
+      id: forensic.requestId,
+      provider: forensic.physicalProviderId || null,
+      model: forensic.physicalModel || null,
+      status: attempt
+        ? mapCanonicalAttemptToRequestStatus(attempt)
+        : (record.status >= 400 ? "error" : "incomplete"),
+      combo: { name: comboName, strategy: comboStrategy },
+      correlation: forensic,
+      attempts: [record],
+    }).catch(() => {});
+  };
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
-      const result = await handleSingleModel(body, modelStr, { role: "worker" });
+      const result = await handleSingleModel(body, modelStr, { role: "worker", candidateIndex: i, candidateOrder: [...rotatedModels] });
+      const forensic = result?.correlation;
+      const attempt = result?.canonicalAttempt;
       // Wave 1C: ChatResult.success was the authoritative application-success signal.
       // Commit F: migrate to candidateServed — finalized canonicalAttempt.logicalSuccess
       // for buffered attempts, admission (committed 2xx stream) for the outer streaming
       // handoff (chat.js returns this Response directly to the client). Transport data
       // (status/headers/body) stays on result.response.
       if (candidateServed(result)) {
+        persistAttempt({ forensic, result, attempt, fallbackDecision: "served" });
         log.info("COMBO", `Model ${modelStr} succeeded`);
         // Combo observability: notify the strategy wrapper which member actually
         // served the request (used by smart-routing telemetry).
@@ -473,7 +509,6 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // canonical policy exists (pre-provider validation / older internal paths).
       let shouldFallback;
       let cooldownMs = 0;
-      const attempt = result.canonicalAttempt;
       const finalizedPolicy = (attempt && attempt.completionState !== "unknown") ? attempt.policy : null;
       if (finalizedPolicy) {
         shouldFallback = finalizedPolicy.stopProgression === true
@@ -494,6 +529,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       if (!shouldFallback) {
+        persistAttempt({ forensic, result, attempt, fallbackDecision: "stopped" });
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status });
         return result.response;
       }
@@ -508,14 +544,32 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       // Fallback to next model
+      persistAttempt({ forensic, result, attempt, fallbackDecision: "fallback" });
       lastError = errorText || String(status);
       if (!lastStatus) lastStatus = status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status });
     } catch (error) {
-      // Catch unexpected exceptions to ensure fallback continues
+      // Catch unexpected exceptions to ensure fallback continues. The provider
+      // attempt may have thrown before returning a ChatResult, so retain the
+      // attempt identity attached by the dispatch closure without persisting
+      // exception text or request content.
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+      persistAttempt({
+        forensic: error?.forensic,
+        result: { status: 500 },
+        attempt: {
+          classification: "transport_failure",
+          reason: "execution_exception",
+          outcome: "failure",
+          logicalSuccess: false,
+          completionState: "failure",
+          completionType: "execution_exception",
+          errorSeen: true,
+        },
+        fallbackDecision: i < rotatedModels.length - 1 ? "fallback" : "stopped",
+      });
     }
   }
 

@@ -18,6 +18,8 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
+import REGISTRY from "../providers/registry/index.js";
+import { createForensicId } from "../utils/forensicIds.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats } from "./chatCore/requestDetail.js";
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
@@ -86,7 +88,7 @@ function buildTransportAttempt(status, { abortSeen = false } = {}) {
  *   return path carries an explicit `success` boolean so callers branch on one
  *   contract (see buildChatResult / createErrorResult in utils/error.js).
  */
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, semanticCacheEnabled, semanticCacheThreshold, pxpipeEnabled, pxpipeDir, pxpipeMinChars, pxpipeTimeoutMs, externalSignal, opencodeIdentity, comboContext }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, sourceFormatOverride, providerThinking, semanticCacheEnabled, semanticCacheThreshold, pxpipeEnabled, pxpipeDir, pxpipeMinChars, pxpipeTimeoutMs, externalSignal, opencodeIdentity, comboContext, forensicMeta }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
 
@@ -363,6 +365,22 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (passthrough && clientTool === "claude") anchorClaudeCache(translatedBody);
 
   const executor = getExecutor(provider);
+  const executorIdentity = {
+    implementation: executor?.constructor?.name || "unknown",
+    dispatch: REGISTRY.some((entry) => entry.id === provider) && executor?.constructor?.name !== "DefaultExecutor"
+      ? "specialized_registry"
+      : "default_executor",
+  };
+  const forensic = {
+    ...forensicMeta,
+    requestId: forensicMeta?.requestId || createForensicId("req"),
+    attemptId: forensicMeta?.attemptId || createForensicId("attempt"),
+    physicalProviderId: provider,
+    physicalProviderAlias: forensicMeta?.physicalProviderAlias || PROVIDER_ID_TO_ALIAS[provider] || provider,
+    physicalProviderName: REGISTRY.find((entry) => entry.id === provider)?.display?.name || provider,
+    physicalModel: model,
+    executor: executorIdentity,
+  };
   trackPendingRequest(model, provider, connectionId, true);
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
 
@@ -540,16 +558,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (recovered) {
       reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
     } else {
-      appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+      const networkStatus = error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY;
+      appendRequestLog({ model, provider, connectionId, status: `FAILED ${networkStatus}` }).catch(() => { });
       saveRequestDetail(buildRequestDetail({
         provider, model, connectionId,
         latency: { ttft: 0, total: Date.now() - requestStartTime },
         tokens: { prompt_tokens: 0, completion_tokens: 0 },
         request: extractRequestConfig(body, stream),
         providerRequest: translatedBody || null,
-        response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
+        response: { error: error.message || String(error), status: networkStatus, thinking: null },
         status: "error",
-        combo: comboContext
+        combo: comboContext,
+        correlation: forensic,
+        transport: { status: networkStatus, contentType: null, streamMode: stream ? "streaming" : "non-streaming" },
+        canonicalAttempt: buildTransportAttempt(networkStatus, { abortSeen: networkStatus === 499 }),
       })).catch(() => { });
 
       const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
@@ -604,7 +626,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           providerRequest: finalBody || translatedBody || null,
           response: { error: message, status: statusCode, thinking: null },
           status: "error",
-          combo: comboContext
+          combo: comboContext,
+          correlation: forensic,
+          transport: { status: statusCode, contentType: providerResponse.headers.get("content-type") || null, streamMode: stream ? "streaming" : "non-streaming" },
+          canonicalAttempt: buildTransportAttempt(statusCode),
         })).catch(() => { });
 
         const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
@@ -624,7 +649,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         providerRequest: finalBody || translatedBody || null,
         response: { error: message, status: statusCode, thinking: null },
         status: "error",
-        combo: comboContext
+        combo: comboContext,
+        correlation: forensic,
+        transport: { status: statusCode, contentType: providerResponse.headers.get("content-type") || null, streamMode: stream ? "streaming" : "non-streaming" },
+        canonicalAttempt: buildTransportAttempt(statusCode),
       })).catch(() => { });
 
       const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
@@ -635,12 +663,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   const sharedCtx = {
-    provider, model, body, stream, translatedBody, finalBody, requestStartTime,
+    provider, model, body, stream, sourceFormat, targetFormat, translatedBody, finalBody, requestStartTime,
     connectionId, apiKey, clientRawRequest, onRequestSuccess, savedTokens,
     savedTokensByMechanism, savedBytesByMechanism,
     cavemanActive: !!cavemanEnabled, ponytailActive: !!ponytailEnabled,
     retryCount: executorRetryCount,
     combo: comboContext,
+    forensic,
   };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
@@ -652,6 +681,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       // G2-D.2: executor transport retries ride the envelope (shared retry
       // accounting with the semantic retry gate). Adapters keep their shape.
       if (result?.retryCount == null) result.retryCount = executorRetryCount;
+      if (result) result.correlation = forensic;
       streamController.handleComplete();
       return result;
     }
@@ -663,13 +693,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     // G2-D.2: executor transport retries ride the envelope (shared retry
     // accounting with the semantic retry gate). Adapters keep their own shape.
     if (result?.retryCount == null) result.retryCount = executorRetryCount;
+    if (result) result.correlation = forensic;
     streamController.handleComplete();
     return result;
   }
 
   // Streaming response
-  const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
-  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, streamController, onStreamComplete, streamDetailId });
+  const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx, sourceFormat, targetFormat, forensic });
+  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, streamController, onStreamComplete, streamDetailId, forensic });
 }
 
 export function isTokenExpiringSoon(expiresAt, bufferMs = 5 * 60 * 1000) {

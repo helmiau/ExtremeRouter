@@ -152,6 +152,7 @@ export function createCanonicalAttemptFromNonStreaming({ status, parsed, usage =
   const classification = classifyCanonicalAttempt({
     completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
     completionType, usableOutput, logicalSuccess, responseStatus: status ?? null,
+    hasUsage: ev.hasUsage, usagePresent: ev.hasUsage,
   });
 
   const result = {
@@ -180,6 +181,7 @@ export function createCanonicalAttemptFromNonStreaming({ status, parsed, usage =
     policy: decideAttemptPolicy({
       source: "provider", completionState, transportOk, abortSeen: !!abortSeen, errorSeen,
       completionType, usableOutput, logicalSuccess,
+      hasUsage: ev.hasUsage, usagePresent: ev.hasUsage,
       ...classification,
     }),
   };

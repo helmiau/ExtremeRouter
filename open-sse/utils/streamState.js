@@ -50,6 +50,10 @@ export function createStreamState() {
     eofSeen: false,
     errorSeen: false,
     abortSeen: false,
+    recvLines: null,
+    dataLines: null,
+    eventLines: null,
+    emitted: null,
   };
 }
 

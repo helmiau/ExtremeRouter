@@ -59,6 +59,7 @@ export function extractUsageFromResponse(responseBody) {
 
 export function buildRequestDetail(base, overrides = {}) {
   return {
+    ...(base.id ? { id: base.id } : {}),
     provider: base.provider || "unknown",
     model: base.model || "unknown",
     connectionId: base.connectionId || undefined,

@@ -82,6 +82,7 @@ export function createSSEStream(options = {}) {
   const enqueueTracked = (controller, data) => {
     controller.enqueue(data);
     sseEmittedCount++;
+    observed.emitted = sseEmittedCount;
   };
 
   // Track Responses API event framing for same-format passthrough (codex)
@@ -106,17 +107,20 @@ export function createSSEStream(options = {}) {
 
       for (const line of lines) {
         const trimmed = line.trim();
-      if (isDebugEnabled && trimmed) {
-        sseLineCount++;
-        if (trimmed.startsWith("event:")) {
-          eventLines++;
-          const evt = trimmed.slice(6).trim();
-          eventTypeCounts[evt] = (eventTypeCounts[evt] || 0) + 1;
+        if (trimmed) {
+          sseLineCount++;
+          observed.recvLines = sseLineCount;
+          if (trimmed.startsWith("event:")) {
+            eventLines++;
+            observed.eventLines = eventLines;
+            const evt = trimmed.slice(6).trim();
+            eventTypeCounts[evt] = (eventTypeCounts[evt] || 0) + 1;
+          }
+          if (trimmed.startsWith("data:")) {
+            dataLines++;
+            observed.dataLines = dataLines;
+          }
         }
-        if (trimmed.startsWith("data:")) {
-          dataLines++;
-        }
-      }
 
         // Capture Responses API event name to preserve framing in same-format passthrough
         if (mode === STREAM_MODE.TRANSLATE && targetFormat === FORMATS.OPENAI_RESPONSES && trimmed.startsWith("event:")) {

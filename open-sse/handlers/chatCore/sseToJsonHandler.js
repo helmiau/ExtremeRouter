@@ -110,7 +110,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel, { onMalformedLin
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, savedTokens, savedTokensByMechanism, savedBytesByMechanism, cavemanActive, ponytailActive, retryCount, combo }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, trackDone, appendLog, savedTokens, savedTokensByMechanism, savedBytesByMechanism, cavemanActive, ponytailActive, retryCount, combo, forensic }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -118,7 +118,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
   trackDone();
 
   const ctx = {
-    provider, model, connectionId, combo,
+    provider, model, connectionId, combo, forensic,
     request: extractRequestConfig(body, stream),
     providerRequest: finalBody || translatedBody || null
   };
@@ -180,6 +180,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         status: mapCanonicalAttemptToRequestStatus(canonicalAttempt)
       }, {
         endpoint: clientRawRequest?.endpoint || null,
+        transport: { status: providerResponse.status, contentType, streamMode: "forced-sse-json", sourceFormat, targetFormat: "openai" },
+        correlation: forensic || null,
         canonicalAttempt,
       })).catch(() => {});
 
@@ -267,6 +269,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, pr
         status: "error",
       }, {
         endpoint: clientRawRequest?.endpoint || null,
+        transport: { status: providerResponse.status, contentType, streamMode: "forced-sse-json", sourceFormat, targetFormat: "openai" },
+        correlation: forensic || null,
         canonicalAttempt,
       })).catch(() => {});
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request", undefined, { canonicalAttempt });

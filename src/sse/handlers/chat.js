@@ -33,6 +33,7 @@ import { decideAttemptPolicy } from "open-sse/utils/canonicalPolicy.js";
 import { buildComboExecutionGraph, authorizeComboExecution, resolveComboStrategyConfig } from "../services/comboExecutionPolicy.js";
 import { acquireComboAdmission, wrapResponseWithAdmission } from "../services/comboAdmission.js";
 import { createComboBudget } from "open-sse/services/comboBudget.js";
+import { createForensicId } from "open-sse/utils/forensicIds.js";
 
 /**
  * Execute a health action from a canonical policy result.
@@ -321,6 +322,8 @@ function resolveThinkingForComboRole(comboThinking, role) {
 
 async function dispatchResolvedCombo({ body, graph, clientRawRequest, request, apiKey, settings, signal, budget, principalId, keyObj }) {
   const { comboName, config, members } = graph;
+  const requestId = createForensicId("req");
+  let executionIndex = 0;
   const strategy = config.fallbackStrategy;
   const comboThinking = config?.thinking;
 
@@ -339,21 +342,38 @@ async function dispatchResolvedCombo({ body, graph, clientRawRequest, request, a
       const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
       cleanRawReq = { ...clientRawRequest, body: cleanBody };
     }
-    const result = await handleSingleModelChat(b, m, cleanRawReq, request, apiKey, {
-      skipBreaker: opts.isPanel,
-      signal: opts.signal,
-      trafficClass: opts.trafficClass || (opts.isPanel ? "panel" : "user"),
-      thinking: effectiveThinking,
-      keyObj,
-      // Combo observability: record which combo/strategy/role produced this
-      // provider call so requestDetails is audit-able against template intent.
-      comboContext: {
-        name: comboName,
-        strategy,
-        role: opts.role || (opts.isPanel ? "panel" : null),
+    const forensicMeta = {
+      requestId,
+      executionIndex: executionIndex++,
+      comboId: graph.comboId,
+      comboName,
+      candidateIndex: Number.isInteger(opts.candidateIndex) ? opts.candidateIndex : null,
+      candidateOrder: Array.isArray(opts.candidateOrder) ? [...opts.candidateOrder] : null,
+      candidateModel: m,
+      physicalProviderAlias: typeof m === "string" && m.includes("/") ? m.slice(0, m.indexOf("/")) : null,
+    };
+    let result;
+    try {
+      result = await handleSingleModelChat(b, m, cleanRawReq, request, apiKey, {
+        skipBreaker: opts.isPanel,
+        forensicMeta,
+        signal: opts.signal,
         trafficClass: opts.trafficClass || (opts.isPanel ? "panel" : "user"),
-      },
-    });
+        thinking: effectiveThinking,
+        keyObj,
+        // Combo observability: record which combo/strategy/role/trafficClass produced
+        // this provider call so requestDetails is audit-able against template intent.
+        comboContext: {
+          name: comboName,
+          strategy,
+          role: opts.role || (opts.isPanel ? "panel" : null),
+          trafficClass: opts.trafficClass || (opts.isPanel ? "panel" : "user"),
+        },
+      });
+    } catch (error) {
+      if (error && typeof error === "object") error.forensic = forensicMeta;
+      throw error;
+    }
     // Wave 1C: strategies consume ChatResult.success as the authoritative
     // application-success signal; transport data stays on result.response.
     return result;
@@ -620,7 +640,16 @@ export async function handleSingleModelChat(body, modelStr, clientRawRequest = n
       opencodeIdentity,
       // Combo observability: which combo/strategy/role/trafficClass produced
       // this provider call (undefined for plain single-model requests).
-      comboContext: opts.comboContext,
+      comboContext: {
+        name: comboName,
+        strategy,
+        role: opts.role || (opts.isPanel ? "panel" : null),
+        trafficClass: opts.trafficClass || (opts.isPanel ? "panel" : "user"),
+      },
+      forensicMeta: {
+        ...(opts.forensicMeta || {}),
+        attemptId: createForensicId("attempt"),
+      },
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
