@@ -300,5 +300,11 @@ describe("handleSingleModelChat — semantic retry handoff (integration)", () =>
     const attemptIds = new Set(attempts.map((c) => c.attemptId));
     expect(requestIds.size).toBe(1); // one logical requestId across both executions
     expect(attemptIds.size).toBe(2); // distinct attemptId per physical execution
+    // The persisted details themselves (the real production forensic objects)
+    // confirm the retry carried a DIFFERENT attemptId than the first execution.
+    const persistedCorrelations = saved.map(([detail]) => detail.correlation).filter(Boolean);
+    expect(persistedCorrelations.length).toBeGreaterThanOrEqual(2);
+    expect(persistedCorrelations[0].attemptId).not.toBe(persistedCorrelations[1].attemptId);
+    expect(persistedCorrelations[0].requestId).toBe(persistedCorrelations[1].requestId);
   });
 });

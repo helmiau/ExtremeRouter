@@ -422,7 +422,11 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
-  const persistAttempt = ({ forensic, result = null, attempt = null, fallbackDecision }) => {
+  // Awaiting the enqueue (not the database write — the repo buffers in memory
+  // and flushes asynchronously) serializes forensic attempt ordering: candidate
+  // N's record is pushed to the write buffer before candidate N+1's execution
+  // starts, so evidence can never overtake an earlier candidate.
+  const persistAttempt = async ({ forensic, result = null, attempt = null, fallbackDecision }) => {
     if (!forensic?.attemptId || !forensic?.requestId) return;
     const record = {
       ...forensic,
@@ -441,7 +445,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         streamObservability: result?.streamObservability || null,
         canonicalAttempt: attempt || null,
     };
-    saveRequestDetail({
+    await saveRequestDetail({
       id: forensic.requestId,
       provider: forensic.physicalProviderId || null,
       model: forensic.physicalModel || null,
@@ -468,7 +472,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // handoff (chat.js returns this Response directly to the client). Transport data
       // (status/headers/body) stays on result.response.
       if (candidateServed(result)) {
-        persistAttempt({ forensic, result, attempt, fallbackDecision: "served" });
+        await persistAttempt({ forensic, result, attempt, fallbackDecision: "served" });
         log.info("COMBO", `Model ${modelStr} succeeded`);
         // Combo observability: notify the strategy wrapper which member actually
         // served the request (used by smart-routing telemetry).
@@ -529,7 +533,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       if (!shouldFallback) {
-        persistAttempt({ forensic, result, attempt, fallbackDecision: "stopped" });
+        await persistAttempt({ forensic, result, attempt, fallbackDecision: "stopped" });
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status });
         return result.response;
       }
@@ -544,7 +548,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       // Fallback to next model
-      persistAttempt({ forensic, result, attempt, fallbackDecision: "fallback" });
+      await persistAttempt({ forensic, result, attempt, fallbackDecision: "fallback" });
       lastError = errorText || String(status);
       if (!lastStatus) lastStatus = status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status });
@@ -556,7 +560,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
-      persistAttempt({
+      await persistAttempt({
         forensic: error?.forensic,
         result: { status: 500 },
         attempt: {
