@@ -3,11 +3,13 @@
  *
  * Tests cover:
  *  - cloakClaudeTools() - tool renaming and forced tool_choice suffixing
+ *  - applyCloaking()    - billing identity (centralized CLAUDE_CLI_VERSION) + fake user id
  */
 
 import { describe, it, expect } from "vitest";
-import { cloakClaudeTools } from "../../open-sse/utils/claudeCloaking.js";
+import { cloakClaudeTools, applyCloaking } from "../../open-sse/utils/claudeCloaking.js";
 import { CLAUDE_TOOL_SUFFIX } from "../../open-sse/config/appConstants.js";
+import { CLAUDE_CLI_VERSION } from "../../open-sse/providers/shared.js";
 
 describe("cloakClaudeTools", () => {
   const baseBody = {
@@ -72,5 +74,31 @@ describe("cloakClaudeTools", () => {
     const { body, toolNameMap } = cloakClaudeTools(input);
     expect(body).toBe(input);
     expect(toolNameMap).toBeNull();
+  });
+});
+
+describe("applyCloaking — billing identity", () => {
+  // OAuth-only path: the billing header must carry the CENTRALIZED CLAUDE_CLI_VERSION
+  // (open-sse/providers/shared.js) so the request UA and billing cc_version can never
+  // drift apart — Anthropic gates new models (Fable 5.1) to CC >= 2.1.251.
+  it("injects cc_version from the centralized CLAUDE_CLI_VERSION as system[0] (OAuth only)", () => {
+    const out = applyCloaking(
+      { messages: [{ role: "user", content: "hi" }] },
+      "sk-ant-oat01-test-token",
+      "sess-1",
+    );
+
+    const billing = out.system[0]?.text || "";
+    expect(billing).toMatch(
+      new RegExp(`^x-anthropic-billing-header: cc_version=${CLAUDE_CLI_VERSION}\\.\\w{3}; cc_entrypoint=sdk-cli; cch=\\w{5};$`)
+    );
+    // Fake user id injected alongside, aligned with the session.
+    expect(out.metadata.user_id).toContain("session_id");
+  });
+
+  it("skips cloaking entirely for non-OAuth (apiKey) credentials", () => {
+    const body = { messages: [{ role: "user", content: "hi" }] };
+    const out = applyCloaking(body, "sk-any-key", "sess-1");
+    expect(out).toBe(body);
   });
 });

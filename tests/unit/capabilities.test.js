@@ -26,4 +26,9 @@ describe("getCapabilitiesForModel", () => {
     expect(getCapabilitiesForModel("kiro", "claude-sonnet-5-agentic")).toMatchObject(claudeSonnet5Expected);
     expect(getCapabilitiesForModel("kiro", "claude-sonnet-5-thinking-agentic")).toMatchObject(claudeSonnet5Expected);
   });
+
+  it("reports Claude Fable 5.1 as permanently adaptive (1M context, thinking cannot be disabled)", () => {
+    const caps = getCapabilitiesForModel("claude", "claude-fable-5-1");
+    expect(caps).toMatchObject({ ...claudeSonnet5Expected, thinkingCanDisable: false });
+  });
 });

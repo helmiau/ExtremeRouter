@@ -55,8 +55,13 @@ describe("extractThinking", () => {
 });
 
 describe("applyThinking per provider format", () => {
-  it("claude 4.6+ → adaptive output_config (no budget_tokens)", () => {
+  it("claude 4.6+ → explicit adaptive switch + output_config (thinking is OFF by default on can-disable models)", () => {
     const out = apply("claude", "claude-opus-4.7", { reasoning_effort: "high" }, "claude");
+    expect(out.output_config).toEqual({ effort: "high" });
+    expect(out.thinking).toEqual({ type: "adaptive" });
+  });
+  it("claude-fable-5-1 (permanently adaptive) → output_config.effort only, no thinking switch", () => {
+    const out = apply("claude", "claude-fable-5-1", { reasoning_effort: "high" }, "claude");
     expect(out.output_config).toEqual({ effort: "high" });
     expect(out.thinking).toBeUndefined();
   });

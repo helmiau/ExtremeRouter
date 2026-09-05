@@ -210,6 +210,13 @@ function applyFormat(fmt, body, cfg, caps, model, provider) {
     case "claude-adaptive": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       const level = toLevel(eff);
+      // output_config.effort alone does NOT turn thinking on for models that CAN
+      // disable thinking (Anthropic defaults thinking off; Anthropic-compatible
+      // shims too) — those need the explicit adaptive switch. Permanently adaptive
+      // models (thinkingCanDisable: false, e.g. Fable 5.1) accept effort directly
+      // and the redundant switch must not be sent.
+      if (canDisable) body.thinking = { type: "adaptive" };
+      else delete body.thinking;
       body.output_config = { effort: level === "xhigh" || level === "ultra" ? "high" : level };
       break;
     }
