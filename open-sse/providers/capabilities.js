@@ -284,6 +284,7 @@ export const PROVIDER_CAPABILITIES = {
   // /zen/v1/responses accepted the request; /chat/completions 500s).
   opencode: {
     "muse-spark-1.2-contributor-free": { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 },
+    "muse-spark-1.3-contributor-free": { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 },
   },
   // codebuddy-intl + workbuddy — same CodeBuddy gateway on their own hosts
   // (codebuddy.ai / workbuddy.ai). WorkBuddy's flagship model is "hy3" (the
@@ -426,6 +427,11 @@ export const PATTERN_CAPABILITIES = [
   // reach it as an invalid enum: clamp every request to low|medium and
   // disable-requests to low (minimal).
   { provider: "tokenrouter", pattern: "*qwen*", caps: { vision: true, reasoning: true, thinkingFormat: "openai", thinkingLevels: ["low", "medium"], thinkingCanDisable: false, thinkingMaxEffort: false, contextWindow: 262144, maxOutput: 65536 } },
+  // opencode — generic Muse Spark pattern (covers passthrough discoveries the free
+  // lane returns, e.g. muse-spark-1.x-contributor-free). Provider-scoped so it can't
+  // leak onto muse-spark-web (which doesn't speak OpenAI-compatible effort). Matches
+  // isMuseSparkModel() routing: any Muse Spark on opencode is Responses-API + multimodal.
+  { provider: "opencode", pattern: "*muse*spark*", caps: { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*qwen*vl*",       caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
   { pattern: "*qwen*omni*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144, maxOutput: 65536 } },
   { pattern: "*qwen*coder*",    caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 } },

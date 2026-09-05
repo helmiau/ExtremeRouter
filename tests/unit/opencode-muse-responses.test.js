@@ -85,11 +85,22 @@ describe("opencode executor endpoint routing", () => {
     expect(executor.buildUrl("muse-spark-1.2-contributor-free")).toBe("https://opencode.ai/zen/v1/responses");
   });
 
+  it("route ALL Muse Spark models on opencode to /zen/v1/responses (not just 1.2)", () => {
+    // Regression for the muse-spark-1.3-contributor-free HTTP 500: every Muse Spark
+    // variant on opencode must take the Responses lane, not just the 1.2 entry.
+    expect(executor.buildUrl("muse-spark-1.3-contributor-free")).toBe("https://opencode.ai/zen/v1/responses");
+    expect(executor.buildUrl("oc/muse-spark-1.3-contributor-free")).toBe("https://opencode.ai/zen/v1/responses");
+    expect(executor.buildUrl("muse-spark-1.1-contributor-free")).toBe("https://opencode.ai/zen/v1/responses");
+  });
+
   it("Test 3 (negative, PHASE 14): ordinary opencode models keep /zen/v1/chat/completions", () => {
     expect(executor.buildUrl("x-preview-f-free")).toBe("https://opencode.ai/zen/v1/chat/completions");
     expect(executor.buildUrl("laguna-s-2.1-free")).toBe("https://opencode.ai/zen/v1/chat/completions");
     expect(executor.buildUrl("mimo-v2.5-free")).toBe("https://opencode.ai/zen/v1/chat/completions");
-    expect(executor.buildUrl("muse-spark-1.2")).toBe("https://opencode.ai/zen/v1/chat/completions"); // paid sibling, not tagged
+    // Note: muse-spark-1.2 (without the free-lane tag) matches isMuseSparkModel()
+    // so it also takes the Responses lane on opencode — consistent with "route ALL
+    // Muse Spark models", not just 1.2-contributor-free. The paid sibling lives
+    // under meta-ai as meta-ai/muse-spark-1.2, a different provider.
   });
 
   it("Test 4: route decision uses the oc alias key (executor ↔ chatCore same lookup)", () => {
@@ -269,5 +280,22 @@ describe("muse-spark capability resolution", () => {
     expect(metaAi.contextWindow).toBe(1048576);
     expect(oc.sourceType).toBe("provider-model");
     expect(metaAi.sourceType).toBe("provider-model");
+  });
+
+  it("declares vision:true on muse-spark-1.3-contributor-free (image input no longer stripped)", () => {
+    const caps = getCapabilitiesForModel("opencode", "muse-spark-1.3-contributor-free");
+    expect(caps.vision).toBe(true);
+    expect(caps.reasoning).toBe(true);
+    expect(caps.contextWindow).toBe(1048576);
+    expect(caps.maxOutput).toBe(131072);
+  });
+
+  it("opencode-scoped *muse*spark* pattern covers passthrough discoveries with vision", () => {
+    const caps = getCapabilitiesForModel("opencode", "muse-spark-1.4-contributor-free");
+    expect(caps.vision).toBe(true);
+    // The pattern is provider-scoped (provider: "opencode"); a non-opencode provider
+    // with the same model id must NOT hit the opencode pattern.
+    const otherProvider = getCapabilitiesForModel("meta-ai", "muse-spark-1.4-contributor-free");
+    expect(otherProvider.vision).not.toBe(true);
   });
 });

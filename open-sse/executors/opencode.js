@@ -2,19 +2,28 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { getModelTargetFormat } from "../config/providerModels.js";
+import { isMuseSparkModel } from "../providers/models/helpers.js";
 import { convertResponsesStreamToJson } from "../transformer/streamToJsonConverter.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 // Models that use /zen/v1/messages (claude format)
 const MESSAGES_MODELS = new Set();
 
-// Responses-API models (registry targetFormat: "openai-responses", e.g.
-// muse-spark-1.2-contributor-free): /zen/v1/chat/completions 500s for these —
-// they are served exclusively by /zen/v1/responses (verified live 2026-08-31).
-// Routing is MODEL-scoped via the registry targetFormat, the same pattern the
-// github executor uses; never a hardcoded model set here.
+function baseModelId(model) {
+  if (!model || typeof model !== "string") return model;
+  const clean = model.replace(/\([^()]+\)\s*$/, "").trim();
+  return clean.includes("/") ? clean.split("/").pop() : clean;
+}
+
+// Responses-API models: /zen/v1/chat/completions 500s for these — they are
+// served exclusively by /zen/v1/responses (verified live 2026-08-31). Routing is
+// opencode-scoped and covers the WHOLE Muse Spark family (not just 1.2):
+//   - explicit registry targetFormat: "openai-responses" (e.g. the 1.2 entry), AND
+//   - any model matching isMuseSparkModel() (catches 1.3, and passthrough
+//     discoveries the free lane returns) so muse-spark-1.3-contributor-free no
+//     longer 500s on chat/completions. Other providers keep Chat Completions.
 function isResponsesModel(model) {
-  return getModelTargetFormat("oc", model) === "openai-responses";
+  return getModelTargetFormat("oc", model) === "openai-responses" || isMuseSparkModel(model);
 }
 
 export class OpenCodeExecutor extends BaseExecutor {
