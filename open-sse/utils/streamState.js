@@ -99,7 +99,10 @@ export function observeParsedEvent(state, parsed, opts = {}) {
   if (!state || !parsed || typeof parsed !== "object") return state;
 
   // Usage (any format). Metadata only — never implies output.
-  if (!state.hasUsage && looksLikeUsage(parsed.usage)) state.hasUsage = true;
+  // Gemini arrives in two shapes: direct Gemini (parsed.usageMetadata) and
+  // wrapped Gemini/Antigravity (parsed.response.usageMetadata).
+  const usageLike = parsed.usage || parsed.usageMetadata || parsed.response?.usageMetadata;
+  if (!state.hasUsage && looksLikeUsage(usageLike)) state.hasUsage = true;
 
   // OpenAI chat shapes
   const delta = parsed.choices?.[0]?.delta;
@@ -118,8 +121,11 @@ export function observeParsedEvent(state, parsed, opts = {}) {
   if (parsed.type === "error" || parsed.error) state.errorSeen = true;
   if (parsed.type === "error") setTerminal(state, "failure", "error");
 
-  // Gemini shapes
-  const parts = parsed.candidates?.[0]?.content?.parts;
+  // Gemini shapes — direct Gemini AND wrapped Gemini/Antigravity
+  // (Antigravity returns {"response":{"candidates":[...],"usageMetadata":{...}}}).
+  // Normalize to a single unwrapped chunk so both shapes are observed identically.
+  const geminiChunk = parsed.response?.candidates ? parsed.response : parsed;
+  const parts = geminiChunk.candidates?.[0]?.content?.parts;
   if (Array.isArray(parts)) {
     for (const part of parts) {
       if (!part?.text) continue;
@@ -127,7 +133,7 @@ export function observeParsedEvent(state, parsed, opts = {}) {
       else state.hasText = true;
     }
   }
-  const geminiFinish = parsed.candidates?.[0]?.finishReason || parsed.candidates?.[0]?.finish_reason;
+  const geminiFinish = geminiChunk.candidates?.[0]?.finishReason || geminiChunk.candidates?.[0]?.finish_reason;
   if (geminiFinish) applyFinishReason(state, geminiFinish);
 
   // OpenAI Responses API lifecycle (event name from `event:` framing or payload

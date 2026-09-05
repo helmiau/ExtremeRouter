@@ -306,9 +306,12 @@ export function createSSEStream(options = {}) {
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
         
-        // Gemini format
-        if (parsed.candidates?.[0]?.content?.parts) {
-          for (const part of parsed.candidates[0].content.parts) {
+        // Gemini format — direct Gemini AND wrapped Gemini/Antigravity
+        // (Antigravity returns {"response":{"candidates":[...]}}). Normalize to the
+        // unwrapped chunk so both shapes accumulate identically.
+        const geminiChunk = parsed.response?.candidates ? parsed.response : parsed;
+        if (geminiChunk.candidates?.[0]?.content?.parts) {
+          for (const part of geminiChunk.candidates[0].content.parts) {
             if (part.text && typeof part.text === "string") {
               totalContentLength += part.text.length;
               // Check if this is thinking content
