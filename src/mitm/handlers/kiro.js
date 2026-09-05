@@ -173,11 +173,20 @@ function safeArgsString(value) {
   try { return JSON.stringify(value); } catch { return "{}"; }
 }
 
+const INLINE_IMAGE_MIME_BY_FORMAT = new Map([
+  ["png", "image/png"],
+  ["jpeg", "image/jpeg"],
+  ["jpg", "image/jpeg"],
+  ["gif", "image/gif"],
+  ["webp", "image/webp"],
+]);
+
 /**
  * Convert a CodeWhisperer userInputMessage to one or more OpenAI messages.
  *
  * A user turn can contain:
  *   - plain text content  → { role:"user", content }
+ *   - inline images       → image_url parts alongside the text
  *   - toolResults only    → one { role:"tool", tool_call_id, content } per result
  *   - both                → tool messages first, then the user text message
  */
@@ -195,9 +204,32 @@ function convertUserInputMessage(uim) {
     });
   }
 
+  const images = Array.isArray(uim.images) ? uim.images : [];
+  const imageParts = images
+    .filter(image => image !== null
+      && typeof image === "object"
+      && !Array.isArray(image)
+      && image.source !== null
+      && typeof image.source === "object"
+      && !Array.isArray(image.source)
+      && INLINE_IMAGE_MIME_BY_FORMAT.has(image.format)
+      && typeof image.source.bytes === "string"
+      && image.source.bytes.length > 0)
+    .map(image => ({
+      type: "image_url",
+      image_url: {
+        url: `data:${INLINE_IMAGE_MIME_BY_FORMAT.get(image.format)};base64,${image.source.bytes}`,
+      },
+    }));
+
   // Emit user text only if it exists alongside OR when there are no tool results
   const text = (uim.content || "").trim();
-  if (text || toolResults.length === 0) {
+  if (imageParts.length > 0) {
+    const content = [];
+    if (text) content.push({ type: "text", text });
+    content.push(...imageParts);
+    out.push({ role: "user", content });
+  } else if (text || toolResults.length === 0) {
     out.push({ role: "user", content: text });
   }
 
@@ -523,4 +555,4 @@ function isBinaryEventStream(buffer) {
   return totalLen > 12 && totalLen < 1000000 && headersLen < totalLen - 12;
 }
 
-module.exports = { intercept };
+module.exports = { intercept, convertUserInputMessage, INLINE_IMAGE_MIME_BY_FORMAT };
