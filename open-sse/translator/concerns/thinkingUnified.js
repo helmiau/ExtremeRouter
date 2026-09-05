@@ -10,9 +10,9 @@ import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel }
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
   openai: "openai",
-  "openai-responses": "openai",
-  "openai-response": "openai",
-  codex: "openai",
+  "openai-responses": "openai-responses",
+  "openai-response": "openai-responses",
+  codex: "openai-responses",
   claude: "claude-budget",
   gemini: "gemini-budget",
   "gemini-cli": "gemini-budget",
@@ -101,9 +101,19 @@ export const captureThinking = extractThinking;
 // Resolve thinking format: provider override > capability > derive(targetFormat).
 function resolveFormat(targetFormat, model, provider) {
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
-  if (providerFmt) return providerFmt;
+  if (providerFmt) {
+    if (providerFmt === "openai" && (targetFormat === "openai-responses" || targetFormat === "openai-response")) {
+      return "openai-responses";
+    }
+    return providerFmt;
+  }
   const caps = getCapabilitiesForModel(provider, model);
-  if (caps.thinkingFormat) return caps.thinkingFormat;
+  if (caps.thinkingFormat) {
+    if (caps.thinkingFormat === "openai" && (targetFormat === "openai-responses" || targetFormat === "openai-response")) {
+      return "openai-responses";
+    }
+    return caps.thinkingFormat;
+  }
   return FORMAT_TO_NATIVE[targetFormat] || "openai";
 }
 
@@ -158,7 +168,7 @@ function toGeminiThinkingLevel(cfg) {
 // [low,high,max]: minimal→low, medium→high, xhigh→max).
 function clampToLevels(level, list) {
   if (!list || !Array.isArray(list) || !level || list.includes(level)) return level;
-  const ORDER = ["minimal", "low", "medium", "high", "xhigh", "max"];
+  const ORDER = ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
   const rank = ORDER.indexOf(level);
   const valid = list.filter((l) => ORDER.includes(l)).sort((a, b) => ORDER.indexOf(a) - ORDER.indexOf(b));
   if (!valid.length) return level;
@@ -199,12 +209,29 @@ function applyFormat(fmt, body, cfg, caps, model, provider) {
 
   switch (fmt) {
     case "openai": {
+      delete body.reasoning;
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
       if (level && level !== "auto") {
         const clamped = clampToLevels(level, caps.thinkingLevels);
         body.reasoning_effort = normalizeOpenAILevel(clamped, getThinkingLevels(provider, model));
       } else delete body.reasoning_effort;
+      break;
+    }
+    case "openai-responses": {
+      delete body.reasoning_effort;
+      if (none && canDisable) {
+        body.reasoning = { effort: "none" };
+        break;
+      }
+      const level = toLevel(eff);
+      if (level && level !== "auto") {
+        const clamped = clampToLevels(level, caps.thinkingLevels);
+        const finalLevel = normalizeOpenAILevel(clamped, getThinkingLevels(provider, model));
+        body.reasoning = { effort: finalLevel };
+      } else {
+        delete body.reasoning;
+      }
       break;
     }
     case "claude-adaptive": {

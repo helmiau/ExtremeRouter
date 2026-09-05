@@ -240,6 +240,64 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
     expect(out.reasoning_effort).toBe("xhigh");
   });
+
+  // ── OpenAI Responses wire format (openai-responses) ───────────────
+  it("TEST 1: Muse Spark on openai-responses → reasoning: { effort } and NO reasoning_effort", () => {
+    const out = apply("openai-responses", "muse-spark-1.2-contributor-free", { reasoning_effort: "high" }, "opencode");
+    expect(out.reasoning).toEqual({ effort: "high" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("TEST 2: Muse Spark ultra effort clamps to xhigh (highest supported) on openai-responses", () => {
+    const out = apply("openai-responses", "muse-spark-1.2-contributor-free", { reasoning_effort: "ultra" }, "opencode");
+    expect(out.reasoning).toEqual({ effort: "xhigh" });
+    expect(["minimal", "low", "medium", "high", "xhigh"]).toContain(out.reasoning?.effort);
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("TEST 3: targetFormat openai → reasoning_effort, no reasoning object", () => {
+    const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "high" }, "codex");
+    expect(out.reasoning_effort).toBe("high");
+    expect(out.reasoning).toBeUndefined();
+  });
+
+  it("TEST 4: generic model on targetFormat openai-responses → reasoning.effort, no reasoning_effort", () => {
+    const out = apply("openai-responses", "gpt-5.4", { reasoning_effort: "medium" }, "gh");
+    expect(out.reasoning).toEqual({ effort: "medium" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("TEST 5: no double emission — initial reasoning_effort converts to reasoning.effort on openai-responses", () => {
+    const initial = { reasoning_effort: "high" };
+    const out = apply("openai-responses", "muse-spark-1.2-contributor-free", initial, "opencode");
+    expect(out.reasoning).toEqual({ effort: "high" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("TEST 5 (reverse): initial reasoning converts to reasoning_effort on openai target", () => {
+    const initial = { reasoning: { effort: "high" } };
+    const out = apply("openai", "gpt-5.3-codex", initial, "codex");
+    expect(out.reasoning_effort).toBe("high");
+    expect(out.reasoning).toBeUndefined();
+  });
+
+  it("TEST 6: model with thinkingCanDisable: true and none → reasoning: { effort: 'none' }", () => {
+    const out = apply("openai-responses", "gpt-5.4", { reasoning_effort: "none" }, "gh");
+    expect(out.reasoning).toEqual({ effort: "none" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("TEST 6: model with thinkingCanDisable: false and none → clamped to minimal reasoning.effort", () => {
+    const out = apply("openai-responses", "muse-spark-1.2-contributor-free", { reasoning_effort: "none" }, "opencode");
+    expect(out.reasoning).toEqual({ effort: "minimal" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("TEST 7: auto effort on openai-responses does not emit reasoning_effort or explicit reasoning", () => {
+    const out = apply("openai-responses", "muse-spark-1.2-contributor-free", { reasoning_effort: "auto" }, "opencode");
+    expect(out.reasoning_effort).toBeUndefined();
+    expect(out.reasoning).toBeUndefined();
+  });
 });
 
 describe("extractReasoningText (response shapes)", () => {

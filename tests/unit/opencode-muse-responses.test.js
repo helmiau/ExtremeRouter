@@ -273,6 +273,23 @@ describe("muse-spark capability resolution", () => {
     expect(body.reasoning_effort).not.toBe("ultra");
   });
 
+  it("PHASE 7b: openai-responses route emits reasoning: { effort } and NO reasoning_effort for Muse Spark", async () => {
+    const { applyThinking } = await import("open-sse/translator/concerns/thinkingUnified.js");
+    const body = {};
+    applyThinking("openai-responses", "muse-spark-1.2-contributor-free", body, "opencode", { mode: "level", level: "high" });
+    expect(body.reasoning).toEqual({ effort: "high" });
+    expect(body.reasoning_effort).toBeUndefined();
+  });
+
+  it("PHASE 7c: openai-responses route clamps ultra to highest supported level (xhigh) for Muse Spark", async () => {
+    const { applyThinking } = await import("open-sse/translator/concerns/thinkingUnified.js");
+    const body = {};
+    applyThinking("openai-responses", "muse-spark-1.2-contributor-free", body, "opencode", { mode: "level", level: "ultra" });
+    expect(body.reasoning).toEqual({ effort: "xhigh" });
+    expect(["minimal", "low", "medium", "high", "xhigh"]).toContain(body.reasoning?.effort);
+    expect(body.reasoning_effort).toBeUndefined();
+  });
+
   it("PHASE 10: opencode limits stay provider-scoped (meta-ai entry unaffected, catalog still fills other providers)", () => {
     const oc = getCapabilitiesForModel("opencode", "muse-spark-1.2-contributor-free");
     const metaAi = getCapabilitiesForModel("meta-ai", "muse-spark-1.2");
