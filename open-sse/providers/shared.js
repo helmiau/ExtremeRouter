@@ -30,12 +30,14 @@ export const CLAUDE_API_HEADERS = {
 };
 
 // Full Claude CLI fingerprint — required by providers that gate on client identity (e.g. agentrouter)
-// Updated to match Claude Code 2.1.220 + Anthropic SDK 0.115.0 (July 2026).
+// Updated to match Claude Code 2.1.258 + Anthropic SDK 0.115.0 (September 2026).
+// 2.1.258: Anthropic gates newly released models (e.g. claude-fable-5-1) to CC >= 2.1.251;
+// anything older gets HTTP 400 on every request.
 export const CLAUDE_CLI_SPOOF_HEADERS = {
   "Anthropic-Version": ANTHROPIC_API_VERSION,
   "Anthropic-Beta": "claude-code-20250219,oauth-2025-04-20,interleaved-thinking-2025-05-14,context-management-2025-06-27,prompt-caching-scope-2026-01-05,advanced-tool-use-2025-11-20,effort-2025-11-24,structured-outputs-2025-12-15,fast-mode-2026-02-01,redact-thinking-2026-02-12,token-efficient-tools-2026-03-28,fine-grained-tool-streaming-2025-05-14",
   "Anthropic-Dangerous-Direct-Browser-Access": "true",
-  "User-Agent": "claude-cli/2.1.220 (external, sdk-cli)",
+  "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
   "X-App": "cli",
   "X-Stainless-Helper-Method": "stream",
   "X-Stainless-Retry-Count": "0",
