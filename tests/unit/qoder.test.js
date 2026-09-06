@@ -38,6 +38,34 @@ describe("QODER_MODEL_MAP", () => {
   it("exposes Qoder's latest model in the static provider catalog", () => {
     expect(PROVIDER_MODELS.qd.some((model) => model.id === "qmodel_latest")).toBe(true);
   });
+
+  it("exposes the refreshed 2026-09 catalog (new ids in, dead ids out)", () => {
+    const ids = (PROVIDER_MODELS.qd || []).map((m) => m.id);
+    for (const id of ["lite", "qmodel_38max", "qfmodel", "gmodel", "gfmodel", "qmodel_latest", "kmodel_latest", "kmodel", "dmodel", "dfmodel", "mmodel"]) {
+      expect(ids, `expected ${id} in the qoder catalog`).toContain(id);
+    }
+    expect(ids).not.toContain("qmodel_preview");
+    expect(ids).not.toContain("gm51model");
+    // Every registry id is a known canonical key.
+    for (const id of ids) {
+      expect(QODER_MODEL_MAP[id], `registry id ${id} missing from QODER_MODEL_MAP`).toBeTruthy();
+    }
+  });
+
+  it("maps opaque internal ids to their real models' context windows and limits", async () => {
+    const { getCapabilitiesForModel } = await import("../../open-sse/providers/capabilities.js");
+    // Opaque ids resolve to the REAL model family's specs (not the 200K default).
+    expect(getCapabilitiesForModel("qd", "qmodel_38max").contextWindow).toBe(1000000);
+    expect(getCapabilitiesForModel("qd", "gmodel").maxOutput).toBe(128000);
+    expect(getCapabilitiesForModel("qd", "kmodel").contextWindow).toBe(256000);
+    expect(getCapabilitiesForModel("qd", "kmodel_latest").contextWindow).toBe(1000000);
+    expect(getCapabilitiesForModel("qd", "mmodel").maxOutput).toBe(512000);
+    // Reasoning is universal; thinking is fixed upstream so "none" is never offered.
+    const ultimate = getCapabilitiesForModel("qd", "ultimate");
+    expect(ultimate.reasoning).toBe(true);
+    expect(ultimate.thinkingCanDisable).toBe(false);
+    expect(getCapabilitiesForModel("qd", "gfmodel").vision).toBe(true);
+  });
 });
 
 describe("qoderEncodeBody", () => {
@@ -366,6 +394,70 @@ describe("normalizeMessages", () => {
     const result = normalizeMessages([]);
     expect(result.messages).toEqual([]);
     expect(result.systemText).toBe("");
+  });
+
+  it("preserves image_url blocks (http URL) instead of dropping them", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "describe" },
+          { type: "image_url", image_url: { url: "https://example.com/a.png" } },
+        ],
+      },
+    ]);
+    const content = result.messages[0].content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content).toContainEqual({ type: "text", text: "describe" });
+    expect(content).toContainEqual({ type: "image_url", image_url: { url: "https://example.com/a.png" } });
+  });
+
+  it("preserves base64 data: URI images (no OSS upload needed)", () => {
+    const dataUri = "data:image/png;base64,iVBORw0KGgo=";
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: dataUri } },
+          { type: "text", text: "what color?" },
+        ],
+      },
+    ]);
+    const content = result.messages[0].content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content[0]).toEqual({ type: "image_url", image_url: { url: dataUri } });
+    expect(content.some((b) => b.type === "text" && b.text === "what color?")).toBe(true);
+  });
+
+  it("converts claude-style base64 image blocks to image_url data URIs", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "see this" },
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "AAAA" } },
+        ],
+      },
+    ]);
+    const content = result.messages[0].content;
+    expect(content).toContainEqual({
+      type: "image_url",
+      image_url: { url: "data:image/jpeg;base64,AAAA" },
+    });
+  });
+
+  it("drops image blocks with no usable url but keeps the text", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "hi" },
+          { type: "image_url", image_url: {} },
+          { type: "image", source: { type: "base64" } },
+        ],
+      },
+    ]);
+    expect(result.messages[0].content).toBe("hi");
   });
 });
 
