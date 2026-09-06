@@ -244,7 +244,9 @@ function applyFormat(fmt, body, cfg, caps, model, provider) {
       // and the redundant switch must not be sent.
       if (canDisable) body.thinking = { type: "adaptive" };
       else delete body.thinking;
-      body.output_config = { effort: level === "xhigh" || level === "ultra" ? "high" : level };
+      // "auto" is not a documented effort value — Anthropic rejects it with
+      // HTTP 400; normalize to high like the other over-ceiling levels.
+      body.output_config = { effort: level === "xhigh" || level === "ultra" || level === "auto" ? "high" : level };
       break;
     }
     case "claude-budget": {

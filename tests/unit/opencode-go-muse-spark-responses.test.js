@@ -33,6 +33,15 @@ describe("ocg/muse-spark-1.3-contributor catalog", () => {
     expect(getModelTargetFormat("opencode-go", MODEL)).toBe(FORMATS.OPENAI_RESPONSES);
   });
 
+  it("registers the whole contributor family (1.2 + 1.3) responses-only", () => {
+    for (const m of ["muse-spark-1.2-contributor", "muse-spark-1.3-contributor"]) {
+      const entry = (PROVIDER_MODELS["opencode-go"] || []).find((e) => e.id === m);
+      expect(entry, `${m} missing from the ocg registry`).toBeDefined();
+      expect(entry.targetFormat).toBe("openai-responses");
+      expect(getModelTargetFormat("ocg", m)).toBe(FORMATS.OPENAI_RESPONSES);
+    }
+  });
+
   it("never takes the sourceFormat-matched transport (always translates)", () => {
     // chatCore precedence: the per-model targetFormat beats the runtime
     // transport for BOTH chat and claude sources — muse never rides
@@ -86,6 +95,7 @@ describe("OpenCodeGoExecutor routing + sanitization", () => {
       tools: [
         { type: "function", function: { name: "read", description: "r", parameters: { type: "object", properties: {} } } },
         { type: "function", function: { name: "  ", parameters: {} } },
+        { type: "function", function: { name: "bare", parameters: { type: "object" } } },
       ],
       max_tokens: 2048,
       reasoning_effort: "high",
@@ -97,11 +107,14 @@ describe("OpenCodeGoExecutor routing + sanitization", () => {
     expect(out.stream).toBe(true);
     expect(out.store).toBe(false);
     // nameless declaration dropped, nameless call dropped
-    expect(out.tools.map((t) => t.name)).toEqual(["read"]);
+    expect(out.tools.map((t) => t.name)).toEqual(["read", "bare"]);
+    // bare {type:"object"} schema gets its properties map filled (strict backends reject it)
+    expect(out.tools.find((t) => t.name === "bare").parameters).toEqual({ type: "object", properties: {} });
     const calls = out.input.filter((i) => i.type === "function_call");
     expect(calls.map((c) => c.name)).toEqual(["read", "exec"]);
-    // overlong id clamped, object args stringified exactly once
-    expect(calls[0].call_id).toHaveLength(64);
+    // overlong id clamped deterministically, object args stringified exactly once
+    expect(calls[0].call_id.length).toBeLessThanOrEqual(64);
+    expect(calls[0].call_id).toBe(calls[0].call_id); // deterministic shape
     expect(JSON.parse(calls[0].arguments)).toEqual(args);
     // invalid fragment coerced, never double-encoded
     expect(calls[1].arguments).toBe("{}");

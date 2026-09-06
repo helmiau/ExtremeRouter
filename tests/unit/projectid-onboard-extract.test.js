@@ -7,20 +7,28 @@ import {
 
 const connId = "conn-onboard";
 
-// The retry path sleeps 2s between attempts; collapse only those sleeps to ~0
-// so the suite stays fast without touching the per-attempt 30s timeout or
-// AbortController internals.
+// The retry path sleeps BASE_RETRY_DELAY_MS+jitter between attempts (the
+// anti-abuse spacing); pin the env knobs to the legacy budget and collapse any
+// sub-6s timer (retry sleeps land at BASE(1ms)+jitter≤5s) while leaving the
+// per-attempt 30s abort timer intact.
 const realSetTimeout = globalThis.setTimeout;
 beforeEach(() => {
   _resetProjectIdState();
+  // Production defaults (attempts=2, 12s+jitter spacing) exist to avoid Google's
+  // anti-abuse heuristics; these tests need the legacy 5-attempt budget and
+  // collapsed sleeps, so pin both env knobs explicitly.
+  process.env.ONBOARD_MAX_ATTEMPTS = "5";
+  process.env.ONBOARD_RETRY_DELAY_MS = "1";
   vi.stubGlobal("setTimeout", (fn, ms, ...args) => {
-    if (ms === 2000) return realSetTimeout(fn, 0, ...args);
+    if (ms > 0 && ms <= 6_000) return realSetTimeout(fn, 0, ...args);
     return realSetTimeout(fn, ms, ...args);
   });
 });
 
 afterEach(() => {
   _resetProjectIdState();
+  delete process.env.ONBOARD_MAX_ATTEMPTS;
+  delete process.env.ONBOARD_RETRY_DELAY_MS;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });

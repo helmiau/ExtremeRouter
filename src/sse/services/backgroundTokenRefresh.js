@@ -20,6 +20,13 @@ const MIN_LEAD_MS = 30 * 60 * 1000;   // never refresh more than 30 min before e
 
 const KILL_SWITCH = process.env.DISABLE_BACKGROUND_TOKEN_REFRESH === "1";
 
+// Google's anti-abuse heuristics flag bursts of token refreshes from one IP —
+// N simultaneous/back-to-back refreshes for antigravity/gemini-cli accounts
+// look like credential stuffing. These providers refresh SERIALLY with wide
+// spacing between connections (both delays env-tunable).
+const SENSITIVE_PROVIDERS = new Set(["antigravity", "gemini-cli"]);
+const SENSITIVE_REFRESH_SPACING_MS = Number(process.env.BG_REFRESH_GOOGLE_DELAY_MS) || 12_000;
+
 let started = false;
 let sweepInFlight = false;
 
@@ -47,6 +54,7 @@ async function sweep() {
     const oauthConnections = connections.filter((c) => c.authType === "oauth");
 
     let refreshed = 0;
+    let prevWasSensitive = false; // previous COMPLETED refresh hit a Google endpoint
     for (const conn of oauthConnections) {
       const provider = conn.provider;
       const expiresAtMs = conn.expiresAt ? new Date(conn.expiresAt).getTime() : null;
@@ -57,15 +65,25 @@ async function sweep() {
         log.debug("REFRESH", `${provider}:${conn.id?.slice(0, 8)} due but no refreshToken — skip`);
         continue;
       }
+      // Anti-abuse spacing: pause only between BACK-TO-BACK Google refreshes —
+      // a rapid-fire sequence of antigravity/gemini-cli token refreshes from
+      // one IP is exactly the pattern Google's heuristics flag. A refresh for
+      // another provider in between resets the pattern.
+      if (refreshed > 0 && prevWasSensitive && SENSITIVE_PROVIDERS.has(provider)) {
+        const jitter = Math.floor(Math.random() * 5000);
+        await new Promise((resolve) => setTimeout(resolve, SENSITIVE_REFRESH_SPACING_MS + jitter));
+      }
 
       try {
         await checkAndRefreshToken(provider, conn, { force: true });
         refreshed++;
+        prevWasSensitive = SENSITIVE_PROVIDERS.has(provider);
       } catch (err) {
         // Fail-open per connection: log, keep sweeping the rest.
         log.warn("REFRESH", `${provider}:${conn.id?.slice(0, 8)} background refresh failed`, {
           error: err?.message ?? err,
         });
+        prevWasSensitive = false;
       }
     }
     if (refreshed > 0) {

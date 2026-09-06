@@ -1,6 +1,6 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
-import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
+import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta } from "../providers/shared.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
 import { getCachedClaudeHeaders } from "../utils/claudeHeaderCache.js";
@@ -181,13 +181,35 @@ export class DefaultExecutor extends BaseExecutor {
     return BEARER;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, url, model) {
     const rt = credentials?.runtimeTransport;
     const headers = { "Content-Type": "application/json", ...(rt ? rt.headers : this.config.headers) };
     const desc = rt?.auth || AUTH_DESCRIPTORS[this.provider] || this.resolveAuthDescriptor();
     // Hooks run BEFORE auth so dynamic overlays (claude cached headers) can't clobber the token.
     for (const hook of desc.hooks || []) HEADER_HOOKS[hook]?.(headers, credentials);
     applyAuth(headers, desc, credentials);
+
+    // anthropic-compatible-* nodes serving a real Claude model sit in front of
+    // Anthropic itself (a rotating multi-account proxy, a corporate gateway),
+    // so the request needs the same beta flags the `claude` provider sends:
+    // without `context-management-2025-06-27` upstream rejects the
+    // `context_management` block Claude Code puts in every request with
+    // "context_management: Extra inputs are not permitted" (HTTP 400), and the
+    // combo silently falls through to the next model. The model id gates this:
+    // a node fronting Kimi or GLM answers on its own ids and never matches, so
+    // gateways that would choke on unknown beta flags are left untouched.
+    const isClaudeModel = typeof model === "string" && /^claude-/.test(model);
+    if (model && this.provider?.startsWith?.("anthropic-compatible-") && isClaudeModel) {
+      // Replace outright: the clean list has no first-party identity flags, so
+      // nothing of value is lost on a proxy/gateway host.
+      headers["Anthropic-Beta"] = selectAnthropicBeta(model);
+    } else if (model && this.provider === "claude" && !headers["Anthropic-Beta"]) {
+      // First-party Claude: cached/spoofed headers carry the full Claude Code
+      // fingerprint (incl. claude-code-20250219) — only fill the required set
+      // in when no beta header exists at all (cold cache). Replacing it would
+      // strip identity flags Anthropic's anti-abuse expects on OAuth traffic.
+      headers["Anthropic-Beta"] = selectAnthropicBeta(model);
+    }
 
     // Strip first-party Claude Code identity headers for non-Anthropic anthropic-compatible upstreams
     if (this.provider?.startsWith?.("anthropic-compatible-")) {

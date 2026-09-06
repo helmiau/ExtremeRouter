@@ -55,7 +55,8 @@ export default {
     // Muse Spark is served by /zen/go/v1/responses only — the responses-only
     // targetFormat forces chatCore past the sourceFormat-matched transport into
     // translation (see getModelTargetFormat muse guard + OpenCodeGoExecutor
-    // buildUrl). Same Muse Spark 1.3 family as opencode's free lane.
+    // buildUrl). Same Muse Spark family as opencode's free lane.
+    { id: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor", targetFormat: "openai-responses" },
     { id: "muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor", targetFormat: "openai-responses" },
   ],
 };

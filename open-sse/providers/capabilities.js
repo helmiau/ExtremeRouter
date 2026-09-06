@@ -151,6 +151,7 @@ export const PROVIDER_CAPABILITIES = {
   // (which describe Kiro) can't leak onto cx/ models, and the *gpt-5*codex*
   // 400k default can't override Sol's real 372k window.
   codex: {
+    "gpt-6-astra":         { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
     "gpt-5.6-sol":         CODEX_GPT_56_SOL_CAPS,
     "gpt-5.6-sol-review":  CODEX_GPT_56_SOL_CAPS,
     "gpt-5.6-terra":       CODEX_GPT_56_DEFAULT_CAPS,
@@ -414,6 +415,8 @@ export const PATTERN_CAPABILITIES = [
   // K3 reasoning + Preserved Thinking always on (can't disable), native tiers
   // low/high/max only (default max). See moonshot.js registry note.
   { pattern: "*kimi-k3*",      caps: { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["low", "high", "max"], thinkingMaxEffort: true, contextWindow: 1048576, maxOutput: 1048576 } },
+  // ── OpenAI GPT-6.x (vision + thinking + web search) ──────────────
+  { pattern: "*gpt-6*",         caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 } },
   { pattern: "*gpt-5*codex*",   caps: { reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 400000, maxOutput: 128000 } },
   { pattern: "*gpt-5*",         caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 400000, maxOutput: 128000 } },
   { pattern: "*gpt-4o*",        caps: { vision: true, search: true, contextWindow: 128000, maxOutput: 16384 } },

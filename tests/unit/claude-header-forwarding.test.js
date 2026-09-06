@@ -421,3 +421,58 @@ describe.skipIf(!gotScrapingAvailable)("proxyAwareFetch — api.anthropic.com ro
     expect(gotScrapingMock).not.toHaveBeenCalled();
   });
 });
+
+// ─── 9router #3797: beta flags for anthropic-compatible-* nodes fronting Anthropic ──
+
+describe("DefaultExecutor.buildHeaders() — beta flags for anthropic-compatible hosts", () => {
+  it("sends context-management beta for a Claude model on a custom host", async () => {
+    vi.resetModules();
+    const { DefaultExecutor } = await import("open-sse/executors/default.js");
+    const executor = new DefaultExecutor("anthropic-compatible-custom");
+    const headers = executor.buildHeaders(
+      {
+        apiKey: "key",
+        providerSpecificData: { baseUrl: "https://myproxy.example.com/v1" },
+      },
+      true,
+      undefined,
+      "claude-opus-5"
+    );
+
+    const betaFlags = (headers["Anthropic-Beta"] || headers["anthropic-beta"] || "")
+      .split(",").map(s => s.trim());
+    expect(betaFlags).toContain("context-management-2025-06-27");
+    // Heavy-agent flags ride along for opus/sonnet.
+    expect(betaFlags).toContain("effort-2025-11-24");
+    // The first-party identity flag is not in the clean list.
+    expect(betaFlags).not.toContain("claude-code-20250219");
+  });
+
+  it("does NOT add Claude beta flags when the model is not claude-*", async () => {
+    vi.resetModules();
+    const { DefaultExecutor } = await import("open-sse/executors/default.js");
+    const executor = new DefaultExecutor("anthropic-compatible-custom");
+    const headers = executor.buildHeaders(
+      {
+        apiKey: "key",
+        providerSpecificData: { baseUrl: "https://glm-gateway.example.com/v1" },
+      },
+      true,
+      undefined,
+      "glm-5.3"
+    );
+    expect(headers["Anthropic-Beta"]).toBeUndefined();
+    expect(headers["anthropic-beta"]).toBeUndefined();
+  });
+
+  it("does NOT add beta flags when no model is provided", async () => {
+    vi.resetModules();
+    const { DefaultExecutor } = await import("open-sse/executors/default.js");
+    const executor = new DefaultExecutor("anthropic-compatible-custom");
+    const headers = executor.buildHeaders(
+      { apiKey: "key", providerSpecificData: { baseUrl: "https://myproxy.example.com/v1" } },
+      true
+    );
+    expect(headers["Anthropic-Beta"]).toBeUndefined();
+  });
+});

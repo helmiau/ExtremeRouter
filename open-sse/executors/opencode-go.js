@@ -8,6 +8,7 @@ import {
   clampResponsesCallId,
   coerceResponsesArguments,
   coerceResponsesOutput,
+  ensureResponsesObjectProperties,
 } from "../translator/formats/responsesApi.js";
 
 // Muse Spark lives on the Go lane's Responses endpoint — /chat/completions
@@ -87,9 +88,14 @@ function normalizeResponsesTools(body) {
     const name = rawName.trim();
     if (!name) return false;
     const description = typeof tool.description === "string" ? tool.description : (typeof fn?.description === "string" ? fn.description : "");
-    const parameters = (tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters))
-      ? tool.parameters
-      : (fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters) ? fn.parameters : { type: "object", properties: {} });
+    // Mirror the request translator: strict Responses backends reject a bare
+    // {type:"object"} without properties — the shared helper fills it in, so
+    // this last-line-of-defense path can never drift from translation.
+    const parameters = ensureResponsesObjectProperties(
+      (tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters))
+        ? tool.parameters
+        : (fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters) ? fn.parameters : undefined)
+    );
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
     tool.name = name.slice(0, MAX_TOOL_NAME_LEN);
