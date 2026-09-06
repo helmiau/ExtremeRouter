@@ -173,6 +173,10 @@ export const MODEL_PRICING = {
   "cline-pass/mimo-v2.5":         { input: 0.14,  output: 0.28,  reasoning: 0.28 },
   "cline-pass/mimo-v2.5-pro":     { input: 1.74,  output: 3.48,  reasoning: 3.48 },
   "hy3-preview":                  { input: 0,     output: 0 },
+  // Hy4 preview family — same CodeBuddy/WorkBuddy subscription gateway as hy3
+  // (no per-token price; billed through the plan quota).
+  "hy4-preview":                  { input: 0,     output: 0 },
+  "hy4-preview-x":                { input: 0,     output: 0 },
   "hy3":                          { input: 0,     output: 0 },
   "mimo-auto":                    { input: 0,     output: 0 },
   // BazaarLink paid catalog (vendor-parity rates; the `auto:free` tier is $0 above)

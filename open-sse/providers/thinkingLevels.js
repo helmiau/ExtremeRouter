@@ -52,6 +52,13 @@ const PATTERN_THINKING = [
   { pattern: "*grok-4.6*", levels: L.GROK_46 },
   // Grok 4.5: low / medium / high only (no minimal/max).
   { pattern: "*grok-4.5*", levels: L.GROK_45 },
+  // CodeBuddy gateway (codebuddy-intl / workbuddy) effort sets:
+  // GLM-5.3 family native tiers are low/high/max (no minimal/medium);
+  // Kimi K3.1 keeps the K3 low/high/max set; Hunyuan hy4 hybrid pins the
+  // standard OpenAI-style set (hy4 has no max tier and cannot disable).
+  { pattern: "*glm-5.3*", levels: ["low", "high", "max"] },
+  { pattern: "*kimi-k3*", levels: ["low", "high", "max"] },
+  { pattern: "*hy4*", levels: L.EFFORT },
 ];
 
 /**
