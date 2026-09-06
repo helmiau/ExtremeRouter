@@ -508,6 +508,20 @@ export function createSSEStream(options = {}) {
           streamDoneSent = true;
         }
 
+        // OpenAI-compatible clients require the `data: [DONE]` sentinel to
+        // consider a stream complete — the same contract the passthrough flush
+        // enforces ("without it they can hang until timeout and trigger
+        // failover"). Translate mode never sent it: internal accounting showed
+        // full success while strict clients saw a truncated stream and
+        // re-issued the request. Emitted once, at EOF, after every translated
+        // frame — suppressed when an error frame was already surfaced.
+        if (!errorSent && sourceFormat === FORMATS.OPENAI && !streamDoneSent) {
+          const doneOutput = "data: [DONE]\n\n";
+          reqLogger?.appendConvertedChunk?.(doneOutput);
+          enqueueTracked(controller, sharedEncoder.encode(doneOutput));
+          streamDoneSent = true;
+        }
+
         if (!hasValidUsage(state?.usage) && totalContentLength > 0) {
           state.usage = estimateUsage(body, totalContentLength, sourceFormat);
         }
