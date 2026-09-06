@@ -89,6 +89,7 @@ const NO_PUBLIC_RATE = new Map([
   ["github/mai-code-1-flash", "GitHub Copilot MAI — unpublished rate"],
   ["opencode-go/mimo-v2.5-high", "opencode-go effort tier — unpublished"],
   ["opencode-go/mimo-v2.5-max", "opencode-go effort tier — unpublished"],
+  ["opencode-go/muse-spark-1.2-contributor", "opencode-go subscription"],
   ["xiaomi-tokenplan/mimo-v2.5-pro-claude", "Xiaomi token plan — unpublished"],
   ["kimchi/nemotron-3-ultra-fp4", "Kimchi — unpublished rate"],
   // Small hosts / resellers not covered by models.dev

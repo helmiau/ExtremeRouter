@@ -11,6 +11,7 @@ import {
   clampResponsesCallId,
   coerceResponsesArguments,
   coerceResponsesOutput,
+  ensureResponsesObjectProperties,
 } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 
@@ -217,12 +218,12 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
 }
 
 /**
- * Ensure object schema always has properties field (required by Codex Responses API)
+ * Ensure object schema always has properties field (required by Codex Responses API).
+ * Delegates to the shared Responses coercion helper so the translator and the
+ * executor's last-line-of-defense path share one implementation.
  */
 function normalizeToolParameters(params) {
-  if (!params) return { type: "object", properties: {} };
-  if (params.type === "object" && !params.properties) return { ...params, properties: {} };
-  return params;
+  return ensureResponsesObjectProperties(params);
 }
 
 /**

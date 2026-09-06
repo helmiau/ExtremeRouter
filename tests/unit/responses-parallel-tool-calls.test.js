@@ -5,8 +5,18 @@
 // JSON payloads into one tool input and fails validation. Our translator
 // correlates via ResponsesAccumulator (output_index ?? item_id); this suite
 // pins that contract against the hostile orderings.
+//
+// Also pins the 11222eff hardening (ported with improvements): unique fallback
+// call_ids, collision-proof overlong-id truncation, and fail-soft output coercion.
 import { describe, expect, it } from "vitest";
 import { openaiResponsesToOpenAIResponse } from "../../open-sse/translator/response/openai-responses.js";
+import {
+  clampResponsesCallId,
+  coerceResponsesOutput,
+  coerceResponsesArguments,
+  ensureResponsesObjectProperties,
+  MAX_RESPONSES_CALL_ID_LEN,
+} from "../../open-sse/translator/formats/responsesApi.js";
 import { initState, translateResponse } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
@@ -137,5 +147,82 @@ describe("responses → claude end-to-end keeps parallel tool_use blocks separat
       "/docs/ROADMAP.md",
       "/docs/openapi.custom.yaml",
     ]);
+  });
+});
+
+// ── 11222eff hardening, ported with improvements ─────────────────────────────
+
+describe("clampResponsesCallId keeps correlation intact", () => {
+  it("same-millisecond fallback ids never collide across a batch", () => {
+    const ids = new Set(Array.from({ length: 50 }, () => clampResponsesCallId(undefined)));
+    expect(ids.size).toBe(50);
+    for (const id of ids) {
+      expect(id.startsWith("call_")).toBe(true);
+      expect(id.length).toBeLessThanOrEqual(MAX_RESPONSES_CALL_ID_LEN);
+    }
+    expect(new Set([clampResponsesCallId(""), clampResponsesCallId(null)]).size).toBe(2);
+  });
+
+  it("overlong ids sharing a 64-char prefix do NOT collide (hash suffix preserves identity)", () => {
+    // Upstream's blind truncation collapses these two into the same id —
+    // their function_call_outputs would then be indistinguishable upstream.
+    const a = "call_" + "a".repeat(80) + "-first";
+    const b = "call_" + "a".repeat(80) + "-second";
+    const ca = clampResponsesCallId(a);
+    const cb = clampResponsesCallId(b);
+    expect(ca).not.toBe(cb);
+    expect(ca.length).toBeLessThanOrEqual(MAX_RESPONSES_CALL_ID_LEN);
+    expect(cb.length).toBeLessThanOrEqual(MAX_RESPONSES_CALL_ID_LEN);
+    // Deterministic: call side and output side map identically.
+    expect(clampResponsesCallId(a)).toBe(ca);
+    expect(clampResponsesCallId(b)).toBe(cb);
+  });
+
+  it("short ids pass through untouched", () => {
+    expect(clampResponsesCallId("call_abc")).toBe("call_abc");
+  });
+});
+
+describe("coerceResponsesOutput stays fail-soft and quote-clean", () => {
+  it("never throws on BigInt/circular array elements (upstream regression)", () => {
+    const circular = {};
+    circular.self = circular;
+    const input = [1n, circular, { text: "ok" }];
+    expect(() => coerceResponsesOutput(input)).not.toThrow();
+    const out = coerceResponsesOutput(input);
+    expect(typeof out).toBe("string");
+    expect(out).toContain("ok");
+  });
+
+  it("passes raw strings inside arrays through unquoted", () => {
+    // JSON.stringify("hello") would smuggle quotes into the tool output.
+    expect(coerceResponsesOutput(["hello", "world"])).toBe("helloworld");
+    expect(coerceResponsesOutput([{ text: "a" }, "b"])).toBe("ab");
+  });
+
+  it("scalar/null shapes unchanged", () => {
+    expect(coerceResponsesOutput(null)).toBe("");
+    expect(coerceResponsesOutput(undefined)).toBe("");
+    expect(coerceResponsesOutput("plain")).toBe("plain");
+    expect(JSON.parse(coerceResponsesOutput({ ok: true }))).toEqual({ ok: true });
+  });
+});
+
+describe("coerceResponsesArguments / ensureResponsesObjectProperties", () => {
+  it("argument coercion is unchanged (valid string passes, fragments become {})", () => {
+    expect(coerceResponsesArguments('{"a":1}')).toBe('{"a":1}');
+    expect(coerceResponsesArguments("{not json")).toBe("{}");
+    expect(coerceResponsesArguments({ a: 1 })).toBe('{"a":1}');
+    expect(coerceResponsesArguments(undefined)).toBe("{}");
+  });
+
+  it("bare object schemas get properties filled; other shapes untouched", () => {
+    expect(ensureResponsesObjectProperties({ type: "object" })).toEqual({ type: "object", properties: {} });
+    expect(ensureResponsesObjectProperties(null)).toEqual({ type: "object", properties: {} });
+    expect(ensureResponsesObjectProperties(undefined)).toEqual({ type: "object", properties: {} });
+    const full = { type: "object", properties: { a: { type: "string" } }, required: ["a"] };
+    expect(ensureResponsesObjectProperties(full)).toBe(full); // same reference — no clone churn
+    const str = { type: "string" };
+    expect(ensureResponsesObjectProperties(str)).toBe(str);
   });
 });
