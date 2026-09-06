@@ -128,6 +128,15 @@ export function observeParsedEvent(state, parsed, opts = {}) {
   const parts = geminiChunk.candidates?.[0]?.content?.parts;
   if (Array.isArray(parts)) {
     for (const part of parts) {
+      // Function/tool call — semantic output in its own right. This MUST be
+      // recorded BEFORE the `!part.text` guard below: a tool-call-only part
+      // carries no text, so the guard skipped it entirely and left
+      // hasToolCall=false, which collapsed a real Gemini/Antigravity
+      // tool-call response into empty_output/usage_only even though
+      // gemini-to-openai.js translated and emitted it to the client.
+      // Detection is deliberately signature-independent — thoughtSignature is
+      // a Gemini 3 transport/round-trip detail, not evidence of a tool call.
+      if (part?.functionCall) state.hasToolCall = true;
       if (!part?.text) continue;
       if (part.thought === true) state.hasReasoning = true;
       else state.hasText = true;
