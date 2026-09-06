@@ -8,6 +8,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
 import { getModelUpstreamId, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
+import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { cleanJSONSchemaForAntigravity } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 
@@ -348,8 +349,18 @@ export class AntigravityExecutor extends BaseExecutor {
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
-    if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
-      generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
+    // Output ceiling is model-aware: 16384 is the conservative provider default,
+    // but Gemini 3.x advertise 65536 (capabilities maxOutput) and thinking burns
+    // the SAME budget — clamping -high runs to 16384 truncated every long answer
+    // with finishReason=MAX_TOKENS before the response could complete. Only
+    // KNOWN capability entries raise the ceiling — unknown models resolve to a
+    // generic default-floor (64000) that the backend never agreed to.
+    const modelAlias = PROVIDER_ID_TO_ALIAS[this.provider] || this.provider;
+    const outputCaps = getCapabilitiesForModel(modelAlias, model);
+    const advertisedOutput = outputCaps?.known === true ? (Number(outputCaps.maxOutput) || 0) : 0;
+    const outputCeiling = Math.max(MAX_ANTIGRAVITY_OUTPUT_TOKENS, advertisedOutput);
+    if (generationConfig.maxOutputTokens > outputCeiling) {
+      generationConfig.maxOutputTokens = outputCeiling;
     }
 
     const transformedRequest = {
@@ -399,7 +410,6 @@ export class AntigravityExecutor extends BaseExecutor {
     // parenthesized tier id returns 404 NOT_FOUND "Requested entity was not found."
     // (OmniRoute reference: "tier suffixes were speculative and caused 404"). The
     // plain upstream id is resolved via the registry upstreamModelId.
-    const modelAlias = PROVIDER_ID_TO_ALIAS[this.provider] || this.provider;
     const strippedModel = typeof model === "string" && model.includes("/") ? model.split("/").pop() : model;
     const wireModel = getModelUpstreamId(modelAlias, strippedModel) || strippedModel || model;
 

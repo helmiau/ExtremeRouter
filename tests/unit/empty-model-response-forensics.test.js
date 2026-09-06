@@ -174,7 +174,7 @@ describe("empty_model_response forensic characterization", () => {
     expect(attempts.every((attempt) => attempt.fallbackDecision === "fallback" || attempt.fallbackDecision === "stopped")).toBe(true);
   });
 
-  it("progresses past an empty canonical candidate, then exposes the ambiguous all-failed envelope", async () => {
+  it("progresses past an empty canonical candidate, then surfaces the last classification in the all-failed envelope", async () => {
     const calls = [];
     const handleSingleModel = vi.fn(async (_body, model) => {
       calls.push(model);
@@ -194,10 +194,63 @@ describe("empty_model_response forensic characterization", () => {
 
     expect(calls).toEqual(["provider-a/model-a", "provider-b/model-b"]);
     expect(response.status).toBe(503);
-    // Current behavior: a 2xx empty result has no error text, so exhaustion
-    // falls back to String(status). This is the observed ambiguity, not a fix.
-    expect(body.error.message).toBe("200");
+    // A 2xx empty result has no error text — the envelope must NOT degrade to
+    // the useless raw status ("200"), which clients render as generic
+    // "empty response" templates. The last canonical classification is
+    // surfaced instead so the failure is diagnosable.
     expect(body.error.code).toBe("all_models_failed");
+    expect(body.error.message).toContain("last candidate provider-b/model-b: empty_output/empty_response");
+    expect(body.error.message).not.toBe("200");
+  });
+
+  it("surfaces finish_reason=max_tokens truncation in the all-failed envelope", async () => {
+    // The recurring production incident: ag/gemini-3.8-flash-high streams a
+    // long answer, hits the output cap (finishReason=max_tokens → incomplete,
+    // logicalSuccess=false), combo falls through everything, and the client
+    // showed an uninformative "empty model response" banner.
+    const truncatedResult = (model) => ({
+      success: true,
+      status: 200,
+      response: new Response(JSON.stringify({ id: "t", choices: [{ message: { role: "assistant", content: "partial" }, finish_reason: "length" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+      canonicalAttempt: {
+        source: "provider",
+        transportOk: true,
+        completionState: "incomplete",
+        terminalState: "incomplete",
+        terminalType: "finish_reason",
+        finishReason: "max_tokens",
+        usableOutput: true,
+        logicalSuccess: false,
+        classification: "incomplete",
+        reason: "no_successful_terminal",
+        policy: { fallbackEligible: true, retryable: true, stopProgression: false },
+      },
+      correlation: {
+        requestId: "req_trunc",
+        attemptId: `attempt_${model.replace(/\W/g, "_")}`,
+        physicalProviderId: model.split("/")[0],
+        physicalModel: model.split("/")[1],
+      },
+    });
+
+    const handleSingleModel = vi.fn(async (_body, model) => truncatedResult(model));
+    const response = await handleComboChat({
+      body: { model: "gpt-5.6-sol", stream: false },
+      models: ["ag/gemini-3.8-flash-high", "oc/muse-spark-1.2-contributor-free"],
+      handleSingleModel,
+      log,
+      comboName: "gpt-5.6-sol",
+      comboStrategy: "fallback",
+      autoSwitch: false,
+    });
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body.error.code).toBe("all_models_failed");
+    expect(body.error.message).toContain("muse-spark-1.2-contributor-free: incomplete/no_successful_terminal (finish_reason=max_tokens)");
   });
 });
 

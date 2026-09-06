@@ -422,6 +422,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
+  // Bounded canonical summary of the most recent failed candidate (model id +
+  // classification/reason/finishReason — never content). Surfaced in the
+  // all-failed envelope when the transport error text is uninformative, so
+  // clients stop rendering generic "empty response" templates for a truncation
+  // (finish_reason=max_tokens) or another diagnosable outcome.
+  let lastAttemptLabel = null;
   // Awaiting the enqueue (not the database write — the repo buffers in memory
   // and flushes asynchronously) serializes forensic attempt ordering: candidate
   // N's record is pushed to the write buffer before candidate N+1's execution
@@ -551,6 +557,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       await persistAttempt({ forensic, result, attempt, fallbackDecision: "fallback" });
       lastError = errorText || String(status);
       if (!lastStatus) lastStatus = status;
+      lastAttemptLabel = `${forensic?.physicalModel || modelStr}: ${attempt?.classification || "failed"}${attempt?.reason ? `/${attempt.reason}` : ""}${attempt?.finishReason ? ` (finish_reason=${attempt.finishReason})` : ""}`;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues. The provider
@@ -587,7 +594,16 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
   const lastStatusIsError = lastStatus == null || lastStatus === 0 || lastStatus >= 400;
   const status = allDisabled ? 503 : (lastStatusIsError ? (lastStatus || 503) : 503);
-  const msg = lastError || "All combo models unavailable";
+  // A 2xx candidate with an empty/unusable body yields errorText === "200" —
+  // noise to clients (they render generic "empty response" templates for it).
+  // When the error text carries nothing beyond the raw status, fall back to the
+  // last canonical classification so the failure is diagnosable.
+  const informativeError = lastError && lastError !== String(lastStatus);
+  const msg = informativeError
+    ? lastError
+    : (lastAttemptLabel
+        ? `All combo models failed — last candidate ${lastAttemptLabel}`
+        : "All combo models unavailable");
 
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);

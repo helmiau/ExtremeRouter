@@ -106,4 +106,32 @@ describe("Antigravity executor", () => {
     const query = out.request.tools[0].functionDeclarations[0].parameters.properties.query;
     expect(query).toEqual({ type: "string", description: "Search query" });
   });
+
+  // Model-aware output ceiling: Gemini 3.x advertise maxOutput=65536 and thinking
+  // burns the same budget — the old blanket 16384 clamp truncated every -high run
+  // with finishReason=MAX_TOKENS (recurring "empty_model_response" client banner).
+  it("keeps maxOutputTokens within the model's advertised ceiling for gemini-3.x", () => {
+    const ex = new AntigravityExecutor();
+    const base = { request: { contents: [{ role: "user", parts: [{ text: "hi" }] }] } };
+
+    // 32000 ≤ 65536 → preserved (was clamped to 16384 before the fix)
+    const out32k = ex.transformRequest("gemini-3.8-flash-high", {
+      ...base, request: { ...base.request, generationConfig: { maxOutputTokens: 32000 } },
+    }, true, { projectId: "p", connectionId: "c" });
+    expect(out32k.request.generationConfig.maxOutputTokens).toBe(32000);
+
+    // above the advertised ceiling → clamped to 65536, not 16384
+    const out200k = ex.transformRequest("gemini-3.8-flash-high", {
+      ...base, request: { ...base.request, generationConfig: { maxOutputTokens: 200000 } },
+    }, true, { projectId: "p", connectionId: "c" });
+    expect(out200k.request.generationConfig.maxOutputTokens).toBe(65536);
+  });
+
+  it("keeps the conservative 16384 default for models without an advertised ceiling", () => {
+    const ex = new AntigravityExecutor();
+    const out = ex.transformRequest("totally-unknown-model", {
+      request: { contents: [{ role: "user", parts: [{ text: "hi" }] }], generationConfig: { maxOutputTokens: 200000 } },
+    }, true, { projectId: "p", connectionId: "c" });
+    expect(out.request.generationConfig.maxOutputTokens).toBe(16384);
+  });
 });
