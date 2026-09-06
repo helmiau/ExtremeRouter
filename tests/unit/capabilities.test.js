@@ -31,4 +31,24 @@ describe("getCapabilitiesForModel", () => {
     const caps = getCapabilitiesForModel("claude", "claude-fable-5-1");
     expect(caps).toMatchObject({ ...claudeSonnet5Expected, thinkingCanDisable: false });
   });
+
+  it("reports Codex GPT 6.0 Astra as a vision and thinking capable model", () => {
+    expect(getCapabilitiesForModel("codex", "gpt-6-astra")).toMatchObject({
+      vision: true,
+      reasoning: true,
+      search: true,
+      thinkingFormat: "openai",
+      contextWindow: 272000,
+      maxOutput: 128000,
+    });
+    // The generic *gpt-6* pattern covers future 6.x ids on any provider.
+    expect(getCapabilitiesForModel("openai", "gpt-6-future-variant")).toMatchObject({
+      vision: true,
+      reasoning: true,
+      search: true,
+      thinkingFormat: "openai",
+      contextWindow: 272000,
+      maxOutput: 128000,
+    });
+  });
 });

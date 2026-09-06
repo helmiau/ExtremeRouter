@@ -39,6 +39,8 @@ const L = {
 // a `provider` constraint only match that provider (codex vs kiro share the
 // gpt-5.6 names — the override matrix is codex-only, Kiro keeps its set).
 const PATTERN_THINKING = [
+  // Codex GPT-6.x: same native set as the 5.6 family (no ultra advertised yet).
+  { provider: "codex", pattern: "*gpt-6*", levels: L.CODEX_GPT_5_6 },
   { provider: "codex", pattern: "*gpt-5.6-sol*", levels: [...L.CODEX_GPT_5_6, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-terra*", levels: [...L.CODEX_GPT_5_6, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-luna*", levels: L.CODEX_GPT_5_6 },

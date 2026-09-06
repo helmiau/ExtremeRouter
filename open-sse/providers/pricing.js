@@ -66,6 +66,9 @@ export const MODEL_PRICING = {
   "gpt-5.6-luna":                 { input: 8.00,  output: 32.00, cached: 4.00,  reasoning: 48.00,  cache_creation: 8.00  },
   "gpt-5.6-sol":                  { input: 8.00,  output: 32.00, cached: 4.00,  reasoning: 48.00,  cache_creation: 8.00  },
   "gpt-5.6-terra":                { input: 8.00,  output: 32.00, cached: 4.00,  reasoning: 48.00,  cache_creation: 8.00  },
+  // GPT 6.0 Astra — priced at parity with the gpt-5.6 flagships, mirroring
+  // 9router's astra:sol 1:1 intent against OUR flat sol rates.
+  "gpt-6-astra":                  { input: 8.00,  output: 32.00, cached: 4.00,  reasoning: 48.00,  cache_creation: 8.00  },
   "o1":                           { input: 15.00, output: 60.00, cached: 7.50,  reasoning: 90.00,  cache_creation: 15.00 },
   "o1-mini":                      { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
 
