@@ -24,11 +24,21 @@ const MESSAGES_MODELS = [
   "qwen3.6-plus",
 ];
 
+// Responses-only lane (zen/go/v1/responses) — Muse Spark family.
+const RESPONSES_MODELS = [
+  "muse-spark-1.3-contributor",
+];
+
 describe("OpenCode Go official model catalog", () => {
   it("matches the documented OpenCode Go model IDs", () => {
     const ids = (PROVIDER_MODELS["opencode-go"] || []).map((model) => model.id);
 
-    expect(ids).toEqual([...CHAT_MODELS, ...MESSAGES_MODELS]);
+    expect(ids).toEqual([...CHAT_MODELS, ...MESSAGES_MODELS, ...RESPONSES_MODELS]);
+  });
+
+  it("marks muse-spark-1.3-contributor as Responses-only", () => {
+    expect(getModelTargetFormat("opencode-go", "muse-spark-1.3-contributor")).toBe("openai-responses");
+    expect(getModelTargetFormat("ocg", "muse-spark-1.3-contributor")).toBe("openai-responses");
   });
 
   it("marks documented Qwen and MiniMax models as Anthropic messages format", () => {

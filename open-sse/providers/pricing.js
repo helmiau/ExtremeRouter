@@ -179,6 +179,9 @@ export const MODEL_PRICING = {
   "hy4-preview-x":                { input: 0,     output: 0 },
   "hy3":                          { input: 0,     output: 0 },
   "mimo-auto":                    { input: 0,     output: 0 },
+  // Muse Spark 1.3 contributor — OpenCode Go reseller lane; same contributor-tier
+  // rates as meta-ai's muse-spark-1.2-contributor (data-sharing tier).
+  "muse-spark-1.3-contributor":   { input: 0.10,  output: 0.20,  cached: 0.15, reasoning: 0.20 },
   // BazaarLink paid catalog (vendor-parity rates; the `auto:free` tier is $0 above)
   "gemma-4-31b-it":                { input: 0.50,  output: 1.50,  cached: 0.10,  reasoning: 1.50,   cache_creation: 0.50  },
   "gemma-4-26b-a4b-it":            { input: 0.30,  output: 0.90,  cached: 0.06,  reasoning: 0.90,   cache_creation: 0.30  },

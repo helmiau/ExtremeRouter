@@ -442,6 +442,9 @@ export const PATTERN_CAPABILITIES = [
   // leak onto muse-spark-web (which doesn't speak OpenAI-compatible effort). Matches
   // isMuseSparkModel() routing: any Muse Spark on opencode is Responses-API + multimodal.
   { provider: "opencode", pattern: "*muse*spark*", caps: { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 } },
+  // opencode-go — same Muse Spark family on the Go lane (/zen/go/v1/responses
+  // only, see OpenCodeGoExecutor). Provider-scoped for the same muse-spark-web guard.
+  { provider: "opencode-go", pattern: "*muse*spark*", caps: { vision: true, pdf: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, thinkingLevels: ["minimal", "low", "medium", "high", "xhigh"], contextWindow: 1048576, maxOutput: 131072 } },
   { pattern: "*qwen*vl*",       caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
   { pattern: "*qwen*omni*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144, maxOutput: 65536 } },
   { pattern: "*qwen*coder*",    caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 } },

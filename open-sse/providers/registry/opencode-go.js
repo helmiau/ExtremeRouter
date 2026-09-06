@@ -52,5 +52,10 @@ export default {
     { id: "qwen3.7-max", name: "Qwen 3.7 Max", targetFormat: "claude" },
     { id: "qwen3.7-plus", name: "Qwen 3.7 Plus", targetFormat: "claude" },
     { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", targetFormat: "claude" },
+    // Muse Spark is served by /zen/go/v1/responses only — the responses-only
+    // targetFormat forces chatCore past the sourceFormat-matched transport into
+    // translation (see getModelTargetFormat muse guard + OpenCodeGoExecutor
+    // buildUrl). Same Muse Spark 1.3 family as opencode's free lane.
+    { id: "muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor", targetFormat: "openai-responses" },
   ],
 };
