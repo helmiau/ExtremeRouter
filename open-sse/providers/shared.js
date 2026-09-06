@@ -58,6 +58,29 @@ export const CLAUDE_CLI_SPOOF_HEADERS = {
 // Shared baseUrls
 export const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
 
+// Anthropic beta flags sent to first-party Anthropic and to anthropic-compatible-*
+// nodes that front Anthropic (rotating multi-account proxies, corporate gateways).
+// Deliberately EXCLUDES the first-party identity flags (claude-code-20250219,
+// oauth-2025-04-20) — those are Claude Code's own, stripped for non-Anthropic
+// hosts by the executor. Heavy-agent flags are gated to opus/sonnet — cheaper
+// models don't need them and gateways may choke on unknown betas.
+const ANTHROPIC_BETA_BASE = [
+  "interleaved-thinking-2025-05-14",
+  "context-management-2025-06-27",
+  "prompt-caching-scope-2026-01-05",
+  "structured-outputs-2025-12-15",
+  "fast-mode-2026-02-01",
+  "redact-thinking-2026-02-12",
+  "token-efficient-tools-2026-03-28",
+];
+const ANTHROPIC_BETA_HEAVY_AGENT = ["advanced-tool-use-2025-11-20", "effort-2025-11-24"];
+
+export function selectAnthropicBeta(model = "") {
+  const flags = [...ANTHROPIC_BETA_BASE];
+  if (/^claude-(opus|sonnet)/.test(model)) flags.push(...ANTHROPIC_BETA_HEAVY_AGENT);
+  return flags.join(",");
+}
+
 // Default base for dynamic compat providers (openai-compatible-* / anthropic-compatible-*) when user gives no baseUrl
 export const OPENAI_COMPAT_BASE = "https://api.openai.com/v1";
 export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";

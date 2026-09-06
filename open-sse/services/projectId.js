@@ -248,7 +248,12 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
 
     const reqBody = { tierId: tierID, metadata: LOAD_CODE_ASSIST_METADATA };
     const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
-    const MAX_ATTEMPTS = 5;
+    // Google's anti-abuse heuristics flag tight onboarding retry bursts from
+    // one IP — cap attempts low and space retries well apart with jitter
+    // (both env-tunable for air-gapped/test setups).
+    const MAX_ATTEMPTS = Number(process.env.ONBOARD_MAX_ATTEMPTS) || 2;
+    const BASE_RETRY_DELAY_MS = Number(process.env.ONBOARD_RETRY_DELAY_MS) || 12_000;
+    const jitter = () => Math.floor(Math.random() * 5000);
 
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
         // Bail out immediately if the connection was removed
@@ -295,9 +300,9 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
                 return null;
             }
 
-            // Server not done yet – wait and retry
+            // Server not done yet – wait and retry with jitter
             console.log(`[ProjectId] Onboard attempt ${attempt}/${MAX_ATTEMPTS}: not done yet, waiting...`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await new Promise(resolve => setTimeout(resolve, BASE_RETRY_DELAY_MS + jitter()));
 
         } catch (error) {
             clearTimeout(timeoutId);
@@ -312,7 +317,7 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
             }
             // Continue to next attempt instead of throwing (which would skip remaining retries)
             console.warn(`[ProjectId] onboardUser attempt ${attempt} failed: ${error.message}, retrying...`);
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            await new Promise(resolve => setTimeout(resolve, BASE_RETRY_DELAY_MS + jitter()));
         } finally {
             clearTimeout(timeoutId);
             externalSignal?.removeEventListener("abort", forwardAbort);
